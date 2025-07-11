@@ -1,0 +1,137 @@
+Testing Generic Series Matrix Function
+============================================================
+
+============================================================
+TESTING GSE41588
+============================================================
+Testing Directory Listing for GSE41588
+========================================
+URL: https://ftp.ncbi.nlm.nih.gov/geo/series/GSE41nnn/GSE41588/matrix/
+Directory content:
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+ <head>
+  <title>Index of /geo/series/GSE41nnn/GSE41588/matrix</title>
+ </head>
+ <body>
+<h1>Index of /geo/series/GSE41nnn/GSE41588/matrix</h1>
+<pre>Name                                   Last modified      Size  <hr><a href="/geo/series/GSE41nnn/GSE41588/">Parent Directory</a>                                            -   
+<a href="GSE41588-GPL11154_series_matrix.txt.gz">GSE41588-GPL11154_series_matrix.txt.gz</a> 2025-05-05 01:01  2...
+
+Testing Series Matrix Function for GSE41588
+==================================================
+GSE ID: GSE41588
+Type: series_matrix
+Sample Count: 0
+Platform Count: 0
+Total Matrices: 2
+Base URL: https://ftp.ncbi.nlm.nih.gov/geo/series/GSE41nnn/GSE41588/matrix/
+
+Available Files: ['GSE41588-GPL11154_series_matrix.txt.gz', 'GSE41588-GPL570_series_matrix.txt.gz']
+File Links: ['https://ftp.ncbi.nlm.nih.gov/geo/series/GSE41nnn/GSE41588/matrix/GSE41588-GPL11154_series_matrix.txt.gz', 'https://ftp.ncbi.nlm.nih.gov/geo/series/GSE41nnn/GSE41588/matrix/GSE41588-GPL570_series_matrix.txt.gz']
+Samples: []...
+Platforms: []
+
+Matrix Data by Platform:
+  Platform GPL11154:
+    Shape: (0, 9)
+    Columns: 9
+    Rows: 0
+  Platform GPL570:
+    Shape: (54675, 9)
+    Columns: 9
+    Rows: 54675
+
+Metadata for GPL11154 (first 3 entries):
+  Sample_relation	"SRA: https://www.ncbi.nlm.nih.gov/sra?term: SRX195293"	"SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX195294"	"SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX195295"	"SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX195296"	"SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX195297"	"SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX195298"	"SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX195299"	"SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX195300"	"SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX195301"
+✅ GSE41588: SUCCESS
+
+------------------------------------------------------------
+
+============================================================
+TESTING GSE12345
+============================================================
+Testing Directory Listing for GSE12345
+========================================
+URL: https://ftp.ncbi.nlm.nih.gov/geo/series/GSE12nnn/GSE12345/matrix/
+Directory content:
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+ <head>
+  <title>Index of /geo/series/GSE12nnn/GSE12345/matrix</title>
+ </head>
+ <body>
+<h1>Index of /geo/series/GSE12nnn/GSE12345/matrix</h1>
+<pre>Name                           Last modified      Size  <hr><a href="/geo/series/GSE12nnn/GSE12345/">Parent Directory</a>                                    -   
+<a href="GSE12345_series_matrix.txt.gz">GSE12345_series_matrix.txt.gz</a>  2025-07-07 13:03  2.5M  
+<hr></pre>
+<a href="https:/...
+
+Testing Series Matrix Function for GSE12345
+==================================================
+GSE ID: GSE12345
+Type: series_matrix
+Sample Count: 0
+Platform Count: 0
+Total Matrices: 1
+Base URL: https://ftp.ncbi.nlm.nih.gov/geo/series/GSE12nnn/GSE12345/matrix/
+
+Available Files: ['GSE12345_series_matrix.txt.gz']
+File Links: ['https://ftp.ncbi.nlm.nih.gov/geo/series/GSE12nnn/GSE12345/matrix/GSE12345_series_matrix.txt.gz']
+Samples: []...
+Platforms: []
+
+Matrix Data by Platform:
+  Platform GSE12345:
+    Shape: (54675, 13)
+    Columns: 13
+    Rows: 54675
+
+Metadata for GSE12345 (first 3 entries):
+✅ GSE12345: SUCCESS
+
+------------------------------------------------------------
+
+============================================================
+TESTING GSE1000
+============================================================
+Testing Directory Listing for GSE1000
+========================================
+URL: https://ftp.ncbi.nlm.nih.gov/geo/series/GSE1nnn/GSE1000/matrix/
+Directory content:
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+ <head>
+  <title>Index of /geo/series/GSE1nnn/GSE1000/matrix</title>
+ </head>
+ <body>
+<h1>Index of /geo/series/GSE1nnn/GSE1000/matrix</h1>
+<pre>Name                         Last modified      Size  <hr><a href="/geo/series/GSE1nnn/GSE1000/">Parent Directory</a>                                  -   
+<a href="GSE1000_series_matrix.txt.gz">GSE1000_series_matrix.txt.gz</a> 2025-07-07 18:05  1.3M  
+<hr></pre>
+<a href="https://www.hhs.gov/...
+
+Testing Series Matrix Function for GSE1000
+==================================================
+GSE ID: GSE1000
+Type: series_matrix
+Sample Count: 0
+Platform Count: 0
+Total Matrices: 1
+Base URL: https://ftp.ncbi.nlm.nih.gov/geo/series/GSE1nnn/GSE1000/matrix/
+
+Available Files: ['GSE1000_series_matrix.txt.gz']
+File Links: ['https://ftp.ncbi.nlm.nih.gov/geo/series/GSE1nnn/GSE1000/matrix/GSE1000_series_matrix.txt.gz']
+Samples: []...
+Platforms: []
+
+Matrix Data by Platform:
+  Platform GSE1000:
+    Shape: (22283, 10)
+    Columns: 10
+    Rows: 22283
+
+Metadata for GSE1000 (first 3 entries):
+✅ GSE1000: SUCCESS
+
+------------------------------------------------------------
