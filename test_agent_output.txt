@@ -1,0 +1,40 @@
+🧪 Testing MetaMuse Ingestion Agent Setup
+==================================================
+Testing imports...
+✅ tool_utils imported successfully
+✅ ingestion imported successfully
+✅ pipeline imported successfully
+✅ prompts imported successfully
+
+
+Testing tool creation...
+✅ Created 5 tools:
+   1. extract_gsm_metadata
+   2. extract_gse_metadata
+   3. extract_series_matrix_metadata
+   4. extract_paper_abstract
+   5. validate_geo_inputs
+
+
+Testing agent creation...
+✅ Agent created successfully: IngestionAgent
+   Tools: 5
+   Instructions length: 3461 characters
+
+
+Testing prompt loading...
+✅ Prompt loaded successfully
+   Length: 2897 characters
+   Contains 'MetaMuse': True
+
+==================================================
+📊 Test Results: 4/4 tests passed
+🎉 All tests passed! The agent is ready to use.
+
+To start chatting with the agent, run:
+   python src/workflows/pipeline.py
+
+Required environment variables:
+   - OPENROUTER_API_KEY: Your OpenRouter API key
+   - NCBI_EMAIL: Your email for NCBI E-Utils
+   - NCBI_API_KEY: Your NCBI API key (optional but recommended)
