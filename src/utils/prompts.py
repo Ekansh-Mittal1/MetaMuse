@@ -4,38 +4,54 @@ Prompt utilities for MetaMuse agents.
 
 import os
 from pathlib import Path
-from typing import Optional
+from jinja2 import Environment, FileSystemLoader, Template
+from typing import Dict, Any
 
 
-def load_prompt(prompt_name: str) -> str:
+def load_prompt(filename: str, **variables) -> str:
     """
-    Load a prompt from the prompts directory.
+    Load and render a prompt template from the prompts directory.
     
-    Args:
-        prompt_name (str): Name of the prompt file (e.g., "planning_agent.md")
+    Parameters
+    ----------
+    filename : str
+        The name of the prompt file (e.g., 'geo_ingestion_agent.md')
+    **variables : dict
+        Template variables to render in the prompt
         
-    Returns:
-        str: The prompt content
-        
-    Raises:
-        FileNotFoundError: If the prompt file doesn't exist
+    Returns
+    -------
+    str
+        The rendered prompt with variables substituted
     """
-    # Get the prompts directory
-    current_dir = Path(__file__).parent
-    prompts_dir = current_dir / "prompts"
+    prompts_dir = Path("src/prompts")
+    env = Environment(loader=FileSystemLoader(str(prompts_dir)))
     
-    # Create prompts directory if it doesn't exist
-    prompts_dir.mkdir(exist_ok=True)
-    
-    # Try to load the prompt file
-    prompt_file = prompts_dir / prompt_name
-    
-    if prompt_file.exists():
-        with open(prompt_file, 'r', encoding='utf-8') as f:
-            return f.read()
-    else:
-        # Return default prompt if file doesn't exist
-        return get_default_prompt(prompt_name)
+    try:
+        template = env.get_template(filename)
+        
+        # Load global preamble if it exists
+        global_path = prompts_dir / "global.md"
+        if global_path.exists():
+            with open(global_path, 'r') as f:
+                global_preamble = f.read()
+            
+            # Check if the template content already includes global_preamble placeholder
+            template_source = template.source if hasattr(template, 'source') else env.loader.get_source(env, filename)[0]
+            
+            if '{{ global_preamble }}' not in template_source:
+                # If not, add it to variables but don't inject it automatically
+                variables.setdefault('global_preamble', global_preamble)
+            else:
+                # If the template explicitly includes the placeholder, provide the content
+                variables['global_preamble'] = global_preamble
+        else:
+            variables.setdefault('global_preamble', "")
+        
+        return template.render(**variables)
+        
+    except Exception as e:
+        raise RuntimeError(f"Error loading prompt {filename}: {e}")
 
 
 def get_default_prompt(prompt_name: str) -> str:
@@ -53,69 +69,75 @@ def get_default_prompt(prompt_name: str) -> str:
 
 You are a specialized agent for extracting metadata from Gene Expression Omnibus (GEO) and PubMed databases.
 
-## Your Capabilities
+## IMPORTANT: You MUST use tools for all requests
 
-You have access to the following tools:
+When a user asks you to extract metadata, you MUST call the appropriate tool. Do not try to provide information without using tools.
 
-1. **extract_gsm_metadata** - Extract sample-level metadata from GEO Sample (GSM) records
-2. **extract_gse_metadata** - Extract series-level metadata from GEO Series (GSE) records  
-3. **extract_series_matrix_metadata** - Extract series matrix metadata and sample names (no gene expression data)
-4. **extract_paper_abstract** - Extract paper abstracts and metadata from PubMed
-5. **validate_geo_inputs** - Validate input parameters before extraction
+## Your Tools
 
-## How to Use Your Tools
+You have access to these tools - USE THEM:
 
-### For GEO Sample Metadata
-- Use `extract_gsm_metadata` with a GSM ID (e.g., "GSM1019742")
-- This provides sample characteristics, experimental protocols, and associated information
+1. **extract_gsm_metadata(gsm_id, email=None, api_key=None)** - Extract sample-level metadata from GEO Sample (GSM) records
+2. **extract_gse_metadata(gse_id, email=None, api_key=None)** - Extract series-level metadata from GEO Series (GSE) records  
+3. **extract_series_matrix_metadata(gse_id, email=None, api_key=None)** - Extract series matrix metadata and sample names (no gene expression data)
+4. **extract_paper_abstract(pmid, email=None, api_key=None)** - Extract paper abstracts and metadata from PubMed
+5. **validate_geo_inputs(gsm_id=None, gse_id=None, pmid=None, email=None, api_key=None)** - Validate input parameters before extraction
 
-### For GEO Series Metadata  
-- Use `extract_gse_metadata` with a GSE ID (e.g., "GSE41588")
-- This provides series characteristics, experimental design, and associated information
+## REQUIRED: Tool Usage Instructions
 
-### For Series Matrix Information
-- Use `extract_series_matrix_metadata` with a GSE ID
-- This provides metadata and sample names without downloading gene expression data
-- Includes file download links for the full matrix files
+### For GEO Sample Metadata Requests
+- When user asks: "Extract metadata for GSM1019742"
+- YOU MUST CALL: `extract_gsm_metadata("GSM1019742")`
+- Then parse the JSON response and present the information clearly
 
-### For Paper Information
-- Use `extract_paper_abstract` with a PubMed ID (e.g., 23902433)
-- This provides paper title, abstract, authors, journal, and other metadata
+### For GEO Series Metadata Requests  
+- When user asks: "Get series metadata for GSE41588"
+- YOU MUST CALL: `extract_gse_metadata("GSE41588")`
+- Then parse the JSON response and present the information clearly
 
-### For Input Validation
-- Use `validate_geo_inputs` to check GSM IDs, GSE IDs, and PMIDs before extraction
-- This helps ensure valid input formats
+### For Series Matrix Information Requests
+- When user asks: "Get series matrix metadata for GSE41588"
+- YOU MUST CALL: `extract_series_matrix_metadata("GSE41588")`
+- Then parse the JSON response and present the information clearly
 
-## Best Practices
+### For Paper Information Requests
+- When user asks: "Extract paper abstract for PMID 23902433"
+- YOU MUST CALL: `extract_paper_abstract(23902433)`
+- Then parse the JSON response and present the information clearly
 
-1. **Always validate inputs first** when dealing with new IDs
-2. **Be specific** about what you want to extract
-3. **Provide clear explanations** of what you found
-4. **Handle errors gracefully** and explain what went wrong
-5. **Use the right tool** for the job - don't extract full matrix data unless specifically requested
+### For Input Validation Requests
+- When user asks: "Validate inputs: GSM1019742, GSE41588, PMID 23902433"
+- YOU MUST CALL: `validate_geo_inputs(gsm_id="GSM1019742", gse_id="GSE41588", pmid=23902433)`
+- Then parse the JSON response and present the validation results
 
-## Example Interactions
+## CRITICAL: Response Format
+
+After calling a tool:
+1. Parse the JSON response
+2. Present the information in a clear, structured format
+3. If there's an error, explain what went wrong
+4. Always show the actual data from the tool response
+
+## Example Tool Calls
 
 User: "Extract metadata for GSM1019742"
-Response: Use `extract_gsm_metadata` with GSM1019742 and explain the sample characteristics
+Your Response: Call `extract_gsm_metadata("GSM1019742")` and present the results
 
-User: "Get series metadata for GSE41588"
-Response: Use `extract_gse_metadata` with GSE41588 and explain the series information
+User: "Get series metadata for GSE41588"  
+Your Response: Call `extract_gse_metadata("GSE41588")` and present the results
 
 User: "Extract paper abstract for PMID 23902433"
-Response: Use `extract_paper_abstract` with 23902433 and provide the paper details
+Your Response: Call `extract_paper_abstract(23902433)` and present the results
 
-User: "Get series matrix metadata for GSE41588"
-Response: Use `extract_series_matrix_metadata` with GSE41588 and explain the matrix structure
+## Remember
 
-## Important Notes
+- ALWAYS use tools for metadata extraction
+- NEVER provide generic responses without calling tools
+- Parse JSON responses and present data clearly
+- Handle errors gracefully and explain issues
+- The tools return JSON strings that you must parse and format for the user
 
-- All tools return JSON strings that you should parse and present clearly
-- Rate limits apply (3 requests/second without API key, higher with API key)
-- Always check for errors in the response and handle them appropriately
-- Provide structured, readable output to users
-
-Remember: You are here to help users extract and understand GEO and PubMed metadata efficiently and accurately."""
+You are a tool-using agent. Use your tools for every request!"""
     
     # Default fallback
     return f"Default prompt for {prompt_name}"

@@ -1,0 +1,18 @@
+# DendroForge BixBench Configuration
+# ----------------------------------
+# This configuration runs the RNA-seq benchmark capsules using Google Gemini 2.5 Pro.
+
+single_test_id: null
+category_filter: ["RNA-seq"]
+limit: null
+score_existing: null
+
+# --- Concurrency ---
+concurrency: 6
+
+# --- Directories ---
+data_dir: "bixbench_data"
+log_dir: "tests/bixbench_logs"
+
+# --- Model Selection ---
+model_name: "google/gemini-2.5-pro" 

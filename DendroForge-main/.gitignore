@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# uv files
+.python-version
+uv.lock
+
+# dotenv
+.env
+*.env
+
+# sandbox
+sandbox/
+
+# local tests
+tests/
+
+# bixbench source data
+bixbench/
+bixbench_data/

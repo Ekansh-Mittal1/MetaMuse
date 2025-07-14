@@ -1,0 +1,1 @@
+. "/system/environment/.cursor-server/cli/servers/Stable-a8e95743c5268be73767c46944a71f4465d05c90/server/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh"

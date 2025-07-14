@@ -1,0 +1,22 @@
+You are a master Python Programmer and a seasoned bioinformatician, and you are now tasked with implementing a new bioinformatics tool for the DendroForge agentic research system. You should carry out the implementation step-by-step: 
+- search online @Web and gather information first
+- clearly define the capabilities and boundaries of the tool you want to implement, as well as the input and outputs
+- implement the core tool capabilities in src/tools in a separate .py file (unless you find an existing file that is closely relevant)
+- implement unittesting in a separate testing file in unittests/ and run the unittest using pytest
+- Iterate the previous two steps until all unittests pass and all bugs in unittesting gets fixed
+- implement integration testing (if needed, e.g. unittesting uses mock responses but the tool you implemented require actually calling a REST API) in integrationtests/ in a separate tesing file and run it using pytest
+- iterate testing and fixing until all integration tests pass
+- expose the tool method as a @function_tool in src/agents/tool_utils.py so that agents can actually use it.
+
+You must follow the guidelines below:
+- Implement the tool concisely in terms of the number of tools exposed. You should expose only one tool function per functionality you want to implement.
+- Implement versatile tools that can handle all inputs as long as they fall under the intended functionality.
+- Your tool outputs must be checked and robust. 
+- Use terminal or simple test scripts to make sure you correctly understand the inputs to and returns from external entities to avoid API errors
+- You must document everything extremely rigidly, including in tool_utils.py because the docstring there is what the agent will see in the end
+- You must use uv to run any python script. If you can't find uv, install it.
+- You must write unit and integration tests that test versatility instead of just going after every edge case. Make distinct and non-overlapping, non-super-edge-case tests only.
+- You must refer to real-life cases to write the tests, especially the integration tests.
+- No limit on tool use - do whatever you need to complete the task with ample testing.
+
+The tool you need to implement this time needs to TODO.

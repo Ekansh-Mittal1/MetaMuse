@@ -7,11 +7,11 @@ that can be used by agents in the system.
 
 from __future__ import annotations
 
+from functools import partial
+from pathlib import Path
 import json
 import os
 from typing import Dict, Any, List, Optional
-from functools import partial
-from pathlib import Path
 
 from agents import function_tool
 from dotenv import load_dotenv
@@ -19,8 +19,8 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Import the core tools
-from ..tools.extract_geo_metadata import (
+# Import the core GEO tools
+from src.tools.geo_metadata import (
     get_gsm_metadata,
     get_gse_metadata,
     get_gse_series_matrix,
@@ -28,60 +28,40 @@ from ..tools.extract_geo_metadata import (
 )
 
 
-def get_geo_tools(
-    session_id: str,
-    default_email: str = None,
-    default_api_key: str = None
-) -> List:
+def get_session_tools(session_dir: str | Path) -> list:
     """
-    Creates a suite of GEO metadata extraction tools that are bound to a specific session.
+    Creates a suite of GEO metadata extraction tools that are bound to a specific session directory.
 
-    This approach provides four distinct, independent tools:
-    1. GSM metadata extraction - extracts sample-level metadata
-    2. GSE metadata extraction - extracts series-level metadata
-    3. Series matrix extraction - extracts matrix metadata and sample names
-    4. Paper abstract extraction - extracts paper abstracts and metadata
+    This approach avoids redefining tools within agent creation functions and
+    provides a centralized, reusable way to create session-specific tools.
 
     Parameters
     ----------
-    session_id : str
-        The unique session identifier.
-    default_email : str, optional
-        Default email for NCBI E-Utils. If not provided, uses NCBI_EMAIL environment variable.
-    default_api_key : str, optional
-        Default NCBI API key. If not provided, uses NCBI_API_KEY environment variable.
+    session_dir : str or Path
+        The directory path for the session.
 
     Returns
     -------
-    List
+    list
         A list of session-bound GEO metadata extraction tools.
-        
-    Raises
-    ------
-    ValueError
-        If required environment variables are missing
     """
-    # Get environment variables
-    env_email = os.getenv("NCBI_EMAIL")
-    env_api_key = os.getenv("NCBI_API_KEY")
+    session_dir = str(session_dir)
     
-    # Use provided defaults or environment variables
-    if default_email is None:
-        default_email = env_email
-    if default_api_key is None:
-        default_api_key = env_api_key
+    # Get environment variables with defaults
+    default_email = os.getenv("NCBI_EMAIL")
+    default_api_key = os.getenv("NCBI_API_KEY")
     
     # Validate that we have required configuration
     if not default_email:
-        raise ValueError(
-            "NCBI_EMAIL environment variable is required. "
-            "Please set it in your .env file or provide it as a parameter."
-        )
+        print("Warning: NCBI_EMAIL environment variable is not set. "
+              "Tools will use a default email for testing.")
+        default_email = "test@example.com"
     
     # Warn if API key is not set (optional but recommended)
     if not default_api_key:
         print("Warning: NCBI_API_KEY environment variable is not set. "
               "This will limit API rate limits to 3 requests per second.")
+        default_api_key = None
 
     @function_tool
     def extract_gsm_metadata(
@@ -110,58 +90,8 @@ def get_geo_tools(
         Returns
         -------
         str
-            JSON string containing the GSM metadata with the following structure:
-            {
-                "gsm_id": "GSM1019742",
-                "status": "retrieved",
-                "attributes": {
-                    "title": "Sample title",
-                    "geo_accession": "GSM1019742",
-                    "status": "Public on ...",
-                    "submission_date": "...",
-                    "last_update_date": "...",
-                    "type": "SRA",
-                    "channel_count": "1",
-                    "source_name_ch1": "...",
-                    "organism_ch1": "Homo sapiens",
-                    "taxid_ch1": "9606",
-                    "characteristics_ch1": "...",
-                    "treatment_protocol_ch1": "...",
-                    "growth_protocol_ch1": "...",
-                    "molecule_ch1": "total RNA",
-                    "extract_protocol_ch1": "...",
-                    "description": "...",
-                    "data_processing": "...",
-                    "platform_id": "GPL11154",
-                    "contact_name": "...",
-                    "contact_email": "...",
-                    "contact_institute": "...",
-                    "instrument_model": "...",
-                    "library_selection": "...",
-                    "library_source": "...",
-                    "library_strategy": "...",
-                    "relation": "...",
-                    "supplementary_file_1": "...",
-                    "series_id": "GSE41588",
-                    "data_row_count": "..."
-                }
-            }
-        
-        Examples
-        --------
-        >>> result = extract_gsm_metadata("GSM1019742")
-        >>> data = json.loads(result)
-        >>> print(data["gsm_id"])  # "GSM1019742"
-        >>> print(data["attributes"]["title"])  # Sample title
-        
-        Note
-        ----
-        - GSM ID must be in valid format (GSM followed by digits)
-        - Requires NCBI_EMAIL environment variable
-        - NCBI_API_KEY is optional but recommended for higher rate limits
-        - Rate limited to 3 requests per second without API key
+            JSON string containing the GSM metadata.
         """
-        
         # Use session defaults if not provided
         if email is None:
             email = default_email
@@ -169,16 +99,37 @@ def get_geo_tools(
             api_key = default_api_key
         
         try:
+            print(f"🔧 extract_gsm_metadata called with gsm_id: {gsm_id}")
+            
             # Validate GSM ID format
             if not gsm_id.upper().startswith("GSM") or not gsm_id[3:].isdigit():
                 raise ValueError(f"Invalid GSM ID format: {gsm_id}")
             
             # Extract metadata
+            print(f"🔧 Calling get_gsm_metadata for {gsm_id}")
             metadata = get_gsm_metadata(gsm_id)
+            print(f"🔧 get_gsm_metadata returned: {type(metadata)}")
             
-            return json.dumps(metadata, indent=2, ensure_ascii=False)
+            # Save to session directory
+            output_file = Path(session_dir) / f"{gsm_id}_metadata.json"
+            with open(output_file, 'w') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            # Return a concise summary instead of full JSON
+            summary = {
+                "status": "success",
+                "gsm_id": gsm_id,
+                "file_saved": str(output_file),
+                "sample_count": 1,
+                "key_attributes": list(metadata.get("attributes", {}).keys())[:10] if metadata.get("attributes") else [],
+                "message": f"Metadata extracted and saved to {output_file}"
+            }
+            return json.dumps(summary, indent=2, ensure_ascii=False)
             
         except Exception as e:
+            print(f"❌ Exception in extract_gsm_metadata: {e}")
+            import traceback
+            traceback.print_exc()
             error_result = {
                 "error": str(e),
                 "gsm_id": gsm_id,
@@ -213,50 +164,8 @@ def get_geo_tools(
         Returns
         -------
         str
-            JSON string containing the GSE metadata with the following structure:
-            {
-                "gse_id": "GSE41588",
-                "status": "retrieved",
-                "attributes": {
-                    "title": "Series title",
-                    "geo_accession": "GSE41588",
-                    "status": "Public on ...",
-                    "submission_date": "...",
-                    "last_update_date": "...",
-                    "pubmed_id": "23902433",
-                    "summary": "...",
-                    "overall_design": "...",
-                    "type": "Expression profiling by high throughput sequencing",
-                    "sample_id": "GSM1019743",
-                    "contact_name": "...",
-                    "contact_email": "...",
-                    "contact_institute": "...",
-                    "supplementary_file": "...",
-                    "platform_id": "GPL11154",
-                    "platform_organism": "Homo sapiens",
-                    "platform_taxid": "9606",
-                    "sample_organism": "Homo sapiens",
-                    "sample_taxid": "9606",
-                    "relation": "..."
-                },
-                "type": "GSE"
-            }
-        
-        Examples
-        --------
-        >>> result = extract_gse_metadata("GSE41588")
-        >>> data = json.loads(result)
-        >>> print(data["gse_id"])  # "GSE41588"
-        >>> print(data["attributes"]["title"])  # Series title
-        
-        Note
-        ----
-        - GSE ID must be in valid format (GSE followed by digits)
-        - Requires NCBI_EMAIL environment variable
-        - NCBI_API_KEY is optional but recommended for higher rate limits
-        - Rate limited to 3 requests per second without API key
+            JSON string containing the GSE metadata.
         """
-        
         # Use session defaults if not provided
         if email is None:
             email = default_email
@@ -269,9 +178,24 @@ def get_geo_tools(
                 raise ValueError(f"Invalid GSE ID format: {gse_id}")
             
             # Extract metadata
+            print(f"🔧 Calling get_gse_metadata for {gse_id}")
             metadata = get_gse_metadata(gse_id)
+            print(f"🔧 get_gse_metadata returned: {type(metadata)}")
             
-            return json.dumps(metadata, indent=2, ensure_ascii=False)
+            # Save to session directory
+            output_file = Path(session_dir) / f"{gse_id}_metadata.json"
+            with open(output_file, 'w') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            # Return a concise summary instead of full JSON
+            summary = {
+                "status": "success",
+                "gse_id": gse_id,
+                "file_saved": str(output_file),
+                "key_attributes": list(metadata.get("attributes", {}).keys())[:10] if metadata.get("attributes") else [],
+                "message": f"Metadata extracted and saved to {output_file}"
+            }
+            return json.dumps(summary, indent=2, ensure_ascii=False)
             
         except Exception as e:
             error_result = {
@@ -290,12 +214,8 @@ def get_geo_tools(
         """
         Extract series matrix metadata and sample names for a GEO Series (GSE) record.
         
-        This tool retrieves the series matrix metadata and sample names without
-        downloading the actual gene expression data. It provides:
-        - All metadata lines (starting with !)
-        - Sample names from the matrix header
-        - File download links
-        - Platform information
+        This tool retrieves metadata and sample names from the series matrix file
+        without downloading the full gene expression data.
         
         Parameters
         ----------
@@ -311,52 +231,8 @@ def get_geo_tools(
         Returns
         -------
         str
-            JSON string containing the series matrix metadata with the following structure:
-            {
-                "gse_id": "GSE41588",
-                "type": "series_matrix_metadata",
-                "sample_count": 6,
-                "platform_count": 1,
-                "metadata": {
-                    "platform_id": {
-                        "!Series_title": "...",
-                        "!Series_summary": "...",
-                        "!Series_overall_design": "...",
-                        "!Sample_geo_accession": "GSM1019742",
-                        "!Sample_title": "...",
-                        "!Sample_characteristics_ch1": "...",
-                        "!Platform_geo_accession": "GPL11154",
-                        "!Platform_title": "...",
-                        "!Platform_organism": "Homo sapiens",
-                        "!Platform_taxid": "9606"
-                    }
-                },
-                "samples": ["GSM1019742", "GSM1019743", ...],
-                "platforms": ["GPL11154"],
-                "available_files": ["GSE41588_series_matrix.txt.gz"],
-                "file_links": ["https://ftp.ncbi.nlm.nih.gov/geo/series/..."],
-                "base_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/...",
-                "total_matrices": 1
-            }
-        
-        Examples
-        --------
-        >>> result = extract_series_matrix_metadata("GSE41588")
-        >>> data = json.loads(result)
-        >>> print(data["gse_id"])  # "GSE41588"
-        >>> print(data["sample_count"])  # 6
-        >>> print(data["samples"])  # ["GSM1019742", "GSM1019743", ...]
-        
-        Note
-        ----
-        - GSE ID must be in valid format (GSE followed by digits)
-        - Only extracts metadata and sample names, not gene expression data
-        - Provides direct download links to full matrix files
-        - Requires NCBI_EMAIL environment variable
-        - NCBI_API_KEY is optional but recommended for higher rate limits
-        - Rate limited to 3 requests per second without API key
+            JSON string containing the series matrix metadata and sample names.
         """
-        
         # Use session defaults if not provided
         if email is None:
             email = default_email
@@ -369,9 +245,24 @@ def get_geo_tools(
                 raise ValueError(f"Invalid GSE ID format: {gse_id}")
             
             # Extract series matrix metadata
-            matrix_data = get_gse_series_matrix(gse_id)
+            metadata = get_gse_series_matrix(gse_id)
             
-            return json.dumps(matrix_data, indent=2, ensure_ascii=False)
+            # Save to session directory
+            output_file = Path(session_dir) / f"{gse_id}_series_matrix.json"
+            with open(output_file, 'w') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            # Return a concise summary instead of full JSON
+            summary = {
+                "status": "success",
+                "gse_id": gse_id,
+                "file_saved": str(output_file),
+                "sample_count": metadata.get("sample_count", 0),
+                "platform_count": metadata.get("platform_count", 0),
+                "total_matrices": metadata.get("total_matrices", 0),
+                "message": f"Series matrix metadata extracted and saved to {output_file}"
+            }
+            return json.dumps(summary, indent=2, ensure_ascii=False)
             
         except Exception as e:
             error_result = {
@@ -388,15 +279,15 @@ def get_geo_tools(
         api_key: str = None
     ) -> str:
         """
-        Extract paper abstract and metadata for a given PubMed ID (PMID).
+        Extract paper abstract and metadata for a given PMID.
         
-        This tool retrieves comprehensive paper information including abstract,
-        title, authors, journal, publication date, DOI, and other metadata.
+        This tool retrieves paper title, abstract, authors, journal, and other
+        metadata from PubMed.
         
         Parameters
         ----------
         pmid : int
-            PubMed ID for the paper (e.g., 23902433).
+            PubMed ID for the paper.
         email : str, optional
             Email address for NCBI E-Utils identification.
             If not provided, uses session default.
@@ -407,36 +298,8 @@ def get_geo_tools(
         Returns
         -------
         str
-            JSON string containing the paper metadata with the following structure:
-            {
-                "pmid": 23902433,
-                "title": "Paper title",
-                "abstract": "Paper abstract text...",
-                "authors": ["Author 1", "Author 2", ...],
-                "journal": "Journal name",
-                "publication_date": "2013",
-                "doi": "doi: 10.1186/...",
-                "keywords": ["keyword1", "keyword2", ...],
-                "mesh_terms": ["term1", "term2", ...]
-            }
-        
-        Examples
-        --------
-        >>> result = extract_paper_abstract(23902433)
-        >>> data = json.loads(result)
-        >>> print(data["pmid"])  # 23902433
-        >>> print(data["title"])  # Paper title
-        >>> print(data["abstract"][:100])  # First 100 chars of abstract
-        
-        Note
-        ----
-        - PMID must be a valid integer
-        - Requires NCBI_EMAIL environment variable
-        - NCBI_API_KEY is optional but recommended for higher rate limits
-        - Rate limited to 3 requests per second without API key
-        - Uses both esummary and efetch APIs for comprehensive data
+            JSON string containing the paper metadata and abstract.
         """
-        
         # Use session defaults if not provided
         if email is None:
             email = default_email
@@ -446,12 +309,28 @@ def get_geo_tools(
         try:
             # Validate PMID format
             if not isinstance(pmid, int) or pmid <= 0:
-                raise ValueError(f"Invalid PMID format: {pmid}. Must be a positive integer.")
+                raise ValueError(f"Invalid PMID format: {pmid}")
             
-            # Extract paper abstract and metadata
-            paper_data = get_paper_abstract(pmid)
+            # Extract paper metadata
+            metadata = get_paper_abstract(pmid)
             
-            return json.dumps(paper_data, indent=2, ensure_ascii=False)
+            # Save to session directory
+            output_file = Path(session_dir) / f"PMID_{pmid}_metadata.json"
+            with open(output_file, 'w') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            # Return a concise summary instead of full JSON
+            summary = {
+                "status": "success",
+                "pmid": pmid,
+                "file_saved": str(output_file),
+                "title": metadata.get("title", ""),
+                "journal": metadata.get("journal", ""),
+                "authors": metadata.get("authors", [])[:3],  # First 3 authors
+                "has_abstract": bool(metadata.get("abstract")),
+                "message": f"Paper metadata extracted and saved to {output_file}"
+            }
+            return json.dumps(summary, indent=2, ensure_ascii=False)
             
         except Exception as e:
             error_result = {
@@ -470,15 +349,10 @@ def get_geo_tools(
         api_key: str = None
     ) -> str:
         """
-        Validate GEO input parameters before metadata extraction.
+        Validate input parameters for GEO metadata extraction.
         
-        This tool performs comprehensive validation of input parameters to ensure
-        they meet the requirements for GEO metadata extraction. It validates:
-        - GSM ID format (must start with "GSM" followed by digits)
-        - GSE ID format (must start with "GSE" followed by digits)
-        - PMID format (must be a positive integer)
-        - Email format (if provided)
-        - API key format (if provided)
+        This tool checks the format and validity of GSM IDs, GSE IDs, and PMIDs
+        before attempting metadata extraction.
         
         Parameters
         ----------
@@ -498,96 +372,47 @@ def get_geo_tools(
         Returns
         -------
         str
-            JSON string containing validation results with the following structure:
-            {
-                "valid": true/false,
-                "errors": ["error message 1", "error message 2", ...],
-                "warnings": ["warning message 1", "warning message 2", ...],
-                "validated_inputs": {
-                    "gsm_id": "GSM1234567",
-                    "gse_id": "GSE12345",
-                    "pmid": 23902433,
-                    "email": "user@example.com",
-                    "api_key": "key_present" or null
-                }
-            }
-        
-        Examples
-        --------
-        >>> result = validate_geo_inputs("GSM1234567", "GSE12345", 23902433)
-        >>> data = json.loads(result)
-        >>> print(data["valid"])  # True
-        
-        >>> result = validate_geo_inputs("INVALID123", "GSE12345")
-        >>> data = json.loads(result)
-        >>> print(data["valid"])  # False
-        >>> print(data["errors"])  # ["Invalid GSM ID format: INVALID123..."]
-        
-        Note
-        ----
-        - This tool does not make any API calls
-        - Validation is purely format-based
-        - Existence of IDs in GEO/PubMed databases is not verified
-        - Email and API key validation is basic format checking
+            JSON string containing validation results.
         """
-        
         # Use session defaults if not provided
         if email is None:
             email = default_email
         if api_key is None:
             api_key = default_api_key
         
-        errors = []
-        warnings = []
-        
-        # Validate GSM ID format
-        if gsm_id:
-            if not gsm_id.upper().startswith("GSM"):
-                errors.append(f"Invalid GSM ID format: {gsm_id}. Must start with 'GSM'")
-            elif not gsm_id[3:].isdigit():
-                errors.append(f"Invalid GSM ID format: {gsm_id}. Must be GSM followed by digits")
-            elif len(gsm_id) < 7:
-                warnings.append(f"GSM ID {gsm_id} seems unusually short")
-        
-        # Validate GSE ID format
-        if gse_id:
-            if not gse_id.upper().startswith("GSE"):
-                errors.append(f"Invalid GSE ID format: {gse_id}. Must start with 'GSE'")
-            elif not gse_id[3:].isdigit():
-                errors.append(f"Invalid GSE ID format: {gse_id}. Must be GSE followed by digits")
-            elif len(gse_id) < 6:
-                warnings.append(f"GSE ID {gse_id} seems unusually short")
-        
-        # Validate PMID format
-        if pmid is not None:
-            if not isinstance(pmid, int) or pmid <= 0:
-                errors.append(f"Invalid PMID format: {pmid}. Must be a positive integer.")
-        
-        # Validate email format (basic check)
-        if email and "@" not in email:
-            errors.append(f"Invalid email format: {email}")
-        elif email and email == "user@example.com":
-            warnings.append("Using default email address - consider providing a real email for NCBI E-Utils")
-        
-        # Validate API key format (basic check)
-        if api_key and len(api_key) < 10:
-            warnings.append("API key seems unusually short")
-        
-        # Prepare validated inputs
-        validated_inputs = {
-            "gsm_id": gsm_id.upper() if gsm_id else None,
-            "gse_id": gse_id.upper() if gse_id else None,
-            "pmid": pmid,
-            "email": email,
-            "api_key": "key_present" if api_key else None
-        }
-        
         result = {
-            "valid": len(errors) == 0,
-            "errors": errors,
-            "warnings": warnings,
-            "validated_inputs": validated_inputs
+            "validation_status": "success",
+            "validated_inputs": {},
+            "errors": []
         }
+        
+        # Validate GSM ID
+        if gsm_id is not None:
+            if gsm_id.upper().startswith("GSM") and gsm_id[3:].isdigit():
+                result["validated_inputs"]["gsm_id"] = gsm_id
+            else:
+                result["errors"].append(f"Invalid GSM ID format: {gsm_id}")
+        
+        # Validate GSE ID
+        if gse_id is not None:
+            if gse_id.upper().startswith("GSE") and gse_id[3:].isdigit():
+                result["validated_inputs"]["gse_id"] = gse_id
+            else:
+                result["errors"].append(f"Invalid GSE ID format: {gse_id}")
+        
+        # Validate PMID
+        if pmid is not None:
+            if isinstance(pmid, int) and pmid > 0:
+                result["validated_inputs"]["pmid"] = pmid
+            else:
+                result["errors"].append(f"Invalid PMID format: {pmid}")
+        
+        # Check environment variables
+        if not email:
+            result["errors"].append("NCBI_EMAIL environment variable is required")
+        
+        if result["errors"]:
+            result["validation_status"] = "failed"
         
         return json.dumps(result, indent=2, ensure_ascii=False)
 

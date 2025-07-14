@@ -1,0 +1,18 @@
+# DendroForge BixBench Configuration
+# ----------------------------------
+# This configuration runs all benchmark capsules using Google Gemini 2.5 Pro.
+
+single_test_id: null
+category_filter: null
+limit: null
+score_existing: null
+
+# --- Concurrency ---
+concurrency: 8
+
+# --- Directories ---
+data_dir: "bixbench_data"
+log_dir: "tests/bixbench_logs"
+
+# --- Model Selection ---
+model_name: "google/gemini-2.5-pro" 

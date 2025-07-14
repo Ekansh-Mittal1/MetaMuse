@@ -1,0 +1,18 @@
+# DendroForge BixBench Configuration
+# ----------------------------------
+# This configuration runs the RNA-seq benchmark capsules using Anthropic Claude Sonnet-4.
+
+single_test_id: null
+category_filter: ["RNA-seq"]
+limit: null
+score_existing: null
+
+# --- Concurrency ---
+concurrency: 2
+
+# --- Directories ---
+data_dir: "bixbench_data"
+log_dir: "tests/bixbench_logs"
+
+# --- Model Selection ---
+model_name: "anthropic/claude-sonnet-4" 
