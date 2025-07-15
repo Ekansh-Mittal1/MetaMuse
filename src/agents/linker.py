@@ -20,7 +20,7 @@ class LinkerHandoff(BaseHandoff):
         ..., description="The sample ID to process and link metadata for (e.g., GSM1000981)."
     )
     fields_to_remove: list[str] = Field(
-        default=None,
+        default=[],
         description="List of fields to remove from metadata files during cleaning. If not provided, uses default fields."
     )
     session_directory: str = Field(
@@ -34,7 +34,7 @@ def on_handoff_callback(ctx: RunContextWrapper[None], input_data: BaseHandoff):
 
 
 def create_linker_agent(
-    session_id: str = None, sandbox_dir: str = None, handoffs: list = None, existing_session_dir: str = None
+    session_id: str = None, sandbox_dir: str = None, handoffs: list = None, existing_session_dir: str = None, input_data: str = None
 ) -> Agent:
     """
     Factory method to create a metadata linking agent.
@@ -59,36 +59,54 @@ def create_linker_agent(
     Agent
         An instance of an Agent configured for metadata linking tasks.
     """
-    if existing_session_dir:
-        # Use existing session directory
-        session_dir = Path(existing_session_dir).absolute()
-        if not session_dir.exists():
-            raise ValueError(f"Existing session directory does not exist: {existing_session_dir}")
-        session_id = session_dir.name
-    else:
-        # Create new session directory
-        if session_id is None:
-            session_id = str(uuid4())
+    try:
+        # Check if "testing" is in the input data
+        is_testing = input_data and "testing" in input_data.lower()
+        if is_testing:
+            print(f"🧪 LinkerAgent: Testing mode detected")
+            # Force testing session directory
+            session_dir = Path("sandbox/test-session").absolute()
+            session_dir.mkdir(parents=True, exist_ok=True)
+            session_id = "test-session"
+        elif existing_session_dir:
+            # Use existing session directory
+            session_dir = Path(existing_session_dir).absolute()
+            if not session_dir.exists():
+                error_msg = f"Existing session directory does not exist: {existing_session_dir}"
+                print(f"❌ LinkerAgent: {error_msg}")
+                raise ValueError(error_msg)
+            session_id = session_dir.name
+        else:
+            # Create new session directory
+            if session_id is None:
+                session_id = str(uuid4())
 
-        if sandbox_dir is None:
-            sandbox_dir = "sandbox"
+            if sandbox_dir is None:
+                sandbox_dir = "sandbox"
 
-        session_dir = (Path(sandbox_dir) / session_id).absolute()
-        session_dir.mkdir(parents=True, exist_ok=True)
+            session_dir = (Path(sandbox_dir) / session_id).absolute()
+            session_dir.mkdir(parents=True, exist_ok=True)
 
-    tools = get_session_tools(session_dir)
-    print(f"🔧 Created {len(tools)} tools for session {session_id}")
-    print(f"🔧 Tool names: {[t.name for t in tools]}")
+        tools = get_session_tools(session_dir)
+        print(f"✅ LinkerAgent: Initialized with {len(tools)} tools")
 
-    instructions = RECOMMENDED_PROMPT_PREFIX + "\n\n" + load_prompt(
-        "linker_agent.md", 
-        session_dir=str(session_dir)
-    )
-    print(f"📝 Loaded instructions: {len(instructions)} characters")
+        instructions = RECOMMENDED_PROMPT_PREFIX + "\n\n" + load_prompt(
+            "linker_agent.md", 
+            session_dir=str(session_dir)
+        )
 
-    return Agent(
-        name="LinkerAgent",
-        instructions=instructions,
-        tools=tools,
-        handoffs=handoffs or [],
-    ) 
+        agent = Agent(
+            name="LinkerAgent",
+            instructions=instructions,
+            tools=tools,
+            handoffs=handoffs or [],
+        )
+        
+        return agent
+        
+    except Exception as e:
+        print(f"❌ LinkerAgent creation error: {str(e)}")
+        import traceback
+        print("🔍 LinkerAgent creation traceback:")
+        traceback.print_exc()
+        raise 

@@ -11,7 +11,6 @@ You should never call stop, unless you are told that you are a final agent and c
 **Tool Usage Guidelines:**
 - **extract_gsm_metadata**: Use for GEO Sample (GSM) metadata extraction
 - **extract_gse_metadata**: Use for GEO Series (GSE) metadata extraction  
-- **extract_series_matrix_metadata**: Use for series matrix metadata and sample names
 - **extract_paper_abstract**: Use for PubMed paper abstracts and metadata
 - **validate_geo_inputs**: Use to validate input formats before extraction
 

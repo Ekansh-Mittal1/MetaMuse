@@ -69,38 +69,74 @@ class SimpleOrchestrator:
         RunResultStreaming
             The result from Runner.run
         """
-        # Add sandbox_dir to kwargs so workflow functions can pass it to agent factories
-        kwargs['sandbox_dir'] = self.sandbox_dir
-        
-        # Build the agent chain using the workflow function
-        # Only pass session_id if it's not already in kwargs (for existing session directories)
-        if 'session_id' not in kwargs:
-            kwargs['session_id'] = self.session_id
-        entry_agent = workflow_func(**kwargs)
-        
-        # Prepare run config if model provider is specified
-        run_config = None
-        if self.model_provider:
-            run_config = RunConfig(
-                model_provider=self.model_provider,
-                model_settings=ModelSettings(
-                    max_tokens=self.provider_max_tokens,
-                    reasoning=Reasoning(
-                        effort="high",
-                    )
-                ),
-            )
-        
-        # Run the workflow
-        print(f"🔄 Executing workflow with input: {input_data}")
-        result = await Runner.run(
-            entry_agent,
-            input_data,
-            run_config=run_config
-        )
-        print(f"✅ Workflow execution completed")
-        
-        return result
+        try:
+            # Add sandbox_dir to kwargs so workflow functions can pass it to agent factories
+            kwargs['sandbox_dir'] = self.sandbox_dir
+            
+            # Build the agent chain using the workflow function
+            # Only pass session_id if it's not already in kwargs (for existing session directories)
+            if 'session_id' not in kwargs:
+                kwargs['session_id'] = self.session_id
+            
+            entry_agent = workflow_func(**kwargs)
+            print(f"✅ Orchestrator: Agent built successfully")
+            
+            # Prepare run config if model provider is specified
+            run_config = None
+            if self.model_provider:
+                extra_body = {
+                    "provider": {
+                        "order": [
+                            "google-vertex/us"
+                        ]
+                    }
+                }
+                
+                # Add max_tokens to extra_body if specified
+                if self.provider_max_tokens is not None:
+                    extra_body["max_tokens"] = self.provider_max_tokens
+                    print(f"🔧 Debug: Setting max_tokens to {self.provider_max_tokens} in extra_body")
+                else:
+                    print(f"⚠️  Debug: provider_max_tokens is None")
+                
+                run_config = RunConfig(
+                    model_provider=self.model_provider,
+                    model_settings=ModelSettings(
+                        max_tokens=self.provider_max_tokens,
+                        reasoning=Reasoning(
+                            effort="high",
+                        ),
+                        extra_body=extra_body
+                    ),
+                )
+            
+            # Run the workflow
+            try:
+                # Get max_turns from kwargs or use a higher default for LinkerAgent
+                max_turns = kwargs.get('max_turns', 50)  # Increased from default 10
+                print(f"🔧 Debug: Using max_turns={max_turns}")
+                
+                result = await Runner.run(
+                    entry_agent,
+                    input_data,
+                    run_config=run_config,
+                    max_turns=max_turns
+                )
+                return result
+            except Exception as e:
+                print(f"❌ Runner.run failed: {str(e)}")
+                print("🔍 Runner.run traceback:")
+                import traceback
+                traceback.print_exc()
+                # Re-raise to ensure it's not suppressed
+                raise
+            
+        except Exception as e:
+            print(f"❌ Orchestrator error: {str(e)}")
+            import traceback
+            print("🔍 Orchestrator traceback:")
+            traceback.print_exc()
+            raise
     
     def get_session_files(self) -> list[str]:
         """

@@ -76,10 +76,7 @@ class LinkerTools:
             import sys
             print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
             traceback.print_exc()
-            return LinkerResult(
-                success=False,
-                message=error_msg
-            )
+            raise
     
     def find_sample_directory(self, sample_id: str) -> LinkerResult:
         """
@@ -141,9 +138,16 @@ class LinkerTools:
         try:
             if fields_to_remove is None:
                 fields_to_remove = [
-                    'status', 'submission_date', 'last_update_date',
-                    'extract_protocol_ch1', 'growth_protocol_ch1', 
-                    'treatment_protocol_ch1', 'data_processing'
+                    # GSE and GSM fields to remove from attributes
+                    'status', 'submission_date', 'last_update_date', 'contributor',
+                    # Contact fields
+                    'contact_name', 'contact_email', 'contact_laboratory', 
+                    'contact_department', 'contact_institute', 'contact_address',
+                    'contact_city', 'contact_state', 'contact_zip/postal_code', 'contact_country',
+                    # Protocol and processing fields
+                    'extract_protocol_ch1', 'growth_protocol_ch1', 'treatment_protocol_ch1', 'data_processing',
+                    # PMID fields to remove
+                    'authors', 'journal', 'publication_date', 'keywords', 'mesh_terms'
                 ]
             
             dir_result = self.find_sample_directory(sample_id)
@@ -163,6 +167,13 @@ class LinkerTools:
                 cleaned_series_file = cleaned_dir / f"{series_id}_metadata_cleaned.json"
                 self._clean_json_file(series_metadata_file, cleaned_series_file, fields_to_remove)
                 files_created.append(str(cleaned_series_file))
+            
+            # Clean sample metadata file (GSM file)
+            sample_metadata_file = series_dir / f"{sample_id}_metadata.json"
+            if sample_metadata_file.exists():
+                cleaned_sample_file = cleaned_dir / f"{sample_id}_metadata_cleaned.json"
+                self._clean_json_file(sample_metadata_file, cleaned_sample_file, fields_to_remove)
+                files_created.append(str(cleaned_sample_file))
             
             # Clean abstract metadata file
             abstract_files = list(series_dir.glob("PMID_*_metadata.json"))
@@ -191,10 +202,7 @@ class LinkerTools:
             import sys
             print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
             traceback.print_exc()
-            return LinkerResult(
-                success=False,
-                message=error_msg
-            )
+            raise
     
     def _clean_json_file(self, input_file: Path, output_file: Path, fields_to_remove: List[str]):
         """
@@ -225,7 +233,7 @@ class LinkerTools:
             import sys
             print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
             traceback.print_exc()
-            raise Exception(error_msg)
+            raise
     
     def _remove_fields_recursive(self, data: Any, fields_to_remove: List[str]):
         """
@@ -312,10 +320,7 @@ class LinkerTools:
             import sys
             print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
             traceback.print_exc()
-            return LinkerResult(
-                success=False,
-                message=error_msg
-            )
+            raise
     
     def extract_matrix_metadata(self, sample_id: str) -> LinkerResult:
         """
@@ -381,10 +386,7 @@ class LinkerTools:
             import sys
             print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
             traceback.print_exc()
-            return LinkerResult(
-                success=False,
-                message=error_msg
-            )
+            raise
     
     def extract_sample_metadata(self, sample_id: str) -> LinkerResult:
         """
@@ -484,14 +486,14 @@ class LinkerTools:
             import sys
             print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
             traceback.print_exc()
-            return LinkerResult(
-                success=False,
-                message=error_msg
-            )
+            raise
     
     def package_linked_data(self, sample_id: str, fields_to_remove: List[str] = None) -> LinkerResult:
         """
         Package all linked information for a sample into a comprehensive result.
+        
+        This method packages cleaned metadata files without requiring series matrix files.
+        Series matrix functionality has been removed from agent access and is now legacy.
         
         Parameters
         ----------
@@ -516,37 +518,31 @@ class LinkerTools:
             if not clean_result.success:
                 return clean_result
             
-            # Extract matrix metadata
-            matrix_metadata_result = self.extract_matrix_metadata(sample_id)
-            if not matrix_metadata_result.success:
-                return matrix_metadata_result
-            
-            # Extract sample-specific metadata
-            sample_metadata_result = self.extract_sample_metadata(sample_id)
-            if not sample_metadata_result.success:
-                return sample_metadata_result
-            
-            # Load original sample metadata
+            # Load cleaned sample metadata
             series_dir = Path(dir_result.data['directory'])
-            sample_metadata_file = series_dir / f"{sample_id}_metadata.json"
+            cleaned_dir = series_dir / "cleaned"
+            cleaned_sample_metadata_file = cleaned_dir / f"{sample_id}_metadata_cleaned.json"
             sample_metadata = {}
-            if sample_metadata_file.exists():
-                with open(sample_metadata_file, 'r') as f:
+            if cleaned_sample_metadata_file.exists():
+                with open(cleaned_sample_metadata_file, 'r') as f:
                     sample_metadata = json.load(f)
+            else:
+                # Fallback to original if cleaned doesn't exist
+                sample_metadata_file = series_dir / f"{sample_id}_metadata.json"
+                if sample_metadata_file.exists():
+                    with open(sample_metadata_file, 'r') as f:
+                        sample_metadata = json.load(f)
             
-            # Package everything together
+            # Package everything together (without series matrix data)
             packaged_data = {
                 'sample_id': sample_id,
                 'series_id': dir_result.data['series_id'],
                 'directory': dir_result.data['directory'],
                 'cleaned_files': clean_result.files_created,
                 'sample_metadata': sample_metadata,
-                'matrix_metadata': matrix_metadata_result.data,
-                'sample_matrix_data': sample_metadata_result.data,
                 'processing_summary': {
                     'cleaned_files_count': len(clean_result.files_created),
-                    'matrix_metadata_fields': len(matrix_metadata_result.data),
-                    'sample_data_points': len(sample_metadata_result.data['data'])
+                    'note': 'Series matrix functionality has been removed from agent access'
                 }
             }
             
@@ -557,7 +553,7 @@ class LinkerTools:
             
             return LinkerResult(
                 success=True,
-                message=f"Successfully packaged linked data for sample {sample_id}",
+                message=f"Successfully packaged linked data for sample {sample_id} (series matrix functionality removed)",
                 data=packaged_data,
                 files_created=[str(packaged_file)]
             )
@@ -569,10 +565,7 @@ class LinkerTools:
             import sys
             print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
             traceback.print_exc()
-            return LinkerResult(
-                success=False,
-                message=error_msg
-            )
+            raise
 
 
 # Implementation functions for tool_utils.py

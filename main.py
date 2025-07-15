@@ -4,6 +4,7 @@ import asyncio
 import argparse
 import os
 import sys
+import traceback
 from pathlib import Path
 from datetime import datetime
 from uuid import uuid4
@@ -29,6 +30,16 @@ from src.workflows.MetaMuse import create_extraction_pipeline, create_multi_agen
 
 load_dotenv(override=True)
 
+# Set up exception hook to catch any unhandled exceptions
+def exception_hook(exctype, value, tb):
+    print(f"\n❌ UNHANDLED EXCEPTION: {exctype.__name__}: {value}")
+    print("🔍 FULL TRACEBACK:")
+    print("-" * 60)
+    traceback.print_exception(exctype, value, tb)
+    sys.exit(1)
+
+sys.excepthook = exception_hook
+
 BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -41,14 +52,10 @@ if not API_KEY:
 # Only the following models are supported. Each entry also defines its context
 # window so that the orchestrator can automatically respect model limits.
 MODEL_CHOICES = (
-    "openai/gpt-4o",
-    "anthropic/claude-3.5-sonnet",
-    "google/gemini-2.0-flash-exp",
+    "google/gemini-2.5-flash",
 )
 MODEL_TOKEN_LIMITS: dict[str, int] = {
-    "openai/gpt-4o": 4_096,
-    "anthropic/claude-3.5-sonnet": 4_096,
-    "google/gemini-2.0-flash-exp": 4_096,
+    "google/gemini-2.5-flash": 4_096,
 }
 
 # Disable tracing for OpenRouter
@@ -70,7 +77,8 @@ class CustomModelProvider(ModelProvider):
             api_key=API_KEY,
             default_headers={
                 "HTTP-Referer": "localhost",
-                "X-Title": "MetaMuse GEO Extraction"
+                "X-Title": "MetaMuse GEO Extraction",
+                "X-App-Name": "MetaMuse"
             }
         )
         return OpenAIChatCompletionsModel(model=model, openai_client=client)
@@ -138,12 +146,20 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         # Run the workflow with existing session directory if specified
         if existing_session_dir and workflow_name == "linking":
             result = await orchestrator.run_workflow(
-                lambda **kwargs: workflow_func(existing_session_dir=existing_session_dir), 
+                lambda **kwargs: workflow_func(existing_session_dir=existing_session_dir, input_data=input_data), 
                 input_data, 
                 session_id=session_id,  # Pass session_id explicitly to avoid orchestrator adding it
                 **kwargs
             )
+        elif workflow_name in ["linking", "full_pipeline", "multi_agent_geo"]:
+            # These workflows need input_data for testing detection
+            result = await orchestrator.run_workflow(
+                lambda **kwargs: workflow_func(input_data=input_data), 
+                input_data, 
+                **kwargs
+            )
         else:
+            # Extraction pipeline doesn't need input_data
             result = await orchestrator.run_workflow(workflow_func, input_data, **kwargs)
         
         print("\n" + "=" * 60)
@@ -179,10 +195,18 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         
     except Exception as e:
         print(f"\n❌ Workflow failed: {str(e)}")
-        import traceback
         print("\n🔍 Full traceback:")
         print("-" * 40)
         traceback.print_exc()
+        
+        # Also print to stderr for better visibility
+        print(f"\n❌ ERROR DETAILS (stderr):", file=sys.stderr)
+        print(f"Error type: {type(e).__name__}", file=sys.stderr)
+        print(f"Error message: {str(e)}", file=sys.stderr)
+        print("Full traceback:", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        
+        # Re-raise the exception to ensure it's not silently caught
         raise
 
 
@@ -229,7 +253,7 @@ Examples:
     parser.add_argument(
         "--model",
         choices=MODEL_CHOICES,
-        default="openai/gpt-4o",
+        default="google/gemini-2.5-flash",
         help="Model to use for processing"
     )
     

@@ -8,6 +8,7 @@ import urllib.request
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+import traceback
 
 
 class NCBIClient:
@@ -65,24 +66,44 @@ class NCBIClient:
         # Use the GEO soft file format which is more reliable for GSM records
         geo_url = f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gsm_id}&targ=self&form=text&view=full"
         
-        try:
-            # Make the request to GEO
-            response = self.client.open(geo_url)
-            content = response.read().decode('utf-8')
-            
-            # Parse the SOFT format response
-            metadata = self._parse_soft_format(content, gsm_id)
-            
-            # Add small delay to respect rate limits
-            time.sleep(0.34)  # ~3 requests per second
-            
-            return metadata
-            
-        except urllib.error.HTTPError as e:
-            raise urllib.error.HTTPError(
-                geo_url, e.code, f"Failed to retrieve metadata for {gsm_id}", 
-                e.hdrs, e.fp
-            )
+        max_retries = 3
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                # Make the request to GEO
+                response = self.client.open(geo_url)
+                content = response.read().decode('utf-8')
+                
+                # Parse the SOFT format response
+                metadata = self._parse_soft_format(content, gsm_id)
+                
+                # Add small delay to respect rate limits
+                time.sleep(0.34)  # ~3 requests per second
+                
+                return metadata
+                
+            except urllib.error.HTTPError as e:
+                if e.code in [502, 503, 504, 429] and attempt < max_retries - 1:
+                    # Retry on server errors (502, 503, 504) and rate limiting (429)
+                    print(f"⚠️  HTTP {e.code} error for {gsm_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    raise urllib.error.HTTPError(
+                        geo_url, e.code, f"Failed to retrieve metadata for {gsm_id} after {attempt + 1} attempts", 
+                        e.hdrs, e.fp
+                    )
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"⚠️  Unexpected error for {gsm_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    traceback.print_exc()
+                    raise
     
     def get_gse_metadata(self, gse_id: str) -> Dict[str, Any]:
         """
@@ -105,27 +126,45 @@ class NCBIClient:
         # Use the GEO soft file format for GSE records
         geo_url = f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gse_id}&targ=self&form=text&view=full"
         
-        try:
-            # Make the request to GEO
-            response = self.client.open(geo_url)
-            content = response.read().decode('utf-8')
-            
-            # Parse the SOFT format response
-            metadata = self._parse_soft_format(content, gse_id)
-            metadata["type"] = "GSE"
-            
-            # Add small delay to respect rate limits
-            time.sleep(0.34)  # ~3 requests per second
-            
-            return metadata
-            
-        except urllib.error.HTTPError as e:
-            raise urllib.error.HTTPError(
-                geo_url, e.code, f"Failed to retrieve metadata for {gse_id}", 
-                e.hdrs, e.fp
-            )
-        except Exception as e:
-            raise RuntimeError(f"Error retrieving metadata for {gse_id}: {e}")
+        max_retries = 3
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                # Make the request to GEO
+                response = self.client.open(geo_url)
+                content = response.read().decode('utf-8')
+                
+                # Parse the SOFT format response
+                metadata = self._parse_soft_format(content, gse_id)
+                metadata["type"] = "GSE"
+                
+                # Add small delay to respect rate limits
+                time.sleep(0.34)  # ~3 requests per second
+                
+                return metadata
+                
+            except urllib.error.HTTPError as e:
+                if e.code in [502, 503, 504, 429] and attempt < max_retries - 1:
+                    # Retry on server errors (502, 503, 504) and rate limiting (429)
+                    print(f"⚠️  HTTP {e.code} error for {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    raise urllib.error.HTTPError(
+                        geo_url, e.code, f"Failed to retrieve metadata for {gse_id} after {attempt + 1} attempts", 
+                        e.hdrs, e.fp
+                    )
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"⚠️  Unexpected error for {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    traceback.print_exc()
+                    raise
     
     def get_paper_abstract(self, pmid: int) -> Dict[str, Any]:
         """
@@ -223,7 +262,8 @@ class NCBIClient:
             return paper_info
             
         except Exception as e:
-            raise RuntimeError(f"Error getting paper abstract for PMID {pmid}: {e}")
+            traceback.print_exc()
+            raise
     
     def _parse_pubmed_xml(self, xml_content: str) -> Dict[str, Any]:
         """
@@ -394,6 +434,8 @@ class NCBIClient:
             }
             
         except Exception as e:
+            traceback.print_exc()
+            raise
             return {
                 "file_size_bytes": None,
                 "file_size_human": "Unknown",
@@ -421,141 +463,161 @@ class NCBIClient:
         if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
             raise ValueError(f"Invalid GSE ID format: {gse_id}")
         
-        try:
-            # GEO stores series folders in batches of 1,000: e.g. GSE123 → GSE123nnn
-            prefix = gse_id[:-3] + "nnn"
-            base_url = f"https://ftp.ncbi.nlm.nih.gov/geo/series/{prefix}/{gse_id}/matrix/"
-            
-            # First, try to get the directory listing to find available matrix files
+        max_retries = 3
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
             try:
-                # Try to get directory listing
-                dir_response = urllib.request.urlopen(base_url)
-                dir_content = dir_response.read().decode('utf-8')
+                # GEO stores series folders in batches of 1,000: e.g. GSE123 → GSE123nnn
+                prefix = gse_id[:-3] + "nnn"
+                base_url = f"https://ftp.ncbi.nlm.nih.gov/geo/series/{prefix}/{gse_id}/matrix/"
                 
-                # Parse directory listing to find all series matrix files
-                import re
-                matrix_files = []
-                # Simple pattern to find all files ending with _series_matrix.txt.gz
-                pattern = r'<a href="([^"]+_series_matrix\.txt\.gz)">'
-                matches = re.findall(pattern, dir_content)
-                matrix_files.extend(matches)
-                
-                if not matrix_files:
-                    # Fallback: try the standard naming convention
-                    matrix_files = [f"{gse_id}_series_matrix.txt.gz"]
-                    
-            except:
-                # If directory listing fails, try the standard naming convention
-                matrix_files = [f"{gse_id}_series_matrix.txt.gz"]
-            
-            # Process each matrix file found
-            all_metadata = {}
-            all_samples = []
-            all_platforms = []
-            file_info = []
-            
-            for matrix_file in matrix_files:
-                url = base_url + matrix_file
-                
-                # Get file size information
-                file_size_info = self._get_file_size(url)
-                file_info.append({
-                    "filename": matrix_file,
-                    "url": url,
-                    "file_size_bytes": file_size_info["file_size_bytes"],
-                    "file_size_human": file_size_info["file_size_human"],
-                    "size_status": file_size_info["status"]
-                })
-                
+                # First, try to get the directory listing to find available matrix files
                 try:
-                    # Download the gzipped matrix
-                    response = urllib.request.urlopen(url)
-                    gzipped_content = response.read()
+                    # Try to get directory listing
+                    dir_response = urllib.request.urlopen(base_url)
+                    dir_content = dir_response.read().decode('utf-8')
                     
-                    # Decompress and read the content
-                    import gzip
-                    from io import BytesIO
+                    # Parse directory listing to find all series matrix files
+                    import re
+                    matrix_files = []
+                    # Simple pattern to find all files ending with _series_matrix.txt.gz
+                    pattern = r'<a href="([^"]+_series_matrix\.txt\.gz)">'
+                    matches = re.findall(pattern, dir_content)
+                    matrix_files.extend(matches)
                     
-                    # Decompress the gzipped content
-                    with gzip.open(BytesIO(gzipped_content), 'rt') as f:
-                        content = f.read()
+                    if not matrix_files:
+                        # Fallback: try the standard naming convention
+                        matrix_files = [f"{gse_id}_series_matrix.txt.gz"]
+                        
+                except:
+                    # If directory listing fails, try the standard naming convention
+                    matrix_files = [f"{gse_id}_series_matrix.txt.gz"]
+                
+                # Process each matrix file found
+                all_metadata = {}
+                all_samples = []
+                all_platforms = []
+                file_info = []
+                
+                for matrix_file in matrix_files:
+                    url = base_url + matrix_file
                     
-                    # Parse the content to extract metadata and sample names only
-                    lines = content.split('\n')
-                    metadata = {}
-                    sample_names = []
-                    in_matrix_section = False
-                    found_sample_row = False
+                    # Get file size information
+                    file_size_info = self._get_file_size(url)
+                    file_info.append({
+                        "filename": matrix_file,
+                        "url": url,
+                        "file_size_bytes": file_size_info["file_size_bytes"],
+                        "file_size_human": file_size_info["file_size_human"],
+                        "size_status": file_size_info["status"]
+                    })
                     
-                    for line in lines:
-                        line = line.strip()
-                        if line.startswith('!'):
-                            # Parse metadata lines
-                            if '=' in line:
-                                key, value = line.split('=', 1)
-                                key = key.replace('!', '').strip()
-                                value = value.strip()
-                                metadata[key] = value
-                        elif line.startswith('!series_matrix_table_begin'):
-                            # Mark the beginning of the matrix section
-                            in_matrix_section = True
-                        elif in_matrix_section and line and not line.startswith('^') and not found_sample_row:
-                            # This is the first row after the table begin marker - sample names
-                            sample_names = line.split('\t')
-                            found_sample_row = True
-                            # Stop processing after getting sample names
-                            break
-                    
-                    # Extract platform ID from filename
-                    platform_id = matrix_file.replace(f"{gse_id}-", "").replace("_series_matrix.txt.gz", "")
-                    
-                    # Store metadata for this platform
-                    all_metadata[platform_id] = metadata
-                    
-                    # Extract sample and platform information from metadata
-                    for key, value in metadata.items():
-                        if 'sample_geo_accession' in key.lower():
-                            all_samples.append(value)
-                        elif 'platform_geo_accession' in key.lower():
-                            all_platforms.append(value)
-                    
-                    # Add sample names from the matrix header
-                    if sample_names:
-                        all_samples.extend(sample_names[1:])  # Skip the first column (probe IDs)
-                    
-                except Exception as e:
-                    print(f"Warning: Could not process matrix file {matrix_file}: {e}")
+                    try:
+                        # Download the gzipped matrix
+                        response = urllib.request.urlopen(url)
+                        gzipped_content = response.read()
+                        
+                        # Decompress and read the content
+                        import gzip
+                        from io import BytesIO
+                        
+                        # Decompress the gzipped content
+                        with gzip.open(BytesIO(gzipped_content), 'rt') as f:
+                            content = f.read()
+                        
+                        # Parse the content to extract metadata and sample names only
+                        lines = content.split('\n')
+                        metadata = {}
+                        sample_names = []
+                        in_matrix_section = False
+                        found_sample_row = False
+                        
+                        for line in lines:
+                            line = line.strip()
+                            if line.startswith('!'):
+                                # Parse metadata lines
+                                if '=' in line:
+                                    key, value = line.split('=', 1)
+                                    key = key.replace('!', '').strip()
+                                    value = value.strip()
+                                    metadata[key] = value
+                            elif line.startswith('!series_matrix_table_begin'):
+                                # Mark the beginning of the matrix section
+                                in_matrix_section = True
+                            elif in_matrix_section and line and not line.startswith('^') and not found_sample_row:
+                                # This is the first row after the table begin marker - sample names
+                                sample_names = line.split('\t')
+                                found_sample_row = True
+                                # Stop processing after getting sample names
+                                break
+                        
+                        # Extract platform ID from filename
+                        platform_id = matrix_file.replace(f"{gse_id}-", "").replace("_series_matrix.txt.gz", "")
+                        
+                        # Store metadata for this platform
+                        all_metadata[platform_id] = metadata
+                        
+                        # Extract sample and platform information from metadata
+                        for key, value in metadata.items():
+                            if 'sample_geo_accession' in key.lower():
+                                all_samples.append(value)
+                            elif 'platform_geo_accession' in key.lower():
+                                all_platforms.append(value)
+                        
+                        # Add sample names from the matrix header
+                        if sample_names:
+                            all_samples.extend(sample_names[1:])  # Skip the first column (probe IDs)
+                        
+                    except Exception as e:
+                        traceback.print_exc()
+                        raise
+                        print(f"Warning: Could not process matrix file {matrix_file}: {e}")
+                        continue
+                
+                # Combine all data
+                series_matrix = {
+                    "gse_id": gse_id,
+                    "type": "series_matrix_metadata",
+                    "sample_count": len(set(all_samples)),  # Remove duplicates
+                    "platform_count": len(set(all_platforms)),  # Remove duplicates
+                    "metadata": all_metadata,
+                    "samples": list(set(all_samples)),  # Remove duplicates
+                    "platforms": list(set(all_platforms)),  # Remove duplicates
+                    "available_files": matrix_files,
+                    "file_links": [f"{base_url}{filename}" for filename in matrix_files],
+                    "file_info": file_info,  # New field with file size information
+                    "base_url": base_url,
+                    "total_matrices": len(all_metadata)
+                }
+                
+                # Add small delay to respect rate limits
+                time.sleep(0.34)  # ~3 requests per second
+                
+                return series_matrix
+                
+            except urllib.error.HTTPError as e:
+                if e.code in [502, 503, 504, 429] and attempt < max_retries - 1:
+                    # Retry on server errors (502, 503, 504) and rate limiting (429)
+                    print(f"⚠️  HTTP {e.code} error for series matrix {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
                     continue
-            
-            # Combine all data
-            series_matrix = {
-                "gse_id": gse_id,
-                "type": "series_matrix_metadata",
-                "sample_count": len(set(all_samples)),  # Remove duplicates
-                "platform_count": len(set(all_platforms)),  # Remove duplicates
-                "metadata": all_metadata,
-                "samples": list(set(all_samples)),  # Remove duplicates
-                "platforms": list(set(all_platforms)),  # Remove duplicates
-                "available_files": matrix_files,
-                "file_links": [f"{base_url}{filename}" for filename in matrix_files],
-                "file_info": file_info,  # New field with file size information
-                "base_url": base_url,
-                "total_matrices": len(all_metadata)
-            }
-            
-            # Add small delay to respect rate limits
-            time.sleep(0.34)  # ~3 requests per second
-            
-            return series_matrix
-            
-        except urllib.error.HTTPError as e:
-            raise urllib.error.HTTPError(
-                base_url, e.code, f"Failed to retrieve series matrix for {gse_id}", 
-                    e.hdrs, e.fp
-                )
-        except Exception as e:
-            raise RuntimeError(f"Error processing series matrix for {gse_id}: {e}")
-
+                else:
+                    raise urllib.error.HTTPError(
+                        base_url, e.code, f"Failed to retrieve series matrix for {gse_id} after {attempt + 1} attempts", 
+                        e.hdrs, e.fp
+                    )
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"⚠️  Unexpected error for series matrix {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    traceback.print_exc()
+                    raise RuntimeError(f"Error processing series matrix for {gse_id} after {attempt + 1} attempts: {e}")
+    
     def _parse_soft_format(self, content: str, record_id: str) -> Dict[str, Any]:
         """
         Parse the SOFT format response from GEO.
@@ -790,6 +852,8 @@ def extract_pubmed_id_from_gse_metadata(gse_metadata_file: str) -> Dict[str, Any
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in GSE metadata file {gse_metadata_file}: {e}")
     except Exception as e:
+        traceback.print_exc()
+        raise
         raise RuntimeError(f"Error extracting PubMed ID from {gse_metadata_file}: {e}")
 
 
@@ -851,6 +915,8 @@ def extract_series_id_from_gsm_metadata(gsm_metadata_file: str) -> Dict[str, Any
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in GSM metadata file {gsm_metadata_file}: {e}")
     except Exception as e:
+        traceback.print_exc()
+        raise
         raise RuntimeError(f"Error extracting Series ID from {gsm_metadata_file}: {e}")
 
 
@@ -895,7 +961,7 @@ def extract_gsm_metadata_impl(gsm_id: str, session_dir: str, email: str = None, 
     str
         Path to the saved metadata file.
     """
-    print(f"🔧 extract_gsm_metadata called with gsm_id: {gsm_id}")
+    print(f"🔧 extract_gsm_metadata: {gsm_id}")
     
     # Validate GSM ID format
     if not gsm_id.upper().startswith("GSM") or not gsm_id[3:].isdigit():
@@ -952,7 +1018,7 @@ def extract_gse_metadata_impl(gse_id: str, session_dir: str, email: str = None, 
     str
         Path to the saved metadata file.
     """
-    print(f"🔧 extract_gse_metadata called with gse_id: {gse_id}")
+    print(f"🔧 extract_gse_metadata: {gse_id}")
     
     # Validate GSE ID format
     if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
@@ -993,7 +1059,7 @@ def extract_series_matrix_metadata_impl(gse_id: str, session_dir: str, email: st
     str
         Path to the saved metadata file.
     """
-    print(f"🔧 extract_series_matrix_metadata called with gse_id: {gse_id}")
+    print(f"🔧 extract_series_matrix_metadata: {gse_id}")
     
     # Validate GSE ID format
     if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
@@ -1055,7 +1121,7 @@ def extract_paper_abstract_impl(pmid: int, session_dir: str, email: str = None, 
     str
         Path to the saved metadata file.
     """
-    print(f"🔧 extract_paper_abstract called with pmid: {pmid}")
+    print(f"🔧 extract_paper_abstract: PMID {pmid}")
     
     # Validate PMID format
     if not isinstance(pmid, int) or pmid <= 0:
@@ -1126,7 +1192,7 @@ def extract_pubmed_id_from_gse_metadata_impl(gse_metadata_file: str, session_dir
     str
         JSON string containing the extracted PubMed ID and status information.
     """
-    print(f"🔧 extract_pubmed_id_from_gse_metadata called with file: {gse_metadata_file}")
+    print(f"🔧 extract_pubmed_id_from_gse_metadata: {Path(gse_metadata_file).name}")
     
     # Construct full path if relative
     if not os.path.isabs(gse_metadata_file):
@@ -1155,7 +1221,7 @@ def extract_series_id_from_gsm_metadata_impl(gsm_metadata_file: str, session_dir
     str
         JSON string containing the extracted Series ID and status information.
     """
-    print(f"🔧 extract_series_id_from_gsm_metadata called with file: {gsm_metadata_file}")
+    print(f"🔧 extract_series_id_from_gsm_metadata: {Path(gsm_metadata_file).name}")
     
     # Construct full path if relative
     if not os.path.isabs(gsm_metadata_file):
@@ -1183,7 +1249,7 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
     str
         Path to the created mapping file.
     """
-    print(f"🔧 create_series_sample_mapping called for session_dir: {session_dir}")
+    print(f"🔧 create_series_sample_mapping")
     
     session_path = Path(session_dir)
     mapping = {}
@@ -1228,6 +1294,8 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
                                     sample_ids.append(value)
                                     
             except Exception as e:
+                traceback.print_exc()
+                raise
                 print(f"⚠️  Error processing {matrix_file}: {e}")
                 continue
         
@@ -1244,6 +1312,8 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
                     sample_ids.append(gsm_id)
                     
             except Exception as e:
+                traceback.print_exc()
+                raise
                 print(f"⚠️  Error processing {gsm_file}: {e}")
                 continue
         
@@ -1313,7 +1383,7 @@ def validate_geo_inputs_impl(gsm_id: str = None, gse_id: str = None, pmid: int =
     str
         JSON string containing validation results.
     """
-    print(f"🔧 validate_geo_inputs called")
+    print(f"🔧 validate_geo_inputs")
     
     result = {
         "validation_status": "success",

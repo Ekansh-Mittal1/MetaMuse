@@ -63,14 +63,12 @@ def create_ingestion_agent(
     session_dir.mkdir(parents=True, exist_ok=True)
 
     tools = get_session_tools(session_dir)
-    print(f"🔧 Created {len(tools)} tools for session {session_id}")
-    print(f"🔧 Tool names: {[t.name for t in tools]}")
+    print(f"✅ IngestionAgent: Initialized with {len(tools)} tools")
 
     instructions = RECOMMENDED_PROMPT_PREFIX + "\n\n" + load_prompt(
         "ingestion_agent.md", 
         session_dir=str(session_dir)
     )
-    print(f"📝 Loaded instructions: {len(instructions)} characters")
 
     return Agent(
         name="IngestionAgent",

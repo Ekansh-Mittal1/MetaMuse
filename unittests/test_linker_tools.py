@@ -17,9 +17,10 @@ from src.tools.linker_tools import (
     load_mapping_file_impl,
     find_sample_directory_impl,
     clean_metadata_files_impl,
-    download_series_matrix_impl,
-    extract_matrix_metadata_impl,
-    extract_sample_metadata_impl,
+    # Legacy series matrix tools - removed from testing
+    # download_series_matrix_impl,
+    # extract_matrix_metadata_impl,
+    # extract_sample_metadata_impl,
     package_linked_data_impl
 )
 
@@ -78,22 +79,12 @@ class TestLinkerTools:
             }
         }
         
-        self.series_matrix_metadata = {
-            "gse_id": "GSE29282",
-            "type": "series_matrix_metadata",
-            "available_files": ["GSE29282_series_matrix.txt.gz"],
-            "file_links": ["https://example.com/GSE29282_series_matrix.txt.gz"]
-        }
-        
         # Write test files
         with open(self.series_dir / "GSM1000981_metadata.json", 'w') as f:
             json.dump(self.sample_metadata, f)
         
         with open(self.series_dir / "GSE29282_metadata.json", 'w') as f:
             json.dump(self.series_metadata, f)
-        
-        with open(self.series_dir / "GSE29282_series_matrix.json", 'w') as f:
-            json.dump(self.series_matrix_metadata, f)
         
         with open(self.series_dir / "PMID_12345_metadata.json", 'w') as f:
             json.dump({"pmid": 12345, "title": "Test Paper"}, f)
@@ -142,7 +133,7 @@ class TestLinkerTools:
         result = self.tools.clean_metadata_files("GSM1000981", fields_to_remove)
         
         assert result.success is True
-        assert len(result.files_created) == 3  # series, abstract, matrix files
+        assert len(result.files_created) == 2  # series and abstract files
         
         # Check that cleaned files exist
         cleaned_dir = self.series_dir / "cleaned"
@@ -162,135 +153,7 @@ class TestLinkerTools:
         result = self.tools.clean_metadata_files("GSM1000981")
         
         assert result.success is True
-        assert len(result.files_created) == 3
-    
-    @patch('urllib.request.urlretrieve')
-    def test_download_series_matrix_success(self, mock_urlretrieve):
-        """Test successful download of series matrix file."""
-        mock_urlretrieve.return_value = None
-        
-        result = self.tools.download_series_matrix("GSM1000981")
-        
-        assert result.success is True
-        assert result.data['file_name'] == "GSE29282_series_matrix.txt.gz"
-        assert result.data['file_url'] == "https://example.com/GSE29282_series_matrix.txt.gz"
-        mock_urlretrieve.assert_called_once()
-    
-    @patch('urllib.request.urlretrieve')
-    def test_download_series_matrix_failure(self, mock_urlretrieve):
-        """Test failed download of series matrix file."""
-        mock_urlretrieve.side_effect = Exception("Download failed")
-        
-        result = self.tools.download_series_matrix("GSM1000981")
-        
-        assert result.success is False
-        assert "Download failed" in result.message
-    
-    @patch('urllib.request.urlretrieve')
-    @patch('builtins.open', new_callable=mock_open)
-    def test_extract_matrix_metadata_success(self, mock_file, mock_urlretrieve):
-        """Test successful extraction of matrix metadata."""
-        mock_urlretrieve.return_value = None
-        
-        # Mock file content with metadata lines
-        mock_content = """!Series_title="Test Series"
-!Series_summary="Test summary"
-!Sample_geo_accession="GSM1000981"
-ID_REF	VALUE
-probe1	100
-probe2	200
-"""
-        mock_file.return_value.read.return_value = mock_content
-        
-        result = self.tools.extract_matrix_metadata("GSM1000981")
-        
-        assert result.success is True
-        assert "Series_title" in result.data
-        assert result.data["Series_title"] == "Test Series"
-    
-    @patch('urllib.request.urlretrieve')
-    @patch('gzip.open', new_callable=mock_open)
-    def test_extract_matrix_metadata_gzipped(self, mock_gzip, mock_urlretrieve):
-        """Test extraction of metadata from gzipped file."""
-        mock_urlretrieve.return_value = None
-        
-        # Mock gzipped file content
-        mock_content = """!Series_title="Test Series"
-!Series_summary="Test summary"
-ID_REF	VALUE
-probe1	100
-"""
-        mock_gzip.return_value.read.return_value = mock_content
-        
-        result = self.tools.extract_matrix_metadata("GSM1000981")
-        
-        assert result.success is True
-        assert "Series_title" in result.data
-    
-    @patch('urllib.request.urlretrieve')
-    @patch('builtins.open', new_callable=mock_open)
-    def test_extract_sample_metadata_success(self, mock_file, mock_urlretrieve):
-        """Test successful extraction of sample metadata."""
-        mock_urlretrieve.return_value = None
-        
-        # Mock file content with sample data
-        mock_content = """!Series_title="Test Series"
-ID_REF	GSM1000981	GSM1000982
-probe1	100	150
-probe2	200	250
-probe3	300	350
-"""
-        mock_file.return_value.read.return_value = mock_content
-        
-        result = self.tools.extract_sample_metadata("GSM1000981")
-        
-        assert result.success is True
-        assert result.data['sample_id'] == "GSM1000981"
-        assert result.data['column_index'] == 1
-        assert "probe1" in result.data['data']
-        assert result.data['data']['probe1'] == "100"
-    
-    @patch('urllib.request.urlretrieve')
-    @patch('builtins.open', new_callable=mock_open)
-    def test_extract_sample_metadata_sample_not_found(self, mock_file, mock_urlretrieve):
-        """Test extraction when sample is not found in matrix."""
-        mock_urlretrieve.return_value = None
-        
-        mock_content = """!Series_title="Test Series"
-ID_REF	GSM1000982	GSM1000983
-probe1	100	150
-"""
-        mock_file.return_value.read.return_value = mock_content
-        
-        result = self.tools.extract_sample_metadata("GSM1000981")
-        
-        assert result.success is False
-        assert "not found in series matrix columns" in result.message
-    
-    @patch('urllib.request.urlretrieve')
-    @patch('builtins.open', new_callable=mock_open)
-    def test_package_linked_data_success(self, mock_file, mock_urlretrieve):
-        """Test successful packaging of linked data."""
-        mock_urlretrieve.return_value = None
-        
-        # Mock matrix file content
-        mock_content = """!Series_title="Test Series"
-ID_REF	GSM1000981
-probe1	100
-probe2	200
-"""
-        mock_file.return_value.read.return_value = mock_content
-        
-        result = self.tools.package_linked_data("GSM1000981")
-        
-        assert result.success is True
-        assert result.data['sample_id'] == "GSM1000981"
-        assert result.data['series_id'] == "GSE29282"
-        assert 'cleaned_files' in result.data
-        assert 'sample_metadata' in result.data
-        assert 'matrix_metadata' in result.data
-        assert 'sample_matrix_data' in result.data
-        assert len(result.files_created) == 1  # packaged file
+        assert len(result.files_created) == 2
 
 
 class TestLinkerToolsImplementations:

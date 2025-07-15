@@ -52,7 +52,8 @@ def create_extraction_pipeline(
 def create_linking_pipeline(
     session_id: str = None,
     sandbox_dir: str = None,
-    existing_session_dir: str = None
+    existing_session_dir: str = None,
+    input_data: str = None
 ) -> Agent:
     """
     Create a metadata linking pipeline.
@@ -78,7 +79,8 @@ def create_linking_pipeline(
         # Use existing session directory
         agent = create_linker_agent(
             existing_session_dir=existing_session_dir,
-            handoffs=[]  # Single agent pipeline, no handoffs needed
+            handoffs=[],  # Single agent pipeline, no handoffs needed
+            input_data=input_data
         )
     else:
         # Create new session directory
@@ -92,7 +94,8 @@ def create_linking_pipeline(
         agent = create_linker_agent(
             session_id=session_id,
             sandbox_dir=sandbox_dir,
-            handoffs=[]  # Single agent pipeline, no handoffs needed
+            handoffs=[],  # Single agent pipeline, no handoffs needed
+            input_data=input_data
         )
     
     return agent
@@ -100,7 +103,8 @@ def create_linking_pipeline(
 
 def create_multi_agent_pipeline(
     session_id: str = None,
-    sandbox_dir: str = None
+    sandbox_dir: str = None,
+    input_data: str = None
 ) -> Agent:
     """
     Create a multi-agent metadata extraction and linking pipeline.
@@ -130,7 +134,8 @@ def create_multi_agent_pipeline(
     linker_agent = create_linker_agent(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
-        handoffs=[]  # End of pipeline, no further handoffs
+        handoffs=[],  # End of pipeline, no further handoffs
+        input_data=input_data
     )
     
     # Create the IngestionAgent with handoff to LinkerAgent
@@ -158,7 +163,8 @@ def on_handoff_callback(ctx, input_data):
 
 def create_full_pipeline(
     session_id: str = None,
-    sandbox_dir: str = None
+    sandbox_dir: str = None,
+    input_data: str = None
 ) -> Agent:
     """
     Create a complete metadata extraction and linking pipeline.
@@ -178,4 +184,4 @@ def create_full_pipeline(
     Agent
         The initial agent in the pipeline (IngestionAgent)
     """
-    return create_multi_agent_pipeline(session_id, sandbox_dir) 
+    return create_multi_agent_pipeline(session_id, sandbox_dir, input_data) 
