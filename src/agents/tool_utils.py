@@ -2,16 +2,15 @@
 Tool utilities for agents to use GEO metadata extraction functionality.
 
 This module exposes the GEO metadata extraction tools as function tools
-that can be used by agents in the system.
+that can be used by agents in the system. All logic is delegated to
+the actual tool implementations in src.tools.ingestion_tools.
 """
 
 from __future__ import annotations
 
-from functools import partial
 from pathlib import Path
-import json
 import os
-from typing import Dict, Any, List, Optional
+import json
 
 from agents import function_tool
 from dotenv import load_dotenv
@@ -19,12 +18,26 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Import the core GEO tools
-from src.tools.geo_metadata import (
-    get_gsm_metadata,
-    get_gse_metadata,
-    get_gse_series_matrix,
-    get_paper_abstract
+# Import the tool implementations
+from src.tools.ingestion_tools import (
+    extract_gsm_metadata_impl,
+    extract_gse_metadata_impl,
+    extract_series_matrix_metadata_impl,
+    extract_paper_abstract_impl,
+    extract_pubmed_id_from_gse_metadata_impl,
+    extract_series_id_from_gsm_metadata_impl,
+    validate_geo_inputs_impl,
+    create_series_sample_mapping_impl
+)
+
+from src.tools.linker_tools import (
+    load_mapping_file_impl,
+    find_sample_directory_impl,
+    clean_metadata_files_impl,
+    download_series_matrix_impl,
+    extract_matrix_metadata_impl,
+    extract_sample_metadata_impl,
+    package_linked_data_impl
 )
 
 
@@ -90,7 +103,7 @@ def get_session_tools(session_dir: str | Path) -> list:
         Returns
         -------
         str
-            JSON string containing the GSM metadata.
+            Path to the saved metadata file.
         """
         # Use session defaults if not provided
         if email is None:
@@ -98,44 +111,7 @@ def get_session_tools(session_dir: str | Path) -> list:
         if api_key is None:
             api_key = default_api_key
         
-        try:
-            print(f"🔧 extract_gsm_metadata called with gsm_id: {gsm_id}")
-            
-            # Validate GSM ID format
-            if not gsm_id.upper().startswith("GSM") or not gsm_id[3:].isdigit():
-                raise ValueError(f"Invalid GSM ID format: {gsm_id}")
-            
-            # Extract metadata
-            print(f"🔧 Calling get_gsm_metadata for {gsm_id}")
-            metadata = get_gsm_metadata(gsm_id)
-            print(f"🔧 get_gsm_metadata returned: {type(metadata)}")
-            
-            # Save to session directory
-            output_file = Path(session_dir) / f"{gsm_id}_metadata.json"
-            with open(output_file, 'w') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
-            
-            # Return a concise summary instead of full JSON
-            summary = {
-                "status": "success",
-                "gsm_id": gsm_id,
-                "file_saved": str(output_file),
-                "sample_count": 1,
-                "key_attributes": list(metadata.get("attributes", {}).keys())[:10] if metadata.get("attributes") else [],
-                "message": f"Metadata extracted and saved to {output_file}"
-            }
-            return json.dumps(summary, indent=2, ensure_ascii=False)
-            
-        except Exception as e:
-            print(f"❌ Exception in extract_gsm_metadata: {e}")
-            import traceback
-            traceback.print_exc()
-            error_result = {
-                "error": str(e),
-                "gsm_id": gsm_id,
-                "status": "failed"
-            }
-            return json.dumps(error_result, indent=2, ensure_ascii=False)
+        return extract_gsm_metadata_impl(gsm_id, session_dir, email, api_key)
 
     @function_tool
     def extract_gse_metadata(
@@ -164,7 +140,7 @@ def get_session_tools(session_dir: str | Path) -> list:
         Returns
         -------
         str
-            JSON string containing the GSE metadata.
+            Path to the saved metadata file.
         """
         # Use session defaults if not provided
         if email is None:
@@ -172,38 +148,7 @@ def get_session_tools(session_dir: str | Path) -> list:
         if api_key is None:
             api_key = default_api_key
         
-        try:
-            # Validate GSE ID format
-            if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
-                raise ValueError(f"Invalid GSE ID format: {gse_id}")
-            
-            # Extract metadata
-            print(f"🔧 Calling get_gse_metadata for {gse_id}")
-            metadata = get_gse_metadata(gse_id)
-            print(f"🔧 get_gse_metadata returned: {type(metadata)}")
-            
-            # Save to session directory
-            output_file = Path(session_dir) / f"{gse_id}_metadata.json"
-            with open(output_file, 'w') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
-            
-            # Return a concise summary instead of full JSON
-            summary = {
-                "status": "success",
-                "gse_id": gse_id,
-                "file_saved": str(output_file),
-                "key_attributes": list(metadata.get("attributes", {}).keys())[:10] if metadata.get("attributes") else [],
-                "message": f"Metadata extracted and saved to {output_file}"
-            }
-            return json.dumps(summary, indent=2, ensure_ascii=False)
-            
-        except Exception as e:
-            error_result = {
-                "error": str(e),
-                "gse_id": gse_id,
-                "status": "failed"
-            }
-            return json.dumps(error_result, indent=2, ensure_ascii=False)
+        return extract_gse_metadata_impl(gse_id, session_dir, email, api_key)
 
     @function_tool
     def extract_series_matrix_metadata(
@@ -231,7 +176,7 @@ def get_session_tools(session_dir: str | Path) -> list:
         Returns
         -------
         str
-            JSON string containing the series matrix metadata and sample names.
+            Path to the saved metadata file.
         """
         # Use session defaults if not provided
         if email is None:
@@ -239,44 +184,14 @@ def get_session_tools(session_dir: str | Path) -> list:
         if api_key is None:
             api_key = default_api_key
         
-        try:
-            # Validate GSE ID format
-            if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
-                raise ValueError(f"Invalid GSE ID format: {gse_id}")
-            
-            # Extract series matrix metadata
-            metadata = get_gse_series_matrix(gse_id)
-            
-            # Save to session directory
-            output_file = Path(session_dir) / f"{gse_id}_series_matrix.json"
-            with open(output_file, 'w') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
-            
-            # Return a concise summary instead of full JSON
-            summary = {
-                "status": "success",
-                "gse_id": gse_id,
-                "file_saved": str(output_file),
-                "sample_count": metadata.get("sample_count", 0),
-                "platform_count": metadata.get("platform_count", 0),
-                "total_matrices": metadata.get("total_matrices", 0),
-                "message": f"Series matrix metadata extracted and saved to {output_file}"
-            }
-            return json.dumps(summary, indent=2, ensure_ascii=False)
-            
-        except Exception as e:
-            error_result = {
-                "error": str(e),
-                "gse_id": gse_id,
-                "status": "failed"
-            }
-            return json.dumps(error_result, indent=2, ensure_ascii=False)
+        return extract_series_matrix_metadata_impl(gse_id, session_dir, email, api_key)
 
     @function_tool
     def extract_paper_abstract(
         pmid: int,
         email: str = None,
-        api_key: str = None
+        api_key: str = None,
+        source_gse_file: str = None
     ) -> str:
         """
         Extract paper abstract and metadata for a given PMID.
@@ -294,11 +209,14 @@ def get_session_tools(session_dir: str | Path) -> list:
         api_key : str, optional
             NCBI API key for higher rate limits.
             If not provided, uses session default.
+        source_gse_file : str, optional
+            Path to the GSE metadata file that this PMID was extracted from.
+            Used to determine the correct series directory for file organization.
         
         Returns
         -------
         str
-            JSON string containing the paper metadata and abstract.
+            Path to the saved metadata file.
         """
         # Use session defaults if not provided
         if email is None:
@@ -306,39 +224,55 @@ def get_session_tools(session_dir: str | Path) -> list:
         if api_key is None:
             api_key = default_api_key
         
-        try:
-            # Validate PMID format
-            if not isinstance(pmid, int) or pmid <= 0:
-                raise ValueError(f"Invalid PMID format: {pmid}")
-            
-            # Extract paper metadata
-            metadata = get_paper_abstract(pmid)
-            
-            # Save to session directory
-            output_file = Path(session_dir) / f"PMID_{pmid}_metadata.json"
-            with open(output_file, 'w') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
-            
-            # Return a concise summary instead of full JSON
-            summary = {
-                "status": "success",
-                "pmid": pmid,
-                "file_saved": str(output_file),
-                "title": metadata.get("title", ""),
-                "journal": metadata.get("journal", ""),
-                "authors": metadata.get("authors", [])[:3],  # First 3 authors
-                "has_abstract": bool(metadata.get("abstract")),
-                "message": f"Paper metadata extracted and saved to {output_file}"
-            }
-            return json.dumps(summary, indent=2, ensure_ascii=False)
-            
-        except Exception as e:
-            error_result = {
-                "error": str(e),
-                "pmid": pmid,
-                "status": "failed"
-            }
-            return json.dumps(error_result, indent=2, ensure_ascii=False)
+        return extract_paper_abstract_impl(pmid, session_dir, email, api_key, source_gse_file)
+
+    @function_tool
+    def extract_pubmed_id_from_gse_metadata(
+        gse_metadata_file: str
+    ) -> str:
+        """
+        Extract PubMed ID from a GSE metadata JSON file.
+        
+        This tool reads a GSE metadata file (produced by extract_gse_metadata tool)
+        and extracts the PubMed ID from the "pubmed_id" field under attributes.
+        This is useful for multi-step workflows where you need to extract the PMID
+        to then call extract_paper_abstract.
+        
+        Parameters
+        ----------
+        gse_metadata_file : str
+            Path to the GSE metadata JSON file (e.g., "GSE41588_metadata.json")
+        
+        Returns
+        -------
+        str
+            JSON string containing the extracted PubMed ID and status information
+        """
+        return extract_pubmed_id_from_gse_metadata_impl(gse_metadata_file, session_dir)
+
+    @function_tool
+    def extract_series_id_from_gsm_metadata(
+        gsm_metadata_file: str
+    ) -> str:
+        """
+        Extract Series ID from a GSM metadata JSON file.
+        
+        This tool reads a GSM metadata file (produced by extract_gsm_metadata tool)
+        and extracts the Series ID from the "series_id" field under attributes.
+        This is useful for multi-step workflows where you need to extract the GSE ID
+        to then call extract_gse_metadata and extract_series_matrix_metadata.
+        
+        Parameters
+        ----------
+        gsm_metadata_file : str
+            Path to the GSM metadata JSON file (e.g., "GSM1019742_metadata.json")
+        
+        Returns
+        -------
+        str
+            JSON string containing the extracted Series ID and status information
+        """
+        return extract_series_id_from_gsm_metadata_impl(gsm_metadata_file, session_dir)
 
     @function_tool
     def validate_geo_inputs(
@@ -380,41 +314,206 @@ def get_session_tools(session_dir: str | Path) -> list:
         if api_key is None:
             api_key = default_api_key
         
-        result = {
-            "validation_status": "success",
-            "validated_inputs": {},
-            "errors": []
-        }
+        return validate_geo_inputs_impl(gsm_id, gse_id, pmid, email, api_key)
+
+    @function_tool
+    def create_series_sample_mapping() -> str:
+        """
+        Create a mapping file between series IDs and sample IDs in the main session directory.
         
-        # Validate GSM ID
-        if gsm_id is not None:
-            if gsm_id.upper().startswith("GSM") and gsm_id[3:].isdigit():
-                result["validated_inputs"]["gsm_id"] = gsm_id
-            else:
-                result["errors"].append(f"Invalid GSM ID format: {gsm_id}")
+        This tool scans the session directory for series subdirectories (GSE*) and creates
+        a comprehensive mapping file that shows which sample IDs belong to which series.
+        The mapping file is saved in the main session directory and can be used by later
+        agents to quickly determine which subdirectory contains data for a given sample ID.
         
-        # Validate GSE ID
-        if gse_id is not None:
-            if gse_id.upper().startswith("GSE") and gse_id[3:].isdigit():
-                result["validated_inputs"]["gse_id"] = gse_id
-            else:
-                result["errors"].append(f"Invalid GSE ID format: {gse_id}")
+        The mapping file contains:
+        - Forward mapping: series_id -> list of sample_ids
+        - Reverse mapping: sample_id -> series_id (for quick lookup)
+        - Summary statistics: total series and sample counts
+        - Metadata: generation timestamp and session directory path
         
-        # Validate PMID
-        if pmid is not None:
-            if isinstance(pmid, int) and pmid > 0:
-                result["validated_inputs"]["pmid"] = pmid
-            else:
-                result["errors"].append(f"Invalid PMID format: {pmid}")
+        Returns
+        -------
+        str
+            Path to the created mapping file (series_sample_mapping.json)
+        """
+        return create_series_sample_mapping_impl(session_dir)
+
+    # LinkerAgent tools
+    @function_tool
+    def load_mapping_file() -> str:
+        """
+        Load the series_sample_mapping.json file to understand directory structure.
         
-        # Check environment variables
-        if not email:
-            result["errors"].append("NCBI_EMAIL environment variable is required")
+        This tool loads the mapping file created by the IngestionAgent that shows
+        the relationship between series IDs and sample IDs, and which subdirectory
+        contains the data for each sample.
         
-        if result["errors"]:
-            result["validation_status"] = "failed"
+        Returns
+        -------
+        str
+            JSON string containing the mapping data with success status
+        """
+        result = load_mapping_file_impl(session_dir)
+        if not result.get('success', True):
+            raise RuntimeError(f"Failed to load mapping file: {result.get('message', 'Unknown error')}")
+        return json.dumps(result)
+
+    @function_tool
+    def find_sample_directory(sample_id: str) -> str:
+        """
+        Find the directory containing files for a specific sample ID.
         
-        return json.dumps(result, indent=2, ensure_ascii=False)
+        This tool uses the mapping file to locate the correct subdirectory
+        that contains the metadata files for the given sample ID.
+        
+        Parameters
+        ----------
+        sample_id : str
+            The sample ID to find (e.g., GSM1000981)
+            
+        Returns
+        -------
+        str
+            JSON string containing directory information and success status
+        """
+        result = find_sample_directory_impl(sample_id, session_dir)
+        if not result.get('success', True):
+            raise RuntimeError(f"Failed to find sample directory: {result.get('message', 'Unknown error')}")
+        return json.dumps(result)
+
+    @function_tool
+    def clean_metadata_files(sample_id: str, fields_to_remove: str = None) -> str:
+        """
+        Generate cleaned versions of metadata files by removing specified fields.
+        
+        This tool creates cleaned versions of the series metadata, abstract metadata,
+        and series matrix metadata files by removing specified fields. The cleaned
+        files are saved in a 'cleaned' subdirectory.
+        
+        Parameters
+        ----------
+        sample_id : str
+            The sample ID to process
+        fields_to_remove : str, optional
+            JSON string containing list of fields to remove from metadata files.
+            If not provided, uses default fields like 'status', 'submission_date', etc.
+            
+        Returns
+        -------
+        str
+            JSON string containing paths to cleaned files and success status
+        """
+        fields_list = None
+        if fields_to_remove:
+            fields_list = json.loads(fields_to_remove)
+        
+        result = clean_metadata_files_impl(sample_id, session_dir, fields_list)
+        if not result.get('success', True):
+            raise RuntimeError(f"Failed to clean metadata files: {result.get('message', 'Unknown error')}")
+        return json.dumps(result)
+
+    @function_tool
+    def download_series_matrix(sample_id: str) -> str:
+        """
+        Download the smallest series matrix file for a sample.
+        
+        This tool downloads the smallest available series matrix file for the given
+        sample's series, which contains the actual expression data and metadata.
+        
+        Parameters
+        ----------
+        sample_id : str
+            The sample ID to process
+            
+        Returns
+        -------
+        str
+            JSON string containing download information and success status
+        """
+        result = download_series_matrix_impl(sample_id, session_dir)
+        if not result.get('success', True):
+            raise RuntimeError(f"Failed to download series matrix: {result.get('message', 'Unknown error')}")
+        return json.dumps(result)
+
+    @function_tool
+    def extract_matrix_metadata(sample_id: str) -> str:
+        """
+        Extract metadata from the top of a series matrix file (prefixed with !).
+        
+        This tool extracts the metadata from the header section of a series matrix
+        file, which contains important information about the experiment and samples.
+        
+        Parameters
+        ----------
+        sample_id : str
+            The sample ID to process
+            
+        Returns
+        -------
+        str
+            JSON string containing extracted metadata and success status
+        """
+        result = extract_matrix_metadata_impl(sample_id, session_dir)
+        if not result.get('success', True):
+            raise RuntimeError(f"Failed to extract matrix metadata: {result.get('message', 'Unknown error')}")
+        return json.dumps(result)
+
+    @function_tool
+    def extract_sample_metadata(sample_id: str) -> str:
+        """
+        Extract metadata for a specific sample from the series matrix table.
+        
+        This tool extracts the expression data and metadata for a specific sample
+        from the data table section of the series matrix file.
+        
+        Parameters
+        ----------
+        sample_id : str
+            The sample ID to extract data for
+            
+        Returns
+        -------
+        str
+            JSON string containing sample-specific metadata and success status
+        """
+        result = extract_sample_metadata_impl(sample_id, session_dir)
+        if not result.get('success', True):
+            raise RuntimeError(f"Failed to extract sample metadata: {result.get('message', 'Unknown error')}")
+        return json.dumps(result)
+
+    @function_tool
+    def package_linked_data(sample_id: str, fields_to_remove: str = None) -> str:
+        """
+        Package all linked information for a sample into a comprehensive result.
+        
+        This tool combines all the processed information for a sample including:
+        - Cleaned metadata files
+        - Downloaded series matrix file
+        - Extracted matrix metadata
+        - Sample-specific data points
+        - Original sample metadata
+        
+        Parameters
+        ----------
+        sample_id : str
+            The sample ID to process
+        fields_to_remove : str, optional
+            JSON string containing list of fields to remove from metadata files
+            
+        Returns
+        -------
+        str
+            JSON string containing all packaged information and success status
+        """
+        fields_list = None
+        if fields_to_remove:
+            fields_list = json.loads(fields_to_remove)
+        
+        result = package_linked_data_impl(sample_id, session_dir, fields_list)
+        if not result.get('success', True):
+            raise RuntimeError(f"Failed to package linked data: {result.get('message', 'Unknown error')}")
+        return json.dumps(result)
 
     # Return all the tools
     return [
@@ -422,7 +521,17 @@ def get_session_tools(session_dir: str | Path) -> list:
         extract_gse_metadata,
         extract_series_matrix_metadata,
         extract_paper_abstract,
-        validate_geo_inputs
+        extract_pubmed_id_from_gse_metadata,
+        extract_series_id_from_gsm_metadata,
+        validate_geo_inputs,
+        create_series_sample_mapping,
+        load_mapping_file,
+        find_sample_directory,
+        clean_metadata_files,
+        download_series_matrix,
+        extract_matrix_metadata,
+        extract_sample_metadata,
+        package_linked_data
     ]
 
 
@@ -440,5 +549,15 @@ def get_available_tools():
         "extract_gse_metadata", 
         "extract_series_matrix_metadata",
         "extract_paper_abstract",
-        "validate_geo_inputs"
+        "extract_pubmed_id_from_gse_metadata",
+        "extract_series_id_from_gsm_metadata",
+        "validate_geo_inputs",
+        "create_series_sample_mapping",
+        "load_mapping_file",
+        "find_sample_directory",
+        "clean_metadata_files",
+        "download_series_matrix",
+        "extract_matrix_metadata",
+        "extract_sample_metadata",
+        "package_linked_data"
     ]

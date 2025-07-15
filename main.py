@@ -25,7 +25,7 @@ from agents import (
 )
 
 from src.workflows.orchestrator import SimpleOrchestrator
-from src.workflows.geo_pipeline import create_geo_extraction_pipeline, create_multi_agent_geo_pipeline
+from src.workflows.MetaMuse import create_extraction_pipeline, create_multi_agent_pipeline, create_linking_pipeline, create_full_pipeline
 
 load_dotenv(override=True)
 
@@ -92,6 +92,17 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         Additional arguments for the workflow
     """
     session_id = str(uuid4())
+    existing_session_dir = None
+    
+    # Extract session directory from input for linking workflow
+    if workflow_name == "linking":
+        import re
+        session_match = re.search(r'session directory\s+([^\s,]+)', input_data, re.IGNORECASE)
+        if session_match:
+            existing_session_dir = session_match.group(1)
+            # Extract session ID from the directory path
+            session_id = Path(existing_session_dir).name
+            print(f"📁 Using existing session directory: {existing_session_dir}")
     
     # Create model provider
     model_provider = CustomModelProvider(model_name)
@@ -106,8 +117,10 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
     
     # Select workflow function
     workflow_funcs = {
-        "geo_extraction": create_geo_extraction_pipeline,
-        "multi_agent_geo": create_multi_agent_geo_pipeline,
+        "geo_extraction": create_extraction_pipeline,
+        "multi_agent_geo": create_multi_agent_pipeline,
+        "linking": create_linking_pipeline,
+        "full_pipeline": create_full_pipeline,
     }
     
     if workflow_name not in workflow_funcs:
@@ -122,8 +135,16 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
     print("=" * 60)
     
     try:
-        # Run the workflow
-        result = await orchestrator.run_workflow(workflow_func, input_data, **kwargs)
+        # Run the workflow with existing session directory if specified
+        if existing_session_dir and workflow_name == "linking":
+            result = await orchestrator.run_workflow(
+                lambda **kwargs: workflow_func(existing_session_dir=existing_session_dir), 
+                input_data, 
+                session_id=session_id,  # Pass session_id explicitly to avoid orchestrator adding it
+                **kwargs
+            )
+        else:
+            result = await orchestrator.run_workflow(workflow_func, input_data, **kwargs)
         
         print("\n" + "=" * 60)
         print("✅ Workflow completed successfully!")
@@ -131,12 +152,23 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         # Print session metadata
         session_metadata = orchestrator.get_session_metadata()
         print(f"📁 Session directory: {session_metadata['session_dir']}")
-        print(f"📄 Files created: {session_metadata['files_created']}")
+        print(f"📄 Total files created: {session_metadata['files_created']}")
         
-        if session_metadata['file_list']:
-            print("📋 Generated files:")
-            for file_path in session_metadata['file_list']:
-                print(f"   - {file_path}")
+        # Display series directories
+        if session_metadata['series_directories']:
+            print(f"📂 Series directories: {session_metadata['series_count']}")
+            for series_dir in session_metadata['series_directories']:
+                print(f"   📁 {series_dir['series_id']}/ ({series_dir['file_count']} files)")
+                for file_name in series_dir['files']:
+                    print(f"      📄 {file_name}")
+        else:
+            print("📂 No series directories created")
+        
+        # Display root files
+        if session_metadata['root_files']:
+            print(f"📄 Root files: {session_metadata['root_file_count']}")
+            for file_name in session_metadata['root_files']:
+                print(f"   📄 {file_name}")
         
         # Print final output
         print("\n🎯 Final Output:")
@@ -147,6 +179,10 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         
     except Exception as e:
         print(f"\n❌ Workflow failed: {str(e)}")
+        import traceback
+        print("\n🔍 Full traceback:")
+        print("-" * 40)
+        traceback.print_exc()
         raise
 
 
@@ -155,6 +191,8 @@ def list_workflows():
     workflows = {
         "geo_extraction": "Single-agent GEO metadata extraction pipeline",
         "multi_agent_geo": "Multi-agent GEO metadata extraction pipeline (extensible)",
+        "linking": "Single-agent metadata linking and processing pipeline",
+        "full_pipeline": "Complete pipeline: IngestionAgent → LinkerAgent",
     }
     
     print("Available workflows:")
@@ -178,7 +216,7 @@ Examples:
     parser.add_argument(
         "workflow",
         nargs="?",
-        choices=["geo_extraction", "multi_agent_geo"],
+        choices=["geo_extraction", "multi_agent_geo", "linking", "full_pipeline"],
         help="Workflow to run"
     )
     

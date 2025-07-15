@@ -13,10 +13,10 @@ load_dotenv(override=True)
 
 class SimpleOrchestrator:
     """
-    Simple orchestrator for running GEO metadata extraction workflows.
+    Simple orchestrator for running agent workflows.
     
     This minimal orchestrator manages session directories and executes
-    workflow functions that build agent chains for metadata extraction.
+    workflow functions that build agent chains.
     """
     
     def __init__(self, session_id: str, model_provider=None, provider_max_tokens=None, sandbox_dir: str = None):
@@ -48,50 +48,53 @@ class SimpleOrchestrator:
     
     async def run_workflow(
         self, 
-        workflow_func: Callable,
+        workflow_func: Callable, 
         input_data: str, 
         **kwargs
     ) -> RunResultStreaming:
         """
-        Execute a workflow function with the given input data.
+        Run a workflow function.
         
         Parameters
         ----------
         workflow_func : Callable
-            The workflow function to execute (e.g., create_geo_extraction_pipeline)
+            A function that builds and returns the entry point agent
         input_data : str
-            The input data/request to process
-        **kwargs
-            Additional keyword arguments to pass to the workflow function
+            The input data for the workflow
+        **kwargs : dict
+            Additional arguments passed to the workflow function
             
         Returns
         -------
         RunResultStreaming
-            The result of the workflow execution
+            The result from Runner.run
         """
-        # Create the workflow (agent chain) using the provided function
-        print(f"🔧 Creating workflow with session_id: {self.session_id}")
-        workflow = workflow_func(
-            session_id=self.session_id,
-            sandbox_dir=self.sandbox_dir,
-            **kwargs
-        )
-        print(f"✅ Workflow created: {workflow.name}")
-        print(f"   Tools: {len(workflow.tools)}")
+        # Add sandbox_dir to kwargs so workflow functions can pass it to agent factories
+        kwargs['sandbox_dir'] = self.sandbox_dir
         
-        # Configure run settings
-        run_config = RunConfig()
+        # Build the agent chain using the workflow function
+        # Only pass session_id if it's not already in kwargs (for existing session directories)
+        if 'session_id' not in kwargs:
+            kwargs['session_id'] = self.session_id
+        entry_agent = workflow_func(**kwargs)
         
+        # Prepare run config if model provider is specified
+        run_config = None
         if self.model_provider:
-            run_config.model_provider = self.model_provider
-            
-        if self.provider_max_tokens:
-            run_config.model_settings = ModelSettings(max_tokens=self.provider_max_tokens)
+            run_config = RunConfig(
+                model_provider=self.model_provider,
+                model_settings=ModelSettings(
+                    max_tokens=self.provider_max_tokens,
+                    reasoning=Reasoning(
+                        effort="high",
+                    )
+                ),
+            )
         
-        # Execute the workflow
+        # Run the workflow
         print(f"🔄 Executing workflow with input: {input_data}")
         result = await Runner.run(
-            workflow,
+            entry_agent,
             input_data,
             run_config=run_config
         )
@@ -111,7 +114,12 @@ class SimpleOrchestrator:
         if not self.session_dir.exists():
             return []
         
-        return [str(f) for f in self.session_dir.iterdir() if f.is_file()]
+        files = []
+        for item in self.session_dir.rglob("*"):
+            if item.is_file():
+                files.append(str(item))
+        
+        return files
     
     def get_session_metadata(self) -> dict:
         """
@@ -124,10 +132,33 @@ class SimpleOrchestrator:
         """
         files = self.get_session_files()
         
+        # Analyze directory structure
+        series_dirs = []
+        root_files = []
+        
+        if self.session_dir.exists():
+            for item in self.session_dir.iterdir():
+                if item.is_dir() and item.name.startswith("GSE"):
+                    # This is a series directory
+                    series_files = [f.name for f in item.iterdir() if f.is_file()]
+                    series_dirs.append({
+                        "series_id": item.name,
+                        "path": str(item),
+                        "files": series_files,
+                        "file_count": len(series_files)
+                    })
+                elif item.is_file():
+                    # This is a file in the root directory
+                    root_files.append(item.name)
+        
         return {
             "session_id": self.session_id,
             "session_dir": str(self.session_dir),
             "files_created": len(files),
             "file_list": files,
-            "sandbox_dir": self.sandbox_dir
+            "sandbox_dir": self.sandbox_dir,
+            "series_directories": series_dirs,
+            "root_files": root_files,
+            "series_count": len(series_dirs),
+            "root_file_count": len(root_files)
         } 

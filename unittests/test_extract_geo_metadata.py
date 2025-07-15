@@ -1,4 +1,4 @@
-from src.tools.extract_geo_metadata import get_gsm_metadata, get_gse_metadata, get_gse_series_matrix, get_paper_abstract
+from src.tools.ingestion_tools import get_gsm_metadata, get_gse_metadata, get_gse_series_matrix, get_paper_abstract
 
 def test_get_gsm_metadata(GSM_ID: str = "GSM1019742"):
     print("Starting test...")

@@ -13,8 +13,8 @@ from src.agents.tool_utils import get_session_tools
 from src.utils.prompts import load_prompt
 
 
-class GeoIngestionHandoff(BaseHandoff):
-    """Input to the GeoIngestionAgent."""
+class IngestionHandoff(BaseHandoff):
+    """Input to the IngestionAgent."""
 
     geo_ids: list[str] = Field(
         ..., description="List of GEO IDs (GSM, GSE) or PubMed IDs (PMID) to extract metadata from."
@@ -30,11 +30,11 @@ def on_handoff_callback(ctx: RunContextWrapper[None], input_data: BaseHandoff):
     pass
 
 
-def create_geo_ingestion_agent(
+def create_ingestion_agent(
     session_id: str, sandbox_dir: str = None, handoffs: list = None
 ) -> Agent:
     """
-    Factory method to create a GEO metadata ingestion agent.
+    Factory method to create a metadata ingestion agent.
 
     This agent is responsible for extracting metadata from Gene Expression 
     Omnibus (GEO) and PubMed databases given GSM/GSE/PMID identifiers.
@@ -51,7 +51,7 @@ def create_geo_ingestion_agent(
     Returns
     -------
     Agent
-        An instance of an Agent configured for GEO metadata extraction tasks.
+        An instance of an Agent configured for metadata extraction tasks.
     """
     if session_id is None:
         session_id = str(uuid4())
@@ -67,13 +67,13 @@ def create_geo_ingestion_agent(
     print(f"🔧 Tool names: {[t.name for t in tools]}")
 
     instructions = RECOMMENDED_PROMPT_PREFIX + "\n\n" + load_prompt(
-        "geo_ingestion_agent.md", 
+        "ingestion_agent.md", 
         session_dir=str(session_dir)
     )
     print(f"📝 Loaded instructions: {len(instructions)} characters")
 
     return Agent(
-        name="GeoIngestionAgent",
+        name="IngestionAgent",
         instructions=instructions,
         tools=tools,
         handoffs=handoffs or [],
