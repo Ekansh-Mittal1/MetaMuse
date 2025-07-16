@@ -1,4 +1,9 @@
-from src.tools.ingestion_tools import get_gsm_metadata, get_gse_metadata, get_paper_abstract
+from src.tools.ingestion_tools import (
+    get_gsm_metadata,
+    get_gse_metadata,
+    get_paper_abstract,
+)
+
 
 def test_get_gsm_metadata(GSM_ID: str = "GSM1019742"):
     print("Starting test...")
@@ -32,19 +37,19 @@ def test_get_paper_abstract(PMID: int = 23902433):
     try:
         paper_abstract = get_paper_abstract(PMID)
         print(f"Paper Abstract: {paper_abstract}")
-        
+
         # Print the abstract specifically
         abstract = paper_abstract.get("abstract", "No abstract available")
         print(f"\nAbstract: {abstract}")
-        
+
         # Print title
         title = paper_abstract.get("title", "No title available")
         print(f"Title: {title}")
-        
+
         # Print authors
         authors = paper_abstract.get("authors", [])
         print(f"Authors: {authors}")
-        
+
         assert paper_abstract is not None
         assert paper_abstract["pmid"] == PMID
         print("Paper Abstract test passed!")

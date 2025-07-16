@@ -17,18 +17,20 @@ class LinkerHandoff(BaseHandoff):
     """Input to the LinkerAgent."""
 
     sample_id: str = Field(
-        ..., description="The sample ID to process and link metadata for (e.g., GSM1000981)."
+        ...,
+        description="The sample ID to process and link metadata for (e.g., GSM1000981).",
     )
     fields_to_remove: list[str] = Field(
         default=[],
-        description="List of fields to remove from metadata files during cleaning. If not provided, uses default fields."
+        description="List of fields to remove from metadata files during cleaning. If not provided, uses default fields.",
     )
     session_directory: str = Field(
-        ..., description="Path to the session directory containing IngestionAgent output files."
+        ...,
+        description="Path to the session directory containing IngestionAgent output files.",
     )
     all_sample_ids: list[str] = Field(
         default=[],
-        description="List of all sample IDs that were processed by the IngestionAgent."
+        description="List of all sample IDs that were processed by the IngestionAgent.",
     )
 
 
@@ -38,7 +40,11 @@ def on_handoff_callback(ctx: RunContextWrapper[None], input_data: BaseHandoff):
 
 
 def create_linker_agent(
-    session_id: str = None, sandbox_dir: str = None, handoffs: list = None, existing_session_dir: str = None, input_data: str = None
+    session_id: str = None,
+    sandbox_dir: str = None,
+    handoffs: list = None,
+    existing_session_dir: str = None,
+    input_data: str = None,
 ) -> Agent:
     """
     Factory method to create a metadata linking agent.
@@ -76,7 +82,9 @@ def create_linker_agent(
             # Use existing session directory
             session_dir = Path(existing_session_dir).absolute()
             if not session_dir.exists():
-                error_msg = f"Existing session directory does not exist: {existing_session_dir}"
+                error_msg = (
+                    f"Existing session directory does not exist: {existing_session_dir}"
+                )
                 print(f"❌ LinkerAgent: {error_msg}")
                 raise ValueError(error_msg)
             session_id = session_dir.name
@@ -94,9 +102,10 @@ def create_linker_agent(
         tools = get_session_tools(session_dir)
         print(f"✅ LinkerAgent: Initialized with {len(tools)} tools")
 
-        instructions = RECOMMENDED_PROMPT_PREFIX + "\n\n" + load_prompt(
-            "linker_agent.md", 
-            session_dir=str(session_dir)
+        instructions = (
+            RECOMMENDED_PROMPT_PREFIX
+            + "\n\n"
+            + load_prompt("linker_agent.md", session_dir=str(session_dir))
         )
 
         agent = Agent(
@@ -105,12 +114,13 @@ def create_linker_agent(
             tools=tools,
             handoffs=handoffs or [],
         )
-        
+
         return agent
-        
+
     except Exception as e:
         print(f"❌ LinkerAgent creation error: {str(e)}")
         import traceback
+
         print("🔍 LinkerAgent creation traceback:")
         traceback.print_exc()
-        raise 
+        raise

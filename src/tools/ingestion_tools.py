@@ -21,40 +21,44 @@ class NCBIClient:
 
     def __init__(self):
         load_dotenv()
-        
+
         # Get NCBI credentials from environment variables
         self.email = os.getenv("NCBI_EMAIL")
         self.api_key = os.getenv("NCBI_API_KEY")
-        self.api_url = os.getenv("NCBI_API_URL", "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/")
+        self.api_url = os.getenv(
+            "NCBI_API_URL", "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+        )
 
         # Validate required email
         if not self.email or not self.api_key or not self.api_url:
-            raise ValueError("NCBI_EMAIL, NCBI_API_KEY, and NCBI_API_URL environment variables are required")
-        
+            raise ValueError(
+                "NCBI_EMAIL, NCBI_API_KEY, and NCBI_API_URL environment variables are required"
+            )
+
         # Initialize the E-Utilities client
         self.client = urllib.request.build_opener(
             urllib.request.HTTPHandler(debuglevel=0),
-            urllib.request.HTTPSHandler(debuglevel=0),  
+            urllib.request.HTTPSHandler(debuglevel=0),
         )
         self.client.addheaders = [
             ("User-Agent", "Python-NCBI-E-Utilities/1.0"),
             ("Email", self.email),
         ]
-        
+
         # Ensure API URL ends with a slash
-        if not self.api_url.endswith('/'):
-            self.api_url += '/'
+        if not self.api_url.endswith("/"):
+            self.api_url += "/"
 
     def get_gsm_metadata(self, gsm_id: str) -> Dict[str, Any]:
         """
         Retrieve metadata for a GEO Sample (GSM) record using NCBI E-Utilities.
-        
+
         Args:
             gsm_id (str): The GSM ID to retrieve metadata for
-            
+
         Returns:
             Dict containing the metadata response from NCBI
-            
+
         Raises:
             urllib.error.HTTPError: If the request fails
             ValueError: If the GSM ID is invalid
@@ -62,59 +66,66 @@ class NCBIClient:
         # Validate GSM ID format
         if not gsm_id.upper().startswith("GSM") or not gsm_id[3:].isdigit():
             raise ValueError(f"Invalid GSM ID format: {gsm_id}")
-                
+
         # Use the GEO soft file format which is more reliable for GSM records
         geo_url = f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gsm_id}&targ=self&form=text&view=full"
-        
+
         max_retries = 3
         retry_delay = 2  # seconds
-        
+
         for attempt in range(max_retries):
             try:
                 # Make the request to GEO
                 response = self.client.open(geo_url)
-                content = response.read().decode('utf-8')
-                
+                content = response.read().decode("utf-8")
+
                 # Parse the SOFT format response
                 metadata = self._parse_soft_format(content, gsm_id)
-                
+
                 # Add small delay to respect rate limits
                 time.sleep(0.34)  # ~3 requests per second
-                
+
                 return metadata
-                
+
             except urllib.error.HTTPError as e:
                 if e.code in [502, 503, 504, 429] and attempt < max_retries - 1:
                     # Retry on server errors (502, 503, 504) and rate limiting (429)
-                    print(f"⚠️  HTTP {e.code} error for {gsm_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    print(
+                        f"⚠️  HTTP {e.code} error for {gsm_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
+                    )
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     continue
                 else:
                     raise urllib.error.HTTPError(
-                        geo_url, e.code, f"Failed to retrieve metadata for {gsm_id} after {attempt + 1} attempts", 
-                        e.hdrs, e.fp
+                        geo_url,
+                        e.code,
+                        f"Failed to retrieve metadata for {gsm_id} after {attempt + 1} attempts",
+                        e.hdrs,
+                        e.fp,
                     )
             except Exception as e:
                 if attempt < max_retries - 1:
-                    print(f"⚠️  Unexpected error for {gsm_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    print(
+                        f"⚠️  Unexpected error for {gsm_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
+                    )
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     continue
                 else:
                     traceback.print_exc()
                     raise
-    
+
     def get_gse_metadata(self, gse_id: str) -> Dict[str, Any]:
         """
         Retrieve metadata for a GEO Series (GSE) record using GEO website.
-        
+
         Args:
             gse_id (str): The GSE ID to retrieve metadata for
-            
+
         Returns:
             Dict containing the metadata response from GEO
-            
+
         Raises:
             urllib.error.HTTPError: If the request fails
             ValueError: If the GSE ID is invalid
@@ -122,112 +133,113 @@ class NCBIClient:
         # Validate GSE ID format
         if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
             raise ValueError(f"Invalid GSE ID format: {gse_id}")
-        
+
         # Use the GEO soft file format for GSE records
         geo_url = f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gse_id}&targ=self&form=text&view=full"
-        
+
         max_retries = 3
         retry_delay = 2  # seconds
-        
+
         for attempt in range(max_retries):
             try:
                 # Make the request to GEO
                 response = self.client.open(geo_url)
-                content = response.read().decode('utf-8')
-                
+                content = response.read().decode("utf-8")
+
                 # Parse the SOFT format response
                 metadata = self._parse_soft_format(content, gse_id)
                 metadata["type"] = "GSE"
-                
+
                 # Add small delay to respect rate limits
                 time.sleep(0.34)  # ~3 requests per second
-                
+
                 return metadata
-                
+
             except urllib.error.HTTPError as e:
                 if e.code in [502, 503, 504, 429] and attempt < max_retries - 1:
                     # Retry on server errors (502, 503, 504) and rate limiting (429)
-                    print(f"⚠️  HTTP {e.code} error for {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    print(
+                        f"⚠️  HTTP {e.code} error for {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
+                    )
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     continue
                 else:
                     raise urllib.error.HTTPError(
-                        geo_url, e.code, f"Failed to retrieve metadata for {gse_id} after {attempt + 1} attempts", 
-                        e.hdrs, e.fp
+                        geo_url,
+                        e.code,
+                        f"Failed to retrieve metadata for {gse_id} after {attempt + 1} attempts",
+                        e.hdrs,
+                        e.fp,
                     )
             except Exception as e:
                 if attempt < max_retries - 1:
-                    print(f"⚠️  Unexpected error for {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    print(
+                        f"⚠️  Unexpected error for {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
+                    )
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     continue
                 else:
                     traceback.print_exc()
                     raise
-    
+
     def get_paper_abstract(self, pmid: int) -> Dict[str, Any]:
         """
         Get paper abstract and metadata for a given PMID.
-        
+
         Parameters
         ----------
         pmid : int
             PubMed ID for the paper.
-            
+
         Returns
         -------
         Dict[str, Any]
-            Dictionary containing paper content including abstract, title, authors, 
+            Dictionary containing paper content including abstract, title, authors,
             journal, and other metadata.
         """
         paper_info = {
-            'pmid': pmid,
-            'title': '',
-            'abstract': '',
-            'authors': [],
-            'journal': '',
-            'publication_date': '',
-            'doi': '',
-            'keywords': [],
-            'mesh_terms': [],
+            "pmid": pmid,
+            "title": "",
+            "abstract": "",
+            "authors": [],
+            "journal": "",
+            "publication_date": "",
+            "doi": "",
+            "keywords": [],
+            "mesh_terms": [],
         }
-        
+
         try:
             # First search for the PMID to get the correct database ID
-            search_params = {
-                'db': 'pubmed',
-                'term': str(pmid),
-                'retmode': 'json'
-            }
-            
-            search_url = f"{self.api_url}esearch.fcgi?{urllib.parse.urlencode(search_params)}"
-            
+            search_params = {"db": "pubmed", "term": str(pmid), "retmode": "json"}
+
+            search_url = (
+                f"{self.api_url}esearch.fcgi?{urllib.parse.urlencode(search_params)}"
+            )
+
             # Use urllib.request directly instead of client
             search_response = urllib.request.urlopen(search_url)
-            search_content = search_response.read().decode('utf-8')
-            
+            search_content = search_response.read().decode("utf-8")
+
             if search_content:
                 search_data = json.loads(search_content)
-                id_list = search_data.get('esearchresult', {}).get('idlist', [])
-                
+                id_list = search_data.get("esearchresult", {}).get("idlist", [])
+
                 if id_list:
                     # Use the first ID from search results
                     db_id = id_list[0]
-                    
+
                     # Get metadata using esummary
-                    summary_params = {
-                        'db': 'pubmed',
-                        'id': db_id,
-                        'retmode': 'json'
-                    }
-                    
+                    summary_params = {"db": "pubmed", "id": db_id, "retmode": "json"}
+
                     summary_url = f"{self.api_url}esummary.fcgi?{urllib.parse.urlencode(summary_params)}"
-                    
+
                     # Use urllib.request directly instead of client
                     summary_response = urllib.request.urlopen(summary_url)
-                    summary_content = summary_response.read().decode('utf-8')
-                    
+                    summary_content = summary_response.read().decode("utf-8")
+
                     if summary_content:
                         try:
                             json_data = json.loads(summary_content)
@@ -235,185 +247,191 @@ class NCBIClient:
                         except json.JSONDecodeError:
                             # Fallback to XML if JSON fails
                             paper_info.update(self._parse_pubmed_xml(summary_content))
-                    
+
                     # Get full paper content using efetch to extract abstract
                     fetch_params = {
-                        'db': 'pubmed',
-                        'id': db_id,
-                        'retmode': 'xml',
-                        'rettype': 'abstract'
+                        "db": "pubmed",
+                        "id": db_id,
+                        "retmode": "xml",
+                        "rettype": "abstract",
                     }
-                    
+
                     fetch_url = f"{self.api_url}efetch.fcgi?{urllib.parse.urlencode(fetch_params)}"
-                    
+
                     # Use urllib.request directly instead of client
                     fetch_response = urllib.request.urlopen(fetch_url)
-                    fetch_content = fetch_response.read().decode('utf-8')
-                    
+                    fetch_content = fetch_response.read().decode("utf-8")
+
                     if fetch_content:
                         # Parse the XML to extract the abstract
                         abstract = self._extract_abstract_from_xml(fetch_content)
                         if abstract:
-                            paper_info['abstract'] = abstract
-            
+                            paper_info["abstract"] = abstract
+
             # Add small delay to respect rate limits
             time.sleep(1.0)  # Increased delay to avoid rate limiting
-            
+
             return paper_info
-            
+
         except Exception as e:
             traceback.print_exc()
             raise
-    
+
     def _parse_pubmed_xml(self, xml_content: str) -> Dict[str, Any]:
         """
         Parse PubMed XML response to extract paper information.
-        
+
         Args:
             xml_content (str): XML content from PubMed
-            
+
         Returns:
             Dict containing parsed paper information
         """
         import xml.etree.ElementTree as ET
-        
+
         paper_info = {}
-        
+
         try:
             # Parse XML content
             root = ET.fromstring(xml_content)
-            
+
             # Extract title
-            title_elem = root.find('.//ArticleTitle')
+            title_elem = root.find(".//ArticleTitle")
             if title_elem is not None:
-                paper_info['title'] = title_elem.text or ''
-            
+                paper_info["title"] = title_elem.text or ""
+
             # Extract abstract
-            abstract_elem = root.find('.//AbstractText')
+            abstract_elem = root.find(".//AbstractText")
             if abstract_elem is not None:
-                paper_info['abstract'] = abstract_elem.text or ''
-            
+                paper_info["abstract"] = abstract_elem.text or ""
+
             # Extract authors
             authors = []
-            for author_elem in root.findall('.//Author'):
-                last_name = author_elem.find('LastName')
-                first_name = author_elem.find('ForeName')
+            for author_elem in root.findall(".//Author"):
+                last_name = author_elem.find("LastName")
+                first_name = author_elem.find("ForeName")
                 if last_name is not None and first_name is not None:
                     authors.append(f"{first_name.text} {last_name.text}")
-            paper_info['authors'] = authors
-            
+            paper_info["authors"] = authors
+
             # Extract journal
-            journal_elem = root.find('.//Journal/Title')
+            journal_elem = root.find(".//Journal/Title")
             if journal_elem is not None:
-                paper_info['journal'] = journal_elem.text or ''
-            
+                paper_info["journal"] = journal_elem.text or ""
+
             # Extract publication date
-            pub_date_elem = root.find('.//PubDate')
+            pub_date_elem = root.find(".//PubDate")
             if pub_date_elem is not None:
-                year_elem = pub_date_elem.find('Year')
-                month_elem = pub_date_elem.find('Month')
+                year_elem = pub_date_elem.find("Year")
+                month_elem = pub_date_elem.find("Month")
                 if year_elem is not None:
                     date_parts = [year_elem.text]
                     if month_elem is not None:
                         date_parts.append(month_elem.text)
-                    paper_info['publication_date'] = ' '.join(date_parts)
-            
+                    paper_info["publication_date"] = " ".join(date_parts)
+
             # Extract DOI
             doi_elem = root.find('.//ELocationID[@EIdType="doi"]')
             if doi_elem is not None:
-                paper_info['doi'] = doi_elem.text or ''
-            
+                paper_info["doi"] = doi_elem.text or ""
+
             # Extract keywords
             keywords = []
-            for keyword_elem in root.findall('.//Keyword'):
+            for keyword_elem in root.findall(".//Keyword"):
                 if keyword_elem.text:
                     keywords.append(keyword_elem.text)
-            paper_info['keywords'] = keywords
-            
+            paper_info["keywords"] = keywords
+
             # Extract MeSH terms
             mesh_terms = []
-            for mesh_elem in root.findall('.//MeshHeading/DescriptorName'):
+            for mesh_elem in root.findall(".//MeshHeading/DescriptorName"):
                 if mesh_elem.text:
                     mesh_terms.append(mesh_elem.text)
-            paper_info['mesh_terms'] = mesh_terms
-            
+            paper_info["mesh_terms"] = mesh_terms
+
         except ET.ParseError as e:
             # If XML parsing fails, try to extract basic information from text
-            paper_info['abstract'] = xml_content[:1000] if xml_content else ''
-        
+            paper_info["abstract"] = xml_content[:1000] if xml_content else ""
+
         return paper_info
 
-    def _parse_pubmed_json(self, json_data: Dict[str, Any], pmid: int) -> Dict[str, Any]:
+    def _parse_pubmed_json(
+        self, json_data: Dict[str, Any], pmid: int
+    ) -> Dict[str, Any]:
         """
         Parse PubMed JSON response to extract paper information.
-        
+
         Args:
             json_data (Dict): JSON data from PubMed
             pmid (int): The PMID
-            
+
         Returns:
             Dict containing parsed paper information
         """
         paper_info = {}
-        
+
         try:
             # Extract data from the JSON response
-            result = json_data.get('result', {})
+            result = json_data.get("result", {})
             if str(pmid) in result:
                 article_data = result[str(pmid)]
-                
+
                 # Extract title
-                paper_info['title'] = article_data.get('title', '')
-                
+                paper_info["title"] = article_data.get("title", "")
+
                 # Extract abstract
-                paper_info['abstract'] = article_data.get('abstract', '')
-                
+                paper_info["abstract"] = article_data.get("abstract", "")
+
                 # Extract authors
-                authors = article_data.get('authors', [])
+                authors = article_data.get("authors", [])
                 if isinstance(authors, list):
-                    paper_info['authors'] = [author.get('name', '') for author in authors if author.get('name')]
+                    paper_info["authors"] = [
+                        author.get("name", "")
+                        for author in authors
+                        if author.get("name")
+                    ]
                 else:
-                    paper_info['authors'] = []
-                
+                    paper_info["authors"] = []
+
                 # Extract journal
-                paper_info['journal'] = article_data.get('fulljournalname', '')
-                
+                paper_info["journal"] = article_data.get("fulljournalname", "")
+
                 # Extract publication date
-                pubdate = article_data.get('pubdate', '')
-                paper_info['publication_date'] = pubdate
-                
+                pubdate = article_data.get("pubdate", "")
+                paper_info["publication_date"] = pubdate
+
                 # Extract DOI
-                paper_info['doi'] = article_data.get('elocationid', '')
-                
+                paper_info["doi"] = article_data.get("elocationid", "")
+
                 # Extract keywords and MeSH terms
-                paper_info['keywords'] = article_data.get('keywords', [])
-                paper_info['mesh_terms'] = article_data.get('mesh', [])
-                
+                paper_info["keywords"] = article_data.get("keywords", [])
+                paper_info["mesh_terms"] = article_data.get("mesh", [])
+
         except Exception as e:
             # If JSON parsing fails, return empty data
             pass
-        
+
         return paper_info
 
     def _get_file_size(self, url: str) -> Dict[str, Any]:
         """
         Get file size information for a given URL using HEAD request.
-        
+
         Args:
             url (str): The URL to check
-            
+
         Returns:
             Dict containing file size information
         """
         try:
             # Create a request with HEAD method
-            req = urllib.request.Request(url, method='HEAD')
+            req = urllib.request.Request(url, method="HEAD")
             response = urllib.request.urlopen(req)
-            
+
             # Get content length from headers
-            content_length = response.headers.get('Content-Length')
+            content_length = response.headers.get("Content-Length")
             file_size_bytes = int(content_length) if content_length else None
-            
+
             # Convert to human readable format
             if file_size_bytes:
                 if file_size_bytes < 1024:
@@ -426,13 +444,13 @@ class NCBIClient:
                     file_size_human = f"{file_size_bytes / (1024 * 1024 * 1024):.1f} GB"
             else:
                 file_size_human = "Unknown"
-            
+
             return {
                 "file_size_bytes": file_size_bytes,
                 "file_size_human": file_size_human,
-                "status": "success"
+                "status": "success",
             }
-            
+
         except Exception as e:
             traceback.print_exc()
             raise
@@ -440,7 +458,7 @@ class NCBIClient:
                 "file_size_bytes": None,
                 "file_size_human": "Unknown",
                 "status": "error",
-                "error": str(e)
+                "error": str(e),
             }
 
     def get_gse_series_matrix(self, gse_id: str) -> Dict[str, Any]:
@@ -448,13 +466,13 @@ class NCBIClient:
         Retrieve the series matrix table for a GEO Series (GSE) record.
         Only extracts metadata and sample names, not the actual gene expression data.
         Includes file size information for each matrix file.
-        
+
         Args:
             gse_id (str): The GSE ID to retrieve series matrix for
-            
+
         Returns:
             Dict containing the series matrix metadata, sample names, and file sizes
-            
+
         Raises:
             urllib.error.HTTPError: If the request fails
             ValueError: If the GSE ID is invalid
@@ -462,119 +480,135 @@ class NCBIClient:
         # Validate GSE ID format
         if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
             raise ValueError(f"Invalid GSE ID format: {gse_id}")
-        
+
         max_retries = 3
         retry_delay = 2  # seconds
-        
+
         for attempt in range(max_retries):
             try:
                 # GEO stores series folders in batches of 1,000: e.g. GSE123 → GSE123nnn
                 prefix = gse_id[:-3] + "nnn"
-                base_url = f"https://ftp.ncbi.nlm.nih.gov/geo/series/{prefix}/{gse_id}/matrix/"
-                
+                base_url = (
+                    f"https://ftp.ncbi.nlm.nih.gov/geo/series/{prefix}/{gse_id}/matrix/"
+                )
+
                 # First, try to get the directory listing to find available matrix files
                 try:
                     # Try to get directory listing
                     dir_response = urllib.request.urlopen(base_url)
-                    dir_content = dir_response.read().decode('utf-8')
-                    
+                    dir_content = dir_response.read().decode("utf-8")
+
                     # Parse directory listing to find all series matrix files
                     import re
+
                     matrix_files = []
                     # Simple pattern to find all files ending with _series_matrix.txt.gz
                     pattern = r'<a href="([^"]+_series_matrix\.txt\.gz)">'
                     matches = re.findall(pattern, dir_content)
                     matrix_files.extend(matches)
-                    
+
                     if not matrix_files:
                         # Fallback: try the standard naming convention
                         matrix_files = [f"{gse_id}_series_matrix.txt.gz"]
-                        
+
                 except:
                     # If directory listing fails, try the standard naming convention
                     matrix_files = [f"{gse_id}_series_matrix.txt.gz"]
-                
+
                 # Process each matrix file found
                 all_metadata = {}
                 all_samples = []
                 all_platforms = []
                 file_info = []
-                
+
                 for matrix_file in matrix_files:
                     url = base_url + matrix_file
-                    
+
                     # Get file size information
                     file_size_info = self._get_file_size(url)
-                    file_info.append({
-                        "filename": matrix_file,
-                        "url": url,
-                        "file_size_bytes": file_size_info["file_size_bytes"],
-                        "file_size_human": file_size_info["file_size_human"],
-                        "size_status": file_size_info["status"]
-                    })
-                    
+                    file_info.append(
+                        {
+                            "filename": matrix_file,
+                            "url": url,
+                            "file_size_bytes": file_size_info["file_size_bytes"],
+                            "file_size_human": file_size_info["file_size_human"],
+                            "size_status": file_size_info["status"],
+                        }
+                    )
+
                     try:
                         # Download the gzipped matrix
                         response = urllib.request.urlopen(url)
                         gzipped_content = response.read()
-                        
+
                         # Decompress and read the content
                         import gzip
                         from io import BytesIO
-                        
+
                         # Decompress the gzipped content
-                        with gzip.open(BytesIO(gzipped_content), 'rt') as f:
+                        with gzip.open(BytesIO(gzipped_content), "rt") as f:
                             content = f.read()
-                        
+
                         # Parse the content to extract metadata and sample names only
-                        lines = content.split('\n')
+                        lines = content.split("\n")
                         metadata = {}
                         sample_names = []
                         in_matrix_section = False
                         found_sample_row = False
-                        
+
                         for line in lines:
                             line = line.strip()
-                            if line.startswith('!'):
+                            if line.startswith("!"):
                                 # Parse metadata lines
-                                if '=' in line:
-                                    key, value = line.split('=', 1)
-                                    key = key.replace('!', '').strip()
+                                if "=" in line:
+                                    key, value = line.split("=", 1)
+                                    key = key.replace("!", "").strip()
                                     value = value.strip()
                                     metadata[key] = value
-                            elif line.startswith('!series_matrix_table_begin'):
+                            elif line.startswith("!series_matrix_table_begin"):
                                 # Mark the beginning of the matrix section
                                 in_matrix_section = True
-                            elif in_matrix_section and line and not line.startswith('^') and not found_sample_row:
+                            elif (
+                                in_matrix_section
+                                and line
+                                and not line.startswith("^")
+                                and not found_sample_row
+                            ):
                                 # This is the first row after the table begin marker - sample names
-                                sample_names = line.split('\t')
+                                sample_names = line.split("\t")
                                 found_sample_row = True
                                 # Stop processing after getting sample names
                                 break
-                        
+
                         # Extract platform ID from filename
-                        platform_id = matrix_file.replace(f"{gse_id}-", "").replace("_series_matrix.txt.gz", "")
-                        
+                        platform_id = matrix_file.replace(f"{gse_id}-", "").replace(
+                            "_series_matrix.txt.gz", ""
+                        )
+
                         # Store metadata for this platform
                         all_metadata[platform_id] = metadata
-                        
+
                         # Extract sample and platform information from metadata
                         for key, value in metadata.items():
-                            if 'sample_geo_accession' in key.lower():
+                            if "sample_geo_accession" in key.lower():
                                 all_samples.append(value)
-                            elif 'platform_geo_accession' in key.lower():
+                            elif "platform_geo_accession" in key.lower():
                                 all_platforms.append(value)
-                        
+
                         # Add sample names from the matrix header
                         if sample_names:
-                            all_samples.extend(sample_names[1:])  # Skip the first column (probe IDs)
-                        
+                            all_samples.extend(
+                                sample_names[1:]
+                            )  # Skip the first column (probe IDs)
+
                     except Exception as e:
                         traceback.print_exc()
                         raise
-                        print(f"Warning: Could not process matrix file {matrix_file}: {e}")
+                        print(
+                            f"Warning: Could not process matrix file {matrix_file}: {e}"
+                        )
                         continue
-                
+
                 # Combine all data
                 series_matrix = {
                     "gse_id": gse_id,
@@ -585,107 +619,118 @@ class NCBIClient:
                     "samples": list(set(all_samples)),  # Remove duplicates
                     "platforms": list(set(all_platforms)),  # Remove duplicates
                     "available_files": matrix_files,
-                    "file_links": [f"{base_url}{filename}" for filename in matrix_files],
+                    "file_links": [
+                        f"{base_url}{filename}" for filename in matrix_files
+                    ],
                     "file_info": file_info,  # New field with file size information
                     "base_url": base_url,
-                    "total_matrices": len(all_metadata)
+                    "total_matrices": len(all_metadata),
                 }
-                
+
                 # Add small delay to respect rate limits
                 time.sleep(0.34)  # ~3 requests per second
-                
+
                 return series_matrix
-                
+
             except urllib.error.HTTPError as e:
                 if e.code in [502, 503, 504, 429] and attempt < max_retries - 1:
                     # Retry on server errors (502, 503, 504) and rate limiting (429)
-                    print(f"⚠️  HTTP {e.code} error for series matrix {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    print(
+                        f"⚠️  HTTP {e.code} error for series matrix {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
+                    )
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     continue
                 else:
                     raise urllib.error.HTTPError(
-                        base_url, e.code, f"Failed to retrieve series matrix for {gse_id} after {attempt + 1} attempts", 
-                        e.hdrs, e.fp
+                        base_url,
+                        e.code,
+                        f"Failed to retrieve series matrix for {gse_id} after {attempt + 1} attempts",
+                        e.hdrs,
+                        e.fp,
                     )
             except Exception as e:
                 if attempt < max_retries - 1:
-                    print(f"⚠️  Unexpected error for series matrix {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds...")
+                    print(
+                        f"⚠️  Unexpected error for series matrix {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
+                    )
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     continue
                 else:
                     traceback.print_exc()
-                    raise RuntimeError(f"Error processing series matrix for {gse_id} after {attempt + 1} attempts: {e}")
-    
+                    raise RuntimeError(
+                        f"Error processing series matrix for {gse_id} after {attempt + 1} attempts: {e}"
+                    )
+
     def _parse_soft_format(self, content: str, record_id: str) -> Dict[str, Any]:
         """
         Parse the SOFT format response from GEO.
-        
+
         Args:
             content (str): The SOFT format content
             record_id (str): The record ID (GSM or GSE)
-            
+
         Returns:
             Dict containing parsed metadata
         """
         # Determine if this is a GSM or GSE record
         is_gse = record_id.upper().startswith("GSE")
-        
+
         metadata = {
             "gsm_id" if not is_gse else "gse_id": record_id,
             "status": "retrieved",
-            "attributes": {}
+            "attributes": {},
         }
-        
-        lines = content.split('\n')
+
+        lines = content.split("\n")
         current_section = None
-        
+
         for line in lines:
             line = line.strip()
             if not line:
                 continue
-                
-            if line.startswith('^SAMPLE = '):
-                current_section = 'sample'
-            elif line.startswith('^SERIES = '):
-                current_section = 'series'
-            elif line.startswith('!Sample_'):
+
+            if line.startswith("^SAMPLE = "):
+                current_section = "sample"
+            elif line.startswith("^SERIES = "):
+                current_section = "series"
+            elif line.startswith("!Sample_"):
                 # Parse sample attributes
-                if '=' in line:
-                    key, value = line.split('=', 1)
-                    key = key.replace('!Sample_', '').strip()
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    key = key.replace("!Sample_", "").strip()
                     value = value.strip()
                     metadata["attributes"][key] = value
-            elif line.startswith('!Series_'):
+            elif line.startswith("!Series_"):
                 # Parse series attributes
-                if '=' in line:
-                    key, value = line.split('=', 1)
-                    key = key.replace('!Series_', '').strip()
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    key = key.replace("!Series_", "").strip()
                     value = value.strip()
                     metadata["attributes"][key] = value
-        
+
         return metadata
 
     def _extract_abstract_from_xml(self, xml_content: str) -> str:
         """
         Extract abstract from PubMed XML content.
-        
+
         Args:
             xml_content (str): XML content from PubMed efetch
-            
+
         Returns:
             str: Extracted abstract text
         """
         import xml.etree.ElementTree as ET
-        
+
         try:
             # Parse XML content
             root = ET.fromstring(xml_content)
-            
+
             # Look for AbstractText elements
-            abstract_elements = root.findall('.//AbstractText')
-            
+            abstract_elements = root.findall(".//AbstractText")
+
             if abstract_elements:
                 # Combine all abstract text elements
                 abstract_parts = []
@@ -696,33 +741,34 @@ class NCBIClient:
                     for child in elem:
                         if child.text:
                             abstract_parts.append(child.text.strip())
-                
-                return ' '.join(abstract_parts)
-            
+
+                return " ".join(abstract_parts)
+
             # Fallback: look for any text in Abstract section
-            abstract_section = root.find('.//Abstract')
+            abstract_section = root.find(".//Abstract")
             if abstract_section is not None:
                 # Get all text content from the abstract section
-                abstract_text = ''.join(abstract_section.itertext()).strip()
+                abstract_text = "".join(abstract_section.itertext()).strip()
                 if abstract_text:
                     return abstract_text
-            
+
             return ""
-            
+
         except ET.ParseError:
             # If XML parsing fails, try to extract basic information from text
             return ""
-        
+
+
 def get_gsm_metadata(gsm_id: str) -> Dict[str, Any]:
     """
     Retrieve metadata for a GEO Sample (GSM) record using NCBI E-Utilities.
-    
+
     Args:
         gsm_id (str): The GSM ID to retrieve metadata for
-    
+
     Returns:
         Dict containing the metadata response from NCBI
-        
+
     Raises:
         urllib.error.HTTPError: If the request fails
         ValueError: If the GSM ID is invalid
@@ -734,13 +780,13 @@ def get_gsm_metadata(gsm_id: str) -> Dict[str, Any]:
 def get_gse_metadata(gse_id: str) -> Dict[str, Any]:
     """
     Retrieve metadata for a GEO Series (GSE) record using GEO website.
-    
+
     Args:
         gse_id (str): The GSE ID to retrieve metadata for
-    
+
     Returns:
         Dict containing the metadata response from GEO
-        
+
     Raises:
         urllib.error.HTTPError: If the request fails
         ValueError: If the GSE ID is invalid
@@ -753,17 +799,17 @@ def get_gse_series_matrix(gse_id: str) -> Dict[str, Any]:
     """
     Retrieve the series matrix table for a GEO Series (GSE) record.
     Only extracts metadata and sample names, not the actual gene expression data.
-    
+
     Parameters
     ----------
     gse_id : str
         The GSE ID to retrieve series matrix for
-        
+
     Returns
     -------
     Dict[str, Any]
         Dictionary containing the series matrix metadata and sample names
-        
+
     Raises
     ------
     urllib.error.HTTPError: If the request fails
@@ -776,16 +822,16 @@ def get_gse_series_matrix(gse_id: str) -> Dict[str, Any]:
 def get_paper_abstract(pmid: int) -> Dict[str, Any]:
     """
     Get paper abstract and metadata for a given PMID.
-    
+
     Parameters
     ----------
     pmid : int
         PubMed ID for the paper.
-        
+
     Returns
     -------
     Dict[str, Any]
-        Dictionary containing paper content including abstract, title, authors, 
+        Dictionary containing paper content including abstract, title, authors,
         journal, and other metadata.
     """
 
@@ -795,20 +841,20 @@ def get_paper_abstract(pmid: int) -> Dict[str, Any]:
 def extract_pubmed_id_from_gse_metadata(gse_metadata_file: str) -> Dict[str, Any]:
     """
     Extract PubMed ID from a GSE metadata JSON file.
-    
+
     This function reads a GSE metadata file (produced by extract_gse_metadata tool)
     and extracts the PubMed ID from the "pubmed_id" field under attributes.
-    
+
     Parameters
     ----------
     gse_metadata_file : str
         Path to the GSE metadata JSON file
-        
+
     Returns
     -------
     Dict[str, Any]
         Dictionary containing the extracted PubMed ID and status information
-        
+
     Raises
     ------
     FileNotFoundError: If the metadata file doesn't exist
@@ -817,36 +863,42 @@ def extract_pubmed_id_from_gse_metadata(gse_metadata_file: str) -> Dict[str, Any
     """
     try:
         # Read the metadata file
-        with open(gse_metadata_file, 'r') as f:
+        with open(gse_metadata_file, "r") as f:
             metadata = json.load(f)
-        
+
         # Extract PubMed ID from attributes
         attributes = metadata.get("attributes", {})
         pubmed_id = attributes.get("pubmed_id")
-        
+
         if not pubmed_id:
             # Try alternative field names
-            pubmed_id = attributes.get("pmid") or attributes.get("PubMed ID") or attributes.get("pubmed")
-        
+            pubmed_id = (
+                attributes.get("pmid")
+                or attributes.get("PubMed ID")
+                or attributes.get("pubmed")
+            )
+
         if not pubmed_id:
-            raise KeyError(f"PubMed ID not found in GSE metadata file: {gse_metadata_file}")
-        
+            raise KeyError(
+                f"PubMed ID not found in GSE metadata file: {gse_metadata_file}"
+            )
+
         # Convert to integer if it's a string
         try:
             pubmed_id_int = int(pubmed_id)
         except (ValueError, TypeError):
             raise ValueError(f"Invalid PubMed ID format: {pubmed_id}")
-        
+
         result = {
             "status": "success",
             "gse_metadata_file": gse_metadata_file,
             "pubmed_id": pubmed_id_int,
             "pubmed_id_original": pubmed_id,
-            "message": f"Successfully extracted PubMed ID {pubmed_id_int} from {gse_metadata_file}"
+            "message": f"Successfully extracted PubMed ID {pubmed_id_int} from {gse_metadata_file}",
         }
-        
+
         return result
-        
+
     except FileNotFoundError:
         raise FileNotFoundError(f"GSE metadata file not found: {gse_metadata_file}")
     except json.JSONDecodeError as e:
@@ -860,20 +912,20 @@ def extract_pubmed_id_from_gse_metadata(gse_metadata_file: str) -> Dict[str, Any
 def extract_series_id_from_gsm_metadata(gsm_metadata_file: str) -> Dict[str, Any]:
     """
     Extract Series ID from a GSM metadata JSON file.
-    
+
     This function reads a GSM metadata file (produced by extract_gsm_metadata tool)
     and extracts the Series ID from the "series_id" field under attributes.
-    
+
     Parameters
     ----------
     gsm_metadata_file : str
         Path to the GSM metadata JSON file
-        
+
     Returns
     -------
     Dict[str, Any]
         Dictionary containing the extracted Series ID and status information
-        
+
     Raises
     ------
     FileNotFoundError: If the metadata file doesn't exist
@@ -882,34 +934,40 @@ def extract_series_id_from_gsm_metadata(gsm_metadata_file: str) -> Dict[str, Any
     """
     try:
         # Read the metadata file
-        with open(gsm_metadata_file, 'r') as f:
+        with open(gsm_metadata_file, "r") as f:
             metadata = json.load(f)
-        
+
         # Extract Series ID from attributes
         attributes = metadata.get("attributes", {})
         series_id = attributes.get("series_id")
-        
+
         if not series_id:
             # Try alternative field names
-            series_id = attributes.get("gse_id") or attributes.get("Series ID") or attributes.get("series")
-        
+            series_id = (
+                attributes.get("gse_id")
+                or attributes.get("Series ID")
+                or attributes.get("series")
+            )
+
         if not series_id:
-            raise KeyError(f"Series ID not found in GSM metadata file: {gsm_metadata_file}")
-        
+            raise KeyError(
+                f"Series ID not found in GSM metadata file: {gsm_metadata_file}"
+            )
+
         # Validate Series ID format
         if not series_id.upper().startswith("GSE") or not series_id[3:].isdigit():
             raise ValueError(f"Invalid Series ID format: {series_id}")
-        
+
         result = {
             "status": "success",
             "gsm_metadata_file": gsm_metadata_file,
             "series_id": series_id.upper(),  # Normalize to uppercase
             "series_id_original": series_id,
-            "message": f"Successfully extracted Series ID {series_id.upper()} from {gsm_metadata_file}"
+            "message": f"Successfully extracted Series ID {series_id.upper()} from {gsm_metadata_file}",
         }
-        
+
         return result
-        
+
     except FileNotFoundError:
         raise FileNotFoundError(f"GSM metadata file not found: {gsm_metadata_file}")
     except json.JSONDecodeError as e:
@@ -923,14 +981,14 @@ def extract_series_id_from_gsm_metadata(gsm_metadata_file: str) -> Dict[str, Any
 def _get_series_subdirectory(session_dir: str, series_id: str) -> Path:
     """
     Get or create a subdirectory for a specific series ID within the session directory.
-    
+
     Parameters
     ----------
     session_dir : str
         The session directory path
     series_id : str
         The series ID (e.g., "GSE41588")
-        
+
     Returns
     -------
     Path
@@ -941,10 +999,12 @@ def _get_series_subdirectory(session_dir: str, series_id: str) -> Path:
     return series_dir
 
 
-def extract_gsm_metadata_impl(gsm_id: str, session_dir: str, email: str = None, api_key: str = None) -> str:
+def extract_gsm_metadata_impl(
+    gsm_id: str, session_dir: str, email: str = None, api_key: str = None
+) -> str:
     """
     Extract metadata for a GEO Sample (GSM) record.
-    
+
     Parameters
     ----------
     gsm_id : str
@@ -955,25 +1015,29 @@ def extract_gsm_metadata_impl(gsm_id: str, session_dir: str, email: str = None, 
         Email address for NCBI E-Utils identification.
     api_key : str, optional
         NCBI API key for higher rate limits.
-    
+
     Returns
     -------
     str
         Path to the saved metadata file.
     """
     print(f"🔧 extract_gsm_metadata: {gsm_id}")
-    
+
     # Validate GSM ID format
     if not gsm_id.upper().startswith("GSM") or not gsm_id[3:].isdigit():
         raise ValueError(f"Invalid GSM ID format: {gsm_id}")
-    
+
     # Extract metadata
     metadata = get_gsm_metadata(gsm_id)
-    
+
     # Extract series ID from metadata
     attributes = metadata.get("attributes", {})
-    series_id = attributes.get("series_id") or attributes.get("gse_id") or attributes.get("Series ID")
-    
+    series_id = (
+        attributes.get("series_id")
+        or attributes.get("gse_id")
+        or attributes.get("Series ID")
+    )
+
     if not series_id:
         # If no series ID found, save to session root with a warning
         print(f"⚠️  No series ID found for {gsm_id}, saving to session root")
@@ -982,26 +1046,30 @@ def extract_gsm_metadata_impl(gsm_id: str, session_dir: str, email: str = None, 
         # Normalize series ID and create subdirectory
         series_id = series_id.upper()
         if not series_id.startswith("GSE") or not series_id[3:].isdigit():
-            print(f"⚠️  Invalid series ID format '{series_id}' for {gsm_id}, saving to session root")
+            print(
+                f"⚠️  Invalid series ID format '{series_id}' for {gsm_id}, saving to session root"
+            )
             output_file = Path(session_dir) / f"{gsm_id}_metadata.json"
         else:
             # Create series subdirectory and save there
             series_dir = _get_series_subdirectory(session_dir, series_id)
             output_file = series_dir / f"{gsm_id}_metadata.json"
             print(f"📁 Saving to series subdirectory: {series_id}")
-    
+
     # Save metadata
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
-    
+
     print(f"📁 Saved to: {output_file}")
     return str(output_file)
 
 
-def extract_gse_metadata_impl(gse_id: str, session_dir: str, email: str = None, api_key: str = None) -> str:
+def extract_gse_metadata_impl(
+    gse_id: str, session_dir: str, email: str = None, api_key: str = None
+) -> str:
     """
     Extract metadata for a GEO Series (GSE) record.
-    
+
     Parameters
     ----------
     gse_id : str
@@ -1012,37 +1080,39 @@ def extract_gse_metadata_impl(gse_id: str, session_dir: str, email: str = None, 
         Email address for NCBI E-Utils identification.
     api_key : str, optional
         NCBI API key for higher rate limits.
-    
+
     Returns
     -------
     str
         Path to the saved metadata file.
     """
     print(f"🔧 extract_gse_metadata: {gse_id}")
-    
+
     # Validate GSE ID format
     if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
         raise ValueError(f"Invalid GSE ID format: {gse_id}")
-    
+
     # Extract metadata
     metadata = get_gse_metadata(gse_id)
-    
+
     # Create series subdirectory and save there
     series_dir = _get_series_subdirectory(session_dir, gse_id.upper())
     output_file = series_dir / f"{gse_id}_metadata.json"
-    
+
     # Save metadata
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
-    
+
     print(f"📁 Saved to: {output_file}")
     return str(output_file)
 
 
-def extract_series_matrix_metadata_impl(gse_id: str, session_dir: str, email: str = None, api_key: str = None) -> str:
+def extract_series_matrix_metadata_impl(
+    gse_id: str, session_dir: str, email: str = None, api_key: str = None
+) -> str:
     """
     Extract series matrix metadata and sample names for a GEO Series (GSE) record.
-    
+
     Parameters
     ----------
     gse_id : str
@@ -1053,36 +1123,36 @@ def extract_series_matrix_metadata_impl(gse_id: str, session_dir: str, email: st
         Email address for NCBI E-Utils identification.
     api_key : str, optional
         NCBI API key for higher rate limits.
-    
+
     Returns
     -------
     str
         Path to the saved metadata file.
     """
     print(f"🔧 extract_series_matrix_metadata: {gse_id}")
-    
+
     # Validate GSE ID format
     if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
         raise ValueError(f"Invalid GSE ID format: {gse_id}")
-    
+
     # Extract series matrix metadata
     metadata = get_gse_series_matrix(gse_id)
-    
+
     # Create series subdirectory and save there
     series_dir = _get_series_subdirectory(session_dir, gse_id.upper())
     output_file = series_dir / f"{gse_id}_series_matrix.json"
-    
+
     # Save metadata
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
-    
+
     # Print file size information if available
     if metadata.get("file_info"):
         total_size = 0
         for file_info in metadata["file_info"]:
             if file_info.get("file_size_bytes"):
                 total_size += file_info["file_size_bytes"]
-        
+
         if total_size > 0:
             if total_size < 1024 * 1024:
                 total_size_str = f"{total_size / 1024:.1f} KB"
@@ -1098,10 +1168,16 @@ def extract_series_matrix_metadata_impl(gse_id: str, session_dir: str, email: st
     return str(output_file)
 
 
-def extract_paper_abstract_impl(pmid: int, session_dir: str, email: str = None, api_key: str = None, source_gse_file: str = None) -> str:
+def extract_paper_abstract_impl(
+    pmid: int,
+    session_dir: str,
+    email: str = None,
+    api_key: str = None,
+    source_gse_file: str = None,
+) -> str:
     """
     Extract paper abstract and metadata for a given PMID.
-    
+
     Parameters
     ----------
     pmid : int
@@ -1115,25 +1191,25 @@ def extract_paper_abstract_impl(pmid: int, session_dir: str, email: str = None, 
     source_gse_file : str, optional
         Path to the GSE metadata file that this PMID was extracted from.
         Used to determine the correct series directory.
-    
+
     Returns
     -------
     str
         Path to the saved metadata file.
     """
     print(f"🔧 extract_paper_abstract: PMID {pmid}")
-    
+
     # Validate PMID format
     if not isinstance(pmid, int) or pmid <= 0:
         raise ValueError(f"Invalid PMID format: {pmid}")
-    
+
     # Extract paper metadata
     metadata = get_paper_abstract(pmid)
-    
+
     # Determine the correct series directory based on source GSE file
     session_path = Path(session_dir)
     series_id = None
-    
+
     if source_gse_file:
         # Extract series ID from the source GSE file path
         source_path = Path(source_gse_file)
@@ -1148,8 +1224,10 @@ def extract_paper_abstract_impl(pmid: int, session_dir: str, email: str = None, 
             print(f"📁 Source file format unexpected, saving to session root")
     else:
         # Check if there are any GSE directories in the session
-        gse_dirs = [d for d in session_path.iterdir() if d.is_dir() and d.name.startswith("GSE")]
-        
+        gse_dirs = [
+            d for d in session_path.iterdir() if d.is_dir() and d.name.startswith("GSE")
+        ]
+
         if gse_dirs:
             # If we have GSE directories, we could potentially match the PMID to a series
             # For now, save to the first GSE directory (this could be enhanced)
@@ -1161,75 +1239,79 @@ def extract_paper_abstract_impl(pmid: int, session_dir: str, email: str = None, 
             # No GSE directories found, save to session root
             output_file = session_path / f"PMID_{pmid}_metadata.json"
             print(f"📁 No series directories found, saving to session root")
-    
+
     # Add series_id to the metadata if available
     if series_id:
-        metadata['series_id'] = series_id
-        metadata['source_gse_file'] = source_gse_file if source_gse_file else None
+        metadata["series_id"] = series_id
+        metadata["source_gse_file"] = source_gse_file if source_gse_file else None
         print(f"📝 Added series_id '{series_id}' to PMID {pmid} metadata")
-    
+
     # Save metadata
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
-    
+
     print(f"📁 Saved to: {output_file}")
     return str(output_file)
 
 
-def extract_pubmed_id_from_gse_metadata_impl(gse_metadata_file: str, session_dir: str) -> str:
+def extract_pubmed_id_from_gse_metadata_impl(
+    gse_metadata_file: str, session_dir: str
+) -> str:
     """
     Extract PubMed ID from a GSE metadata JSON file.
-    
+
     Parameters
     ----------
     gse_metadata_file : str
         Path to the GSE metadata JSON file (e.g., "GSE41588_metadata.json")
     session_dir : str
         Session directory for resolving relative paths.
-    
+
     Returns
     -------
     str
         JSON string containing the extracted PubMed ID and status information.
     """
     print(f"🔧 extract_pubmed_id_from_gse_metadata: {Path(gse_metadata_file).name}")
-    
+
     # Construct full path if relative
     if not os.path.isabs(gse_metadata_file):
         gse_metadata_file = os.path.join(session_dir, gse_metadata_file)
-    
+
     # Extract PubMed ID
     result = extract_pubmed_id_from_gse_metadata(gse_metadata_file)
-    
+
     print(f"📁 Extracted PMID: {result.get('pubmed_id')}")
     return json.dumps(result, indent=2, ensure_ascii=False)
 
 
-def extract_series_id_from_gsm_metadata_impl(gsm_metadata_file: str, session_dir: str) -> str:
+def extract_series_id_from_gsm_metadata_impl(
+    gsm_metadata_file: str, session_dir: str
+) -> str:
     """
     Extract Series ID from a GSM metadata JSON file.
-    
+
     Parameters
     ----------
     gsm_metadata_file : str
         Path to the GSM metadata JSON file (e.g., "GSM1019742_metadata.json")
     session_dir : str
         Session directory for resolving relative paths.
-    
+
     Returns
     -------
     str
         JSON string containing the extracted Series ID and status information.
     """
     print(f"🔧 extract_series_id_from_gsm_metadata: {Path(gsm_metadata_file).name}")
-    
+
     # Construct full path if relative
     if not os.path.isabs(gsm_metadata_file):
         gsm_metadata_file = os.path.join(session_dir, gsm_metadata_file)
-    
+
     # Extract Series ID
     result = extract_series_id_from_gsm_metadata(gsm_metadata_file)
-    
+
     print(f"📁 Extracted Series ID: {result.get('series_id')}")
     return json.dumps(result, indent=2, ensure_ascii=False)
 
@@ -1238,108 +1320,112 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
     """
     Create a mapping file between series IDs and sample IDs in the main session directory.
     This file will be used by later agents to determine which subdirectory contains data for a given sample ID.
-    
+
     Parameters
     ----------
     session_dir : str
         Session directory to scan for series subdirectories and create the mapping file.
-    
+
     Returns
     -------
     str
         Path to the created mapping file.
     """
     print(f"🔧 create_series_sample_mapping")
-    
+
     session_path = Path(session_dir)
     mapping = {}
-    
+
     # Scan for series subdirectories (GSE*)
-    series_dirs = [d for d in session_path.iterdir() if d.is_dir() and d.name.startswith("GSE")]
-    
+    series_dirs = [
+        d for d in session_path.iterdir() if d.is_dir() and d.name.startswith("GSE")
+    ]
+
     if not series_dirs:
         print("⚠️  No series subdirectories found in session directory")
         # Create empty mapping file
         mapping_file = session_path / "series_sample_mapping.json"
-        with open(mapping_file, 'w') as f:
-            json.dump({"mapping": {}, "total_series": 0, "total_samples": 0}, f, indent=2)
+        with open(mapping_file, "w") as f:
+            json.dump(
+                {"mapping": {}, "total_series": 0, "total_samples": 0}, f, indent=2
+            )
         print(f"📁 Created empty mapping file: {mapping_file}")
         return str(mapping_file)
-    
+
     # Process each series directory
     for series_dir in series_dirs:
         series_id = series_dir.name
         sample_ids = []
-        
+
         # Look for series matrix files that contain sample information
         series_matrix_files = list(series_dir.glob("*_series_matrix.json"))
-        
+
         for matrix_file in series_matrix_files:
             try:
-                with open(matrix_file, 'r') as f:
+                with open(matrix_file, "r") as f:
                     matrix_data = json.load(f)
-                
+
                 # Extract sample IDs from the series matrix data
                 if "samples" in matrix_data:
                     sample_ids.extend(matrix_data["samples"])
-                
+
                 # Also check for sample IDs in metadata
                 if "metadata" in matrix_data:
                     for platform_id, platform_data in matrix_data["metadata"].items():
                         for key, value in platform_data.items():
-                            if 'sample_geo_accession' in key.lower() and value:
+                            if "sample_geo_accession" in key.lower() and value:
                                 if isinstance(value, list):
                                     sample_ids.extend(value)
                                 else:
                                     sample_ids.append(value)
-                                    
+
             except Exception as e:
                 traceback.print_exc()
                 raise
                 print(f"⚠️  Error processing {matrix_file}: {e}")
                 continue
-        
+
         # Also look for individual GSM metadata files
         gsm_files = list(series_dir.glob("GSM*_metadata.json"))
         for gsm_file in gsm_files:
             try:
-                with open(gsm_file, 'r') as f:
+                with open(gsm_file, "r") as f:
                     gsm_data = json.load(f)
-                
+
                 # Extract GSM ID from filename or metadata
                 gsm_id = gsm_file.name.replace("_metadata.json", "")
                 if gsm_id.startswith("GSM"):
                     sample_ids.append(gsm_id)
-                    
+
             except Exception as e:
                 traceback.print_exc()
                 raise
                 print(f"⚠️  Error processing {gsm_file}: {e}")
                 continue
-        
+
         # Remove duplicates and sort
         sample_ids = sorted(list(set(sample_ids)))
-        
+
         if sample_ids:
             mapping[series_id] = {
                 "sample_ids": sample_ids,
                 "sample_count": len(sample_ids),
-                "series_directory": str(series_dir.relative_to(session_path))
+                "series_directory": str(series_dir.relative_to(session_path)),
             }
             print(f"📁 Found {len(sample_ids)} samples for series {series_id}")
         else:
             print(f"⚠️  No samples found for series {series_id}")
-    
+
     # Create reverse mapping (sample_id -> series_id) for quick lookup
     reverse_mapping = {}
     for series_id, series_data in mapping.items():
         for sample_id in series_data["sample_ids"]:
             reverse_mapping[sample_id] = series_id
-    
+
     # Calculate totals
     total_series = len(mapping)
     total_samples = sum(series_data["sample_count"] for series_data in mapping.values())
-    
+
     # Create the mapping file
     mapping_data = {
         "mapping": mapping,
@@ -1347,24 +1433,29 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
         "total_series": total_series,
         "total_samples": total_samples,
         "generated_at": str(Path().cwd()),
-        "session_directory": str(session_path.absolute())
+        "session_directory": str(session_path.absolute()),
     }
-    
+
     mapping_file = session_path / "series_sample_mapping.json"
-    with open(mapping_file, 'w') as f:
+    with open(mapping_file, "w") as f:
         json.dump(mapping_data, f, indent=2, ensure_ascii=False)
-    
+
     print(f"📁 Created mapping file: {mapping_file}")
     print(f"📊 Mapping contains {total_series} series and {total_samples} samples")
-    
+
     return str(mapping_file)
 
 
-def validate_geo_inputs_impl(gsm_id: str = None, gse_id: str = None, pmid: int = None, 
-                           email: str = None, api_key: str = None) -> str:
+def validate_geo_inputs_impl(
+    gsm_id: str = None,
+    gse_id: str = None,
+    pmid: int = None,
+    email: str = None,
+    api_key: str = None,
+) -> str:
     """
     Validate input parameters for GEO metadata extraction.
-    
+
     Parameters
     ----------
     gsm_id : str, optional
@@ -1377,47 +1468,43 @@ def validate_geo_inputs_impl(gsm_id: str = None, gse_id: str = None, pmid: int =
         Email address for NCBI E-Utils identification.
     api_key : str, optional
         NCBI API key for higher rate limits.
-    
+
     Returns
     -------
     str
         JSON string containing validation results.
     """
     print(f"🔧 validate_geo_inputs")
-    
-    result = {
-        "validation_status": "success",
-        "validated_inputs": {},
-        "errors": []
-    }
-    
+
+    result = {"validation_status": "success", "validated_inputs": {}, "errors": []}
+
     # Validate GSM ID
     if gsm_id is not None:
         if gsm_id.upper().startswith("GSM") and gsm_id[3:].isdigit():
             result["validated_inputs"]["gsm_id"] = gsm_id
         else:
             result["errors"].append(f"Invalid GSM ID format: {gsm_id}")
-    
+
     # Validate GSE ID
     if gse_id is not None:
         if gse_id.upper().startswith("GSE") and gse_id[3:].isdigit():
             result["validated_inputs"]["gse_id"] = gse_id
         else:
             result["errors"].append(f"Invalid GSE ID format: {gse_id}")
-    
+
     # Validate PMID
     if pmid is not None:
         if isinstance(pmid, int) and pmid > 0:
             result["validated_inputs"]["pmid"] = pmid
         else:
             result["errors"].append(f"Invalid PMID format: {pmid}")
-    
+
     # Check environment variables
     if not email:
         result["errors"].append("NCBI_EMAIL environment variable is required")
-    
+
     if result["errors"]:
         result["validation_status"] = "failed"
-    
+
     print(f"📁 Validation result: {result['validation_status']}")
-    return json.dumps(result, indent=2, ensure_ascii=False) 
+    return json.dumps(result, indent=2, ensure_ascii=False)

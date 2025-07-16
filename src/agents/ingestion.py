@@ -17,11 +17,12 @@ class IngestionHandoff(BaseHandoff):
     """Input to the IngestionAgent."""
 
     geo_ids: list[str] = Field(
-        ..., description="List of GEO IDs (GSM, GSE) or PubMed IDs (PMID) to extract metadata from."
+        ...,
+        description="List of GEO IDs (GSM, GSE) or PubMed IDs (PMID) to extract metadata from.",
     )
     extraction_type: str = Field(
-        default="auto", 
-        description="Type of extraction: 'gsm', 'gse', 'series_matrix', 'paper', or 'auto' to detect automatically."
+        default="auto",
+        description="Type of extraction: 'gsm', 'gse', 'series_matrix', 'paper', or 'auto' to detect automatically.",
     )
 
 
@@ -36,7 +37,7 @@ def create_ingestion_agent(
     """
     Factory method to create a metadata ingestion agent.
 
-    This agent is responsible for extracting metadata from Gene Expression 
+    This agent is responsible for extracting metadata from Gene Expression
     Omnibus (GEO) and PubMed databases given GSM/GSE/PMID identifiers.
 
     Parameters
@@ -65,9 +66,10 @@ def create_ingestion_agent(
     tools = get_session_tools(session_dir)
     print(f"✅ IngestionAgent: Initialized with {len(tools)} tools")
 
-    instructions = RECOMMENDED_PROMPT_PREFIX + "\n\n" + load_prompt(
-        "ingestion_agent.md", 
-        session_dir=str(session_dir)
+    instructions = (
+        RECOMMENDED_PROMPT_PREFIX
+        + "\n\n"
+        + load_prompt("ingestion_agent.md", session_dir=str(session_dir))
     )
 
     return Agent(
@@ -75,4 +77,4 @@ def create_ingestion_agent(
         instructions=instructions,
         tools=tools,
         handoffs=handoffs or [],
-    ) 
+    )

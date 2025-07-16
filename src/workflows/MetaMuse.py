@@ -11,23 +11,22 @@ from src.agents.linker import create_linker_agent, LinkerHandoff
 
 
 def create_extraction_pipeline(
-    session_id: str = None, 
-    sandbox_dir: str = None
+    session_id: str = None, sandbox_dir: str = None
 ) -> Agent:
     """
     Create a metadata extraction pipeline.
-    
+
     This pipeline creates a single-agent workflow for extracting metadata
     from GEO and PubMed databases. The agent can handle multiple types of
     identifiers and extraction requests.
-    
+
     Parameters
     ----------
     session_id : str, optional
         The unique session identifier. If not provided, generates a new one.
     sandbox_dir : str, optional
         Base sandbox directory. If not provided, defaults to "sandbox"
-        
+
     Returns
     -------
     Agent
@@ -35,17 +34,17 @@ def create_extraction_pipeline(
     """
     if session_id is None:
         session_id = str(uuid4())
-    
+
     if sandbox_dir is None:
         sandbox_dir = "sandbox"
-    
+
     # Create the ingestion agent
     agent = create_ingestion_agent(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
-        handoffs=[]  # Single agent pipeline, no handoffs needed
+        handoffs=[],  # Single agent pipeline, no handoffs needed
     )
-    
+
     return agent
 
 
@@ -53,14 +52,14 @@ def create_linking_pipeline(
     session_id: str = None,
     sandbox_dir: str = None,
     existing_session_dir: str = None,
-    input_data: str = None
+    input_data: str = None,
 ) -> Agent:
     """
     Create a metadata linking pipeline.
-    
+
     This pipeline creates a single LinkerAgent workflow for processing
     and linking metadata files created by the IngestionAgent.
-    
+
     Parameters
     ----------
     session_id : str, optional
@@ -69,7 +68,7 @@ def create_linking_pipeline(
         Base sandbox directory. If not provided, defaults to "sandbox"
     existing_session_dir : str, optional
         Path to an existing session directory to use instead of creating a new one
-        
+
     Returns
     -------
     Agent
@@ -80,45 +79,43 @@ def create_linking_pipeline(
         agent = create_linker_agent(
             existing_session_dir=existing_session_dir,
             handoffs=[],  # Single agent pipeline, no handoffs needed
-            input_data=input_data
+            input_data=input_data,
         )
     else:
         # Create new session directory
         if session_id is None:
             session_id = str(uuid4())
-        
+
         if sandbox_dir is None:
             sandbox_dir = "sandbox"
-        
+
         # Create the linker agent
         agent = create_linker_agent(
             session_id=session_id,
             sandbox_dir=sandbox_dir,
             handoffs=[],  # Single agent pipeline, no handoffs needed
-            input_data=input_data
+            input_data=input_data,
         )
-    
+
     return agent
 
 
 def create_multi_agent_pipeline(
-    session_id: str = None,
-    sandbox_dir: str = None,
-    input_data: str = None
+    session_id: str = None, sandbox_dir: str = None, input_data: str = None
 ) -> Agent:
     """
     Create a multi-agent metadata extraction and linking pipeline.
-    
+
     This pipeline chains together the IngestionAgent and LinkerAgent to provide
     a complete workflow from metadata extraction to linking and processing.
-    
+
     Parameters
     ----------
     session_id : str, optional
         The unique session identifier. If not provided, generates a new one.
     sandbox_dir : str, optional
         Base sandbox directory. If not provided, defaults to "sandbox"
-        
+
     Returns
     -------
     Agent
@@ -133,7 +130,7 @@ def create_multi_agent_pipeline(
     sample_ids = []
     if input_data:
         # Accept comma or whitespace separated
-        for part in input_data.replace(',', ' ').split():
+        for part in input_data.replace(",", " ").split():
             if part.strip():
                 sample_ids.append(part.strip())
 
@@ -142,7 +139,7 @@ def create_multi_agent_pipeline(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
         handoffs=[],
-        input_data=input_data  # Pass the full input_data so it knows about all samples
+        input_data=input_data,  # Pass the full input_data so it knows about all samples
     )
 
     # Create the IngestionAgent with handoff to the single LinkerAgent
@@ -155,7 +152,7 @@ def create_multi_agent_pipeline(
                 input_type=LinkerHandoff,
                 on_handoff=on_handoff_callback,
             )
-        ]
+        ],
     )
 
     return ingestion_agent  # Return entry point
@@ -169,26 +166,24 @@ def on_handoff_callback(ctx, input_data):
 
 
 def create_full_pipeline(
-    session_id: str = None,
-    sandbox_dir: str = None,
-    input_data: str = None
+    session_id: str = None, sandbox_dir: str = None, input_data: str = None
 ) -> Agent:
     """
     Create a complete metadata extraction and linking pipeline.
-    
+
     This is an alias for create_multi_agent_pipeline that provides a complete
     workflow from metadata extraction to linking and processing.
-    
+
     Parameters
     ----------
     session_id : str, optional
         The unique session identifier. If not provided, generates a new one.
     sandbox_dir : str, optional
         Base sandbox directory. If not provided, defaults to "sandbox"
-        
+
     Returns
     -------
     Agent
         The initial agent in the pipeline (IngestionAgent)
     """
-    return create_multi_agent_pipeline(session_id, sandbox_dir, input_data) 
+    return create_multi_agent_pipeline(session_id, sandbox_dir, input_data)

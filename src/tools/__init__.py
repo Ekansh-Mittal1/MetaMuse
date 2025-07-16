@@ -13,12 +13,12 @@ from .ingestion_tools import (
     extract_pubmed_id_from_gse_metadata_impl,
     extract_series_id_from_gsm_metadata_impl,
     validate_geo_inputs_impl,
-    create_series_sample_mapping_impl
+    create_series_sample_mapping_impl,
 )
 
 __all__ = [
     "get_gsm_metadata",
-    "get_gse_metadata", 
+    "get_gse_metadata",
     "get_gse_series_matrix",
     "get_paper_abstract",
     "NCBIClient",

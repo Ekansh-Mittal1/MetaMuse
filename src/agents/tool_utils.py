@@ -27,7 +27,7 @@ from src.tools.ingestion_tools import (
     extract_pubmed_id_from_gse_metadata_impl,
     extract_series_id_from_gsm_metadata_impl,
     validate_geo_inputs_impl,
-    create_series_sample_mapping_impl
+    create_series_sample_mapping_impl,
 )
 
 from src.tools.linker_tools import (
@@ -38,7 +38,7 @@ from src.tools.linker_tools import (
     # download_series_matrix_impl,
     # extract_matrix_metadata_impl,
     # extract_sample_metadata_impl,
-    package_linked_data_impl
+    package_linked_data_impl,
 )
 
 
@@ -61,36 +61,38 @@ def get_session_tools(session_dir: str | Path) -> list:
     """
     try:
         session_dir = str(session_dir)
-        
+
         # Get environment variables with defaults
         default_email = os.getenv("NCBI_EMAIL")
         default_api_key = os.getenv("NCBI_API_KEY")
-        
+
         # Validate that we have required configuration
         if not default_email:
-            print("Warning: NCBI_EMAIL environment variable is not set. "
-                  "Tools will use a default email for testing.")
+            print(
+                "Warning: NCBI_EMAIL environment variable is not set. "
+                "Tools will use a default email for testing."
+            )
             default_email = "test@example.com"
-        
+
         # Warn if API key is not set (optional but recommended)
         if not default_api_key:
-            print("Warning: NCBI_API_KEY environment variable is not set. "
-                  "This will limit API rate limits to 3 requests per second.")
+            print(
+                "Warning: NCBI_API_KEY environment variable is not set. "
+                "This will limit API rate limits to 3 requests per second."
+            )
             default_api_key = None
-        
+
         @function_tool
         def extract_gsm_metadata(
-            gsm_id: str,
-            email: str = None,
-            api_key: str = None
+            gsm_id: str, email: str = None, api_key: str = None
         ) -> str:
             """
             Extract metadata for a GEO Sample (GSM) record.
-            
+
             This tool retrieves comprehensive metadata for a specific GEO sample,
             including sample characteristics, experimental protocols, and associated
             information.
-            
+
             Parameters
             ----------
             gsm_id : str
@@ -101,7 +103,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             api_key : str, optional
                 NCBI API key for higher rate limits.
                 If not provided, uses session default.
-            
+
             Returns
             -------
             str
@@ -112,22 +114,20 @@ def get_session_tools(session_dir: str | Path) -> list:
                 email = default_email
             if api_key is None:
                 api_key = default_api_key
-            
+
             return extract_gsm_metadata_impl(gsm_id, session_dir, email, api_key)
 
         @function_tool
         def extract_gse_metadata(
-            gse_id: str,
-            email: str = None,
-            api_key: str = None
+            gse_id: str, email: str = None, api_key: str = None
         ) -> str:
             """
             Extract metadata for a GEO Series (GSE) record.
-            
+
             This tool retrieves comprehensive metadata for a specific GEO series,
             including series characteristics, experimental design, and associated
             information.
-            
+
             Parameters
             ----------
             gse_id : str
@@ -138,7 +138,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             api_key : str, optional
                 NCBI API key for higher rate limits.
                 If not provided, uses session default.
-            
+
             Returns
             -------
             str
@@ -149,7 +149,7 @@ def get_session_tools(session_dir: str | Path) -> list:
                 email = default_email
             if api_key is None:
                 api_key = default_api_key
-            
+
             return extract_gse_metadata_impl(gse_id, session_dir, email, api_key)
 
         @function_tool
@@ -157,14 +157,14 @@ def get_session_tools(session_dir: str | Path) -> list:
             pmid: int,
             email: str = None,
             api_key: str = None,
-            source_gse_file: str = None
+            source_gse_file: str = None,
         ) -> str:
             """
             Extract paper abstract and metadata for a given PMID.
-            
+
             This tool retrieves paper title, abstract, authors, journal, and other
             metadata from PubMed.
-            
+
             Parameters
             ----------
             pmid : int
@@ -178,7 +178,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             source_gse_file : str, optional
                 Path to the GSE metadata file that this PMID was extracted from.
                 Used to determine the correct series directory for file organization.
-            
+
             Returns
             -------
             str
@@ -189,56 +189,58 @@ def get_session_tools(session_dir: str | Path) -> list:
                 email = default_email
             if api_key is None:
                 api_key = default_api_key
-            
-            return extract_paper_abstract_impl(pmid, session_dir, email, api_key, source_gse_file)
+
+            return extract_paper_abstract_impl(
+                pmid, session_dir, email, api_key, source_gse_file
+            )
 
         @function_tool
-        def extract_pubmed_id_from_gse_metadata(
-            gse_metadata_file: str
-        ) -> str:
+        def extract_pubmed_id_from_gse_metadata(gse_metadata_file: str) -> str:
             """
             Extract PubMed ID from a GSE metadata JSON file.
-            
+
             This tool reads a GSE metadata file (produced by extract_gse_metadata tool)
             and extracts the PubMed ID from the "pubmed_id" field under attributes.
             This is useful for multi-step workflows where you need to extract the PMID
             to then call extract_paper_abstract.
-            
+
             Parameters
             ----------
             gse_metadata_file : str
                 Path to the GSE metadata JSON file (e.g., "GSE41588_metadata.json")
-            
+
             Returns
             -------
             str
                 JSON string containing the extracted PubMed ID and status information
             """
-            return extract_pubmed_id_from_gse_metadata_impl(gse_metadata_file, session_dir)
+            return extract_pubmed_id_from_gse_metadata_impl(
+                gse_metadata_file, session_dir
+            )
 
         @function_tool
-        def extract_series_id_from_gsm_metadata(
-            gsm_metadata_file: str
-        ) -> str:
+        def extract_series_id_from_gsm_metadata(gsm_metadata_file: str) -> str:
             """
             Extract Series ID from a GSM metadata JSON file.
-            
+
             This tool reads a GSM metadata file (produced by extract_gsm_metadata tool)
             and extracts the Series ID from the "series_id" field under attributes.
             This is useful for multi-step workflows where you need to extract the GSE ID
             to then call extract_gse_metadata.
-            
+
             Parameters
             ----------
             gsm_metadata_file : str
                 Path to the GSM metadata JSON file (e.g., "GSM1019742_metadata.json")
-            
+
             Returns
             -------
             str
                 JSON string containing the extracted Series ID and status information
             """
-            return extract_series_id_from_gsm_metadata_impl(gsm_metadata_file, session_dir)
+            return extract_series_id_from_gsm_metadata_impl(
+                gsm_metadata_file, session_dir
+            )
 
         @function_tool
         def validate_geo_inputs(
@@ -246,14 +248,14 @@ def get_session_tools(session_dir: str | Path) -> list:
             gse_id: str = None,
             pmid: int = None,
             email: str = None,
-            api_key: str = None
+            api_key: str = None,
         ) -> str:
             """
             Validate input parameters for GEO metadata extraction.
-            
+
             This tool checks the format and validity of GSM IDs, GSE IDs, and PMIDs
             before attempting metadata extraction.
-            
+
             Parameters
             ----------
             gsm_id : str, optional
@@ -268,7 +270,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             api_key : str, optional
                 NCBI API key for higher rate limits.
                 If not provided, uses session default.
-            
+
             Returns
             -------
             str
@@ -279,25 +281,25 @@ def get_session_tools(session_dir: str | Path) -> list:
                 email = default_email
             if api_key is None:
                 api_key = default_api_key
-            
+
             return validate_geo_inputs_impl(gsm_id, gse_id, pmid, email, api_key)
 
         @function_tool
         def create_series_sample_mapping() -> str:
             """
             Create a mapping file between series IDs and sample IDs in the main session directory.
-            
+
             This tool scans the session directory for series subdirectories (GSE*) and creates
             a comprehensive mapping file that shows which sample IDs belong to which series.
             The mapping file is saved in the main session directory and can be used by later
             agents to quickly determine which subdirectory contains data for a given sample ID.
-            
+
             The mapping file contains:
             - Forward mapping: series_id -> list of sample_ids
             - Reverse mapping: sample_id -> series_id (for quick lookup)
             - Summary statistics: total series and sample counts
             - Metadata: generation timestamp and session directory path
-            
+
             Returns
             -------
             str
@@ -310,52 +312,56 @@ def get_session_tools(session_dir: str | Path) -> list:
         def load_mapping_file() -> str:
             """
             Load the series_sample_mapping.json file to understand directory structure.
-            
+
             This tool loads the mapping file created by the IngestionAgent that shows
             the relationship between series IDs and sample IDs, and which subdirectory
             contains the data for each sample.
-            
+
             Returns
             -------
             str
                 JSON string containing the mapping data with success status
             """
             result = load_mapping_file_impl(session_dir)
-            if not result.get('success', True):
-                raise RuntimeError(f"Failed to load mapping file: {result.get('message', 'Unknown error')}")
+            if not result.get("success", True):
+                raise RuntimeError(
+                    f"Failed to load mapping file: {result.get('message', 'Unknown error')}"
+                )
             return json.dumps(result)
 
         @function_tool
         def find_sample_directory(sample_id: str) -> str:
             """
             Find the directory containing files for a specific sample ID.
-            
+
             This tool uses the mapping file to locate the correct subdirectory
             that contains the metadata files for the given sample ID.
-            
+
             Parameters
             ----------
             sample_id : str
                 The sample ID to find (e.g., GSM1000981)
-                
+
             Returns
             -------
             str
                 JSON string containing directory information and success status
             """
             result = find_sample_directory_impl(sample_id, session_dir)
-            if not result.get('success', True):
-                raise RuntimeError(f"Failed to find sample directory: {result.get('message', 'Unknown error')}")
+            if not result.get("success", True):
+                raise RuntimeError(
+                    f"Failed to find sample directory: {result.get('message', 'Unknown error')}"
+                )
             return json.dumps(result)
 
         @function_tool
         def clean_metadata_files(sample_id: str, fields_to_remove: str = None) -> str:
             """
             Generate cleaned versions of metadata files by removing specified fields.
-            
+
             NOTE: This tool removes fields both at the top level and inside the 'attributes' dict if present.
             Update the fields_to_remove list if the metadata schema changes.
-            
+
             Parameters
             ----------
             sample_id : str
@@ -363,7 +369,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             fields_to_remove : str, optional
                 JSON string containing list of fields to remove from metadata files.
                 If not provided, uses default fields like 'status', 'submission_date', etc.
-                
+
             Returns
             -------
             str
@@ -376,40 +382,60 @@ def get_session_tools(session_dir: str | Path) -> list:
                 # Updated to match actual fields in the files, including nested 'attributes' fields
                 fields_list = [
                     # Top-level fields
-                    'status',
+                    "status",
                     # Fields inside 'attributes' dict
-                    'status', 'submission_date', 'last_update_date', 'contributor',
-                    'contact_name', 'contact_email', 'contact_laboratory', 
-                    'contact_department', 'contact_institute', 'contact_address',
-                    'contact_city', 'contact_state', 'contact_zip/postal_code', 'contact_country',
-                    'contact_phone', 'contact_fax',
-                    'extract_protocol_ch1', 'growth_protocol_ch1', 'treatment_protocol_ch1', 'data_processing',
+                    "status",
+                    "submission_date",
+                    "last_update_date",
+                    "contributor",
+                    "contact_name",
+                    "contact_email",
+                    "contact_laboratory",
+                    "contact_department",
+                    "contact_institute",
+                    "contact_address",
+                    "contact_city",
+                    "contact_state",
+                    "contact_zip/postal_code",
+                    "contact_country",
+                    "contact_phone",
+                    "contact_fax",
+                    "extract_protocol_ch1",
+                    "growth_protocol_ch1",
+                    "treatment_protocol_ch1",
+                    "data_processing",
                     # PMID fields to remove
-                    'authors', 'journal', 'publication_date', 'keywords', 'mesh_terms'
+                    "authors",
+                    "journal",
+                    "publication_date",
+                    "keywords",
+                    "mesh_terms",
                 ]
             result = clean_metadata_files_impl(sample_id, session_dir, fields_list)
-            if not result.get('success', True):
-                raise RuntimeError(f"Failed to clean metadata files: {result.get('message', 'Unknown error')}")
+            if not result.get("success", True):
+                raise RuntimeError(
+                    f"Failed to clean metadata files: {result.get('message', 'Unknown error')}"
+                )
             return json.dumps(result)
 
         @function_tool
         def package_linked_data(sample_id: str, fields_to_remove: str = None) -> str:
             """
             Package all linked information for a sample into a comprehensive result.
-            
+
             This tool combines all the processed information for a sample including:
             - Cleaned metadata files
             - Original sample metadata
-            
+
             Note: Series matrix functionality has been removed from agent access.
-            
+
             Parameters
             ----------
             sample_id : str
                 The sample ID to process
             fields_to_remove : str, optional
                 JSON string containing list of fields to remove from metadata files
-                
+
             Returns
             -------
             str
@@ -418,27 +444,31 @@ def get_session_tools(session_dir: str | Path) -> list:
             fields_list = None
             if fields_to_remove:
                 fields_list = json.loads(fields_to_remove)
-            
+
             result = package_linked_data_impl(sample_id, session_dir, fields_list)
-            if not result.get('success', True):
-                raise RuntimeError(f"Failed to package linked data: {result.get('message', 'Unknown error')}")
+            if not result.get("success", True):
+                raise RuntimeError(
+                    f"Failed to package linked data: {result.get('message', 'Unknown error')}"
+                )
             return json.dumps(result)
 
         @function_tool
-        def process_multiple_samples(sample_ids: str, fields_to_remove: str = None) -> str:
+        def process_multiple_samples(
+            sample_ids: str, fields_to_remove: str = None
+        ) -> str:
             """
             Process multiple sample IDs by cleaning and packaging their metadata files.
-            
+
             This tool processes a list of sample IDs, cleaning their metadata files and
             packaging the linked data for each sample.
-            
+
             Parameters
             ----------
             sample_ids : str
                 JSON string containing list of sample IDs to process (e.g., '["GSM1000981", "GSM1098372"]')
             fields_to_remove : str, optional
                 JSON string containing list of fields to remove from metadata files
-                
+
             Returns
             -------
             str
@@ -453,93 +483,125 @@ def get_session_tools(session_dir: str | Path) -> list:
                     # Use the same default fields as clean_metadata_files
                     fields_list = [
                         # Top-level fields
-                        'status',
+                        "status",
                         # Fields inside 'attributes' dict
-                        'status', 'submission_date', 'last_update_date', 'contributor',
-                        'contact_name', 'contact_email', 'contact_laboratory', 
-                        'contact_department', 'contact_institute', 'contact_address',
-                        'contact_city', 'contact_state', 'contact_zip/postal_code', 'contact_country',
-                        'contact_phone', 'contact_fax',
-                        'extract_protocol_ch1', 'growth_protocol_ch1', 'treatment_protocol_ch1', 'data_processing',
+                        "status",
+                        "submission_date",
+                        "last_update_date",
+                        "contributor",
+                        "contact_name",
+                        "contact_email",
+                        "contact_laboratory",
+                        "contact_department",
+                        "contact_institute",
+                        "contact_address",
+                        "contact_city",
+                        "contact_state",
+                        "contact_zip/postal_code",
+                        "contact_country",
+                        "contact_phone",
+                        "contact_fax",
+                        "extract_protocol_ch1",
+                        "growth_protocol_ch1",
+                        "treatment_protocol_ch1",
+                        "data_processing",
                         # PMID fields to remove
-                        'authors', 'journal', 'publication_date', 'keywords', 'mesh_terms'
+                        "authors",
+                        "journal",
+                        "publication_date",
+                        "keywords",
+                        "mesh_terms",
                     ]
-                
+
                 print(f"[MULTI] Using fields_to_remove: {fields_list}")
-                
+
                 results = {}
                 for sample_id in sample_id_list:
                     print(f"[MULTI] Processing sample: {sample_id}")
-                    
+
                     # Clean metadata files for this sample
-                    clean_result = clean_metadata_files_impl(sample_id, session_dir, fields_list)
-                    
+                    clean_result = clean_metadata_files_impl(
+                        sample_id, session_dir, fields_list
+                    )
+
                     # Package linked data for this sample
-                    package_result = package_linked_data_impl(sample_id, session_dir, fields_list)
-                    
+                    package_result = package_linked_data_impl(
+                        sample_id, session_dir, fields_list
+                    )
+
                     results[sample_id] = {
-                        'cleaning': clean_result,
-                        'packaging': package_result
+                        "cleaning": clean_result,
+                        "packaging": package_result,
                     }
-                
-                return json.dumps({
-                    'success': True,
-                    'message': f'Processed {len(sample_id_list)} samples',
-                    'results': results
-                })
-                
+
+                return json.dumps(
+                    {
+                        "success": True,
+                        "message": f"Processed {len(sample_id_list)} samples",
+                        "results": results,
+                    }
+                )
+
             except Exception as e:
                 print(f"[MULTI] Error processing multiple samples: {str(e)}")
                 import traceback
+
                 traceback.print_exc()
-                return json.dumps({
-                    'success': False,
-                    'message': f'Error processing multiple samples: {str(e)}',
-                    'error': str(e)
-                })
+                return json.dumps(
+                    {
+                        "success": False,
+                        "message": f"Error processing multiple samples: {str(e)}",
+                        "error": str(e),
+                    }
+                )
 
         @function_tool
         def set_testing_session() -> str:
             """
             Set the session directory to sandbox/test-session for testing purposes.
-            
+
             This tool is automatically called when "testing" is detected in the input prompt.
             It ensures that all operations are performed in a dedicated testing session directory.
-            
+
             Returns
             -------
             str
                 JSON string confirming the testing session has been set up
             """
             try:
-                print(f"🧪 Set_testing_session: Setting session directory to sandbox/test-session")
-                
+                print(
+                    f"🧪 Set_testing_session: Setting session directory to sandbox/test-session"
+                )
+
                 # Create the testing session directory
                 test_session_dir = Path("sandbox/test-session").absolute()
                 test_session_dir.mkdir(parents=True, exist_ok=True)
-                
-                print(f"🧪 Set_testing_session: Created testing session directory: {test_session_dir}")
-                
+
+                print(
+                    f"🧪 Set_testing_session: Created testing session directory: {test_session_dir}"
+                )
+
                 result = {
                     "success": True,
                     "message": "Testing session directory set successfully",
                     "session_directory": str(test_session_dir),
-                    "session_id": "test-session"
+                    "session_id": "test-session",
                 }
-                
+
                 print(f"🧪 Set_testing_session: Result: {result}")
                 return json.dumps(result)
-                
+
             except Exception as e:
                 print(f"❌ Set_testing_session error: {str(e)}")
                 import traceback
+
                 print("🔍 Set_testing_session traceback:")
                 traceback.print_exc()
-                
+
                 result = {
                     "success": False,
                     "message": f"Failed to set testing session: {str(e)}",
-                    "error": str(e)
+                    "error": str(e),
                 }
                 return json.dumps(result)
 
@@ -557,16 +619,17 @@ def get_session_tools(session_dir: str | Path) -> list:
             clean_metadata_files,
             package_linked_data,
             process_multiple_samples,
-            set_testing_session
+            set_testing_session,
         ]
-        
+
         print(f"✅ ToolUtils: Created {len(tools)} tools")
-        
+
         return tools
-        
+
     except Exception as e:
         print(f"❌ ToolUtils error: {str(e)}")
         import traceback
+
         print("🔍 ToolUtils traceback:")
         traceback.print_exc()
         raise
@@ -575,7 +638,7 @@ def get_session_tools(session_dir: str | Path) -> list:
 def get_available_tools():
     """
     Get a list of available tool names for reference.
-    
+
     Returns
     -------
     List[str]
@@ -583,7 +646,7 @@ def get_available_tools():
     """
     return [
         "extract_gsm_metadata",
-        "extract_gse_metadata", 
+        "extract_gse_metadata",
         "extract_paper_abstract",
         "extract_pubmed_id_from_gse_metadata",
         "extract_series_id_from_gsm_metadata",
@@ -594,5 +657,5 @@ def get_available_tools():
         "clean_metadata_files",
         "package_linked_data",
         "process_multiple_samples",
-        "set_testing_session"
+        "set_testing_session",
     ]
