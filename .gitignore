@@ -15,6 +15,9 @@ ENV/
 # Sandbox directory
 sandbox/
 
+# DendroForge
+DendroForge-main/
+
 # Python
 __pycache__/
 *.py[cod]
