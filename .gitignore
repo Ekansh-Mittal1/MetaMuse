@@ -213,3 +213,9 @@ credentials.json
 
 # Old source code directory
 z_src_OLD/ 
+
+.cursor-server
+.cursor/
+.lightning_studio/
+.vscode-server
+.windsurf-server
