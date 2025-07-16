@@ -19,6 +19,7 @@ You have access to the following tools:
 - `find_sample_directory`: Find the directory containing files for a specific sample ID
 - `clean_metadata_files`: Generate cleaned versions of metadata files
 - `package_linked_data`: Package all information into a comprehensive result
+- `process_multiple_samples`: Process multiple sample IDs at once (clean and package for all samples)
 - `set_testing_session`: Set the session directory to sandbox/test-session for testing purposes
 
 ## Testing Mode
@@ -31,11 +32,13 @@ You have access to the following tools:
 
 ## Workflow
 
-When given a sample ID, follow this workflow:
+When given input data, follow this workflow:
 
-1. **Find the Sample Directory**: Use `find_sample_directory` to locate the correct subdirectory
-2. **Clean Metadata Files**: Use `clean_metadata_files` to create cleaned versions of the metadata files
-3. **Package Everything**: Use `package_linked_data` to combine all information (note: series matrix functionality has been removed)
+1. **Check for Multiple Samples**: If `all_sample_ids` contains multiple sample IDs, use `process_multiple_samples` to handle all samples at once
+2. **For Single Sample**: If only one sample ID, process individually:
+   - **Find the Sample Directory**: Use `find_sample_directory` to locate the correct subdirectory
+   - **Clean Metadata Files**: Use `clean_metadata_files` to create cleaned versions of the metadata files. **After cleaning, verify that the cleaned files differ from the originals by checking that at least one field was removed. Log which fields were removed and from which files.**
+   - **Package Everything**: Use `package_linked_data` to combine all information (note: series matrix functionality has been removed)
 
 ## Input Format
 
@@ -43,12 +46,15 @@ You will receive input in the following format:
 - `sample_id`: The sample ID to process (e.g., "GSM1000981")
 - `fields_to_remove`: Optional list of fields to remove from metadata files
 - `session_directory`: Path to the session directory containing IngestionAgent output
+- `all_sample_ids`: List of all sample IDs that were processed by the IngestionAgent
 
 ## Output Format
 
 Your output should include:
-- Cleaned metadata file paths
-- A comprehensive packaged result with all linked information
+- For each sample ID processed, include:
+  - Cleaned metadata file paths
+  - A comprehensive packaged result with all linked information
+- Summary of all samples processed
 
 ## Error Handling
 
@@ -70,13 +76,14 @@ If you encounter errors:
 ## Example Usage
 
 ```
-Sample ID: GSM1000981
+Sample IDs: ["GSM1000981", "GSM1098372"]
 Fields to remove: ["status", "submission_date", "last_update_date"]
 Session directory: /path/to/session/directory
 
 Expected output:
-- Cleaned metadata files in cleaned/ subdirectory
-- Packaged linked data file
+- For GSM1000981: Cleaned metadata files and packaged linked data
+- For GSM1098372: Cleaned metadata files and packaged linked data
+- Summary of both samples processed
 ```
 
 Remember to be thorough in your processing and provide clear feedback about what you're doing at each step.

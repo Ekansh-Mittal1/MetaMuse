@@ -26,6 +26,10 @@ class LinkerHandoff(BaseHandoff):
     session_directory: str = Field(
         ..., description="Path to the session directory containing IngestionAgent output files."
     )
+    all_sample_ids: list[str] = Field(
+        default=[],
+        description="List of all sample IDs that were processed by the IngestionAgent."
+    )
 
 
 def on_handoff_callback(ctx: RunContextWrapper[None], input_data: BaseHandoff):

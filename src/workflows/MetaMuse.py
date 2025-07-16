@@ -126,19 +126,26 @@ def create_multi_agent_pipeline(
     """
     if session_id is None:
         session_id = str(uuid4())
-    
     if sandbox_dir is None:
         sandbox_dir = "sandbox"
-    
-    # Create the LinkerAgent first (it will be the handoff target)
+
+    # Parse input_data for multiple sample IDs (comma or whitespace separated)
+    sample_ids = []
+    if input_data:
+        # Accept comma or whitespace separated
+        for part in input_data.replace(',', ' ').split():
+            if part.strip():
+                sample_ids.append(part.strip())
+
+    # Create a single LinkerAgent that can handle multiple samples
     linker_agent = create_linker_agent(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
-        handoffs=[],  # End of pipeline, no further handoffs
-        input_data=input_data
+        handoffs=[],
+        input_data=input_data  # Pass the full input_data so it knows about all samples
     )
-    
-    # Create the IngestionAgent with handoff to LinkerAgent
+
+    # Create the IngestionAgent with handoff to the single LinkerAgent
     ingestion_agent = create_ingestion_agent(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
@@ -150,7 +157,7 @@ def create_multi_agent_pipeline(
             )
         ]
     )
-    
+
     return ingestion_agent  # Return entry point
 
 

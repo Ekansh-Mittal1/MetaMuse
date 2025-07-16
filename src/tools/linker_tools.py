@@ -136,7 +136,8 @@ class LinkerTools:
             Result containing paths to cleaned files
         """
         try:
-            if fields_to_remove is None:
+            print(f"[CLEAN] Called clean_metadata_files for sample_id={sample_id}")
+            if fields_to_remove is None or len(fields_to_remove) == 0:
                 fields_to_remove = [
                     # GSE and GSM fields to remove from attributes
                     'status', 'submission_date', 'last_update_date', 'contributor',
@@ -144,14 +145,19 @@ class LinkerTools:
                     'contact_name', 'contact_email', 'contact_laboratory', 
                     'contact_department', 'contact_institute', 'contact_address',
                     'contact_city', 'contact_state', 'contact_zip/postal_code', 'contact_country',
+                    'contact_phone', 'contact_fax',
                     # Protocol and processing fields
                     'extract_protocol_ch1', 'growth_protocol_ch1', 'treatment_protocol_ch1', 'data_processing',
                     # PMID fields to remove
                     'authors', 'journal', 'publication_date', 'keywords', 'mesh_terms'
                 ]
+                print(f"[CLEAN] Using default fields_to_remove: {fields_to_remove}")
+            else:
+                print(f"[CLEAN] Using provided fields_to_remove: {fields_to_remove}")
             
             dir_result = self.find_sample_directory(sample_id)
             if not dir_result.success:
+                print(f"[CLEAN] Failed to find sample directory for sample_id={sample_id}")
                 return dir_result
                 
             series_dir = Path(dir_result.data['directory'])
@@ -218,6 +224,7 @@ class LinkerTools:
             List of fields to remove
         """
         try:
+            print(f"[CLEAN] Cleaning file: {input_file} -> {output_file}")
             with open(input_file, 'r') as f:
                 data = json.load(f)
             
@@ -226,6 +233,7 @@ class LinkerTools:
             
             with open(output_file, 'w') as f:
                 json.dump(data, f, indent=2)
+            print(f"[CLEAN] Cleaned file: {output_file}")
         except Exception as e:
             error_msg = f"Error cleaning JSON file {input_file}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
             print(f"❌ LINKER ERROR: {error_msg}")
@@ -248,7 +256,9 @@ class LinkerTools:
         """
         if isinstance(data, dict):
             for field in fields_to_remove:
-                data.pop(field, None)
+                if field in data:
+                    removed_value = data.pop(field)
+                    print(f"[CLEAN] Removed field '{field}' with value: {removed_value}")
             for value in data.values():
                 self._remove_fields_recursive(value, fields_to_remove)
         elif isinstance(data, list):
@@ -635,13 +645,26 @@ def clean_metadata_files_impl(sample_id: str, session_dir: str, fields_to_remove
     Dict[str, Any]
         Result dictionary with success status and cleaned files info
     """
-    tools = LinkerTools(session_dir)
-    result = tools.clean_metadata_files(sample_id, fields_to_remove)
-    return {
-        'success': result.success,
-        'message': result.message,
-        'files_created': result.files_created
-    }
+    try:
+        print(f"[CLEAN_IMPL] Starting clean_metadata_files_impl for sample_id={sample_id}, session_dir={session_dir}")
+        print(f"[CLEAN_IMPL] fields_to_remove type: {type(fields_to_remove)}, value: {fields_to_remove}")
+        
+        tools = LinkerTools(session_dir)
+        result = tools.clean_metadata_files(sample_id, fields_to_remove)
+        
+        print(f"[CLEAN_IMPL] Result: success={result.success}, message={result.message}")
+        
+        return {
+            'success': result.success,
+            'message': result.message,
+            'files_created': result.files_created
+        }
+    except Exception as e:
+        print(f"[CLEAN_IMPL] Exception in clean_metadata_files_impl: {str(e)}")
+        print(f"[CLEAN_IMPL] Full traceback:")
+        traceback.print_exc()
+        # Re-raise the exception to preserve the traceback
+        raise
 
 
 def download_series_matrix_impl(sample_id: str, session_dir: str) -> Dict[str, Any]:

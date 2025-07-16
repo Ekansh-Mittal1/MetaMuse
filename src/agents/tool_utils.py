@@ -353,9 +353,8 @@ def get_session_tools(session_dir: str | Path) -> list:
             """
             Generate cleaned versions of metadata files by removing specified fields.
             
-            This tool creates cleaned versions of the series metadata, abstract metadata,
-            and series matrix metadata files by removing specified fields. The cleaned
-            files are saved in a 'cleaned' subdirectory.
+            NOTE: This tool removes fields both at the top level and inside the 'attributes' dict if present.
+            Update the fields_to_remove list if the metadata schema changes.
             
             Parameters
             ----------
@@ -373,7 +372,21 @@ def get_session_tools(session_dir: str | Path) -> list:
             fields_list = None
             if fields_to_remove:
                 fields_list = json.loads(fields_to_remove)
-            
+            else:
+                # Updated to match actual fields in the files, including nested 'attributes' fields
+                fields_list = [
+                    # Top-level fields
+                    'status',
+                    # Fields inside 'attributes' dict
+                    'status', 'submission_date', 'last_update_date', 'contributor',
+                    'contact_name', 'contact_email', 'contact_laboratory', 
+                    'contact_department', 'contact_institute', 'contact_address',
+                    'contact_city', 'contact_state', 'contact_zip/postal_code', 'contact_country',
+                    'contact_phone', 'contact_fax',
+                    'extract_protocol_ch1', 'growth_protocol_ch1', 'treatment_protocol_ch1', 'data_processing',
+                    # PMID fields to remove
+                    'authors', 'journal', 'publication_date', 'keywords', 'mesh_terms'
+                ]
             result = clean_metadata_files_impl(sample_id, session_dir, fields_list)
             if not result.get('success', True):
                 raise RuntimeError(f"Failed to clean metadata files: {result.get('message', 'Unknown error')}")
@@ -410,6 +423,80 @@ def get_session_tools(session_dir: str | Path) -> list:
             if not result.get('success', True):
                 raise RuntimeError(f"Failed to package linked data: {result.get('message', 'Unknown error')}")
             return json.dumps(result)
+
+        @function_tool
+        def process_multiple_samples(sample_ids: str, fields_to_remove: str = None) -> str:
+            """
+            Process multiple sample IDs by cleaning and packaging their metadata files.
+            
+            This tool processes a list of sample IDs, cleaning their metadata files and
+            packaging the linked data for each sample.
+            
+            Parameters
+            ----------
+            sample_ids : str
+                JSON string containing list of sample IDs to process (e.g., '["GSM1000981", "GSM1098372"]')
+            fields_to_remove : str, optional
+                JSON string containing list of fields to remove from metadata files
+                
+            Returns
+            -------
+            str
+                JSON string containing results for all processed samples
+            """
+            try:
+                sample_id_list = json.loads(sample_ids)
+                fields_list = None
+                if fields_to_remove:
+                    fields_list = json.loads(fields_to_remove)
+                else:
+                    # Use the same default fields as clean_metadata_files
+                    fields_list = [
+                        # Top-level fields
+                        'status',
+                        # Fields inside 'attributes' dict
+                        'status', 'submission_date', 'last_update_date', 'contributor',
+                        'contact_name', 'contact_email', 'contact_laboratory', 
+                        'contact_department', 'contact_institute', 'contact_address',
+                        'contact_city', 'contact_state', 'contact_zip/postal_code', 'contact_country',
+                        'contact_phone', 'contact_fax',
+                        'extract_protocol_ch1', 'growth_protocol_ch1', 'treatment_protocol_ch1', 'data_processing',
+                        # PMID fields to remove
+                        'authors', 'journal', 'publication_date', 'keywords', 'mesh_terms'
+                    ]
+                
+                print(f"[MULTI] Using fields_to_remove: {fields_list}")
+                
+                results = {}
+                for sample_id in sample_id_list:
+                    print(f"[MULTI] Processing sample: {sample_id}")
+                    
+                    # Clean metadata files for this sample
+                    clean_result = clean_metadata_files_impl(sample_id, session_dir, fields_list)
+                    
+                    # Package linked data for this sample
+                    package_result = package_linked_data_impl(sample_id, session_dir, fields_list)
+                    
+                    results[sample_id] = {
+                        'cleaning': clean_result,
+                        'packaging': package_result
+                    }
+                
+                return json.dumps({
+                    'success': True,
+                    'message': f'Processed {len(sample_id_list)} samples',
+                    'results': results
+                })
+                
+            except Exception as e:
+                print(f"[MULTI] Error processing multiple samples: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return json.dumps({
+                    'success': False,
+                    'message': f'Error processing multiple samples: {str(e)}',
+                    'error': str(e)
+                })
 
         @function_tool
         def set_testing_session() -> str:
@@ -469,6 +556,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             find_sample_directory,
             clean_metadata_files,
             package_linked_data,
+            process_multiple_samples,
             set_testing_session
         ]
         
@@ -505,5 +593,6 @@ def get_available_tools():
         "find_sample_directory",
         "clean_metadata_files",
         "package_linked_data",
+        "process_multiple_samples",
         "set_testing_session"
     ]
