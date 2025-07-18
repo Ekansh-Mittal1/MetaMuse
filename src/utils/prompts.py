@@ -2,10 +2,8 @@
 Prompt utilities for MetaMuse agents.
 """
 
-import os
 from pathlib import Path
-from jinja2 import Environment, FileSystemLoader, Template
-from typing import Dict, Any
+from jinja2 import Environment, FileSystemLoader
 
 
 def load_prompt(filename: str, **variables) -> str:

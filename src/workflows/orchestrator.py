@@ -1,11 +1,9 @@
 from typing import Callable
-from agents import RunResultStreaming, Runner, RunConfig, ModelSettings, FunctionTool
+from agents import RunResultStreaming, Runner, RunConfig, ModelSettings
 from openai.types.shared import Reasoning
 from pathlib import Path
 import os
 from dotenv import load_dotenv
-from agents import ItemHelpers
-import json
 
 # Load environment variables
 load_dotenv(override=True)

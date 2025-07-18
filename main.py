@@ -167,14 +167,16 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         elif workflow_name in ["linking", "full_pipeline", "multi_agent_geo"]:
             # These workflows need input_data for testing detection
             result = await orchestrator.run_workflow(
-                lambda **kwargs: workflow_func(input_data=input_data),
+                lambda **kwargs: workflow_func(session_id=session_id, sandbox_dir=orchestrator.sandbox_dir, input_data=input_data),
                 input_data,
                 **kwargs,
             )
         else:
             # Extraction pipeline doesn't need input_data
             result = await orchestrator.run_workflow(
-                workflow_func, input_data, **kwargs
+                lambda **kwargs: workflow_func(session_id=session_id, sandbox_dir=orchestrator.sandbox_dir),
+                input_data,
+                **kwargs,
             )
 
         print("\n" + "=" * 60)
@@ -286,13 +288,47 @@ Examples:
         )
 
     # Validate required environment variables
-    required_env_vars = ["OPENROUTER_API_KEY", "NCBI_EMAIL"]
-    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-
+    required_env_vars = {
+        "OPENROUTER_API_KEY": "Required for OpenRouter API access (LLM provider)",
+        "NCBI_EMAIL": "Required for NCBI E-Utilities API access (PubMed/GEO data)",
+    }
+    
+    missing_vars = []
+    for var, description in required_env_vars.items():
+        if not os.getenv(var):
+            missing_vars.append(var)
+    
     if missing_vars:
-        print(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
-        print("Please set them in your .env file")
+        print("❌ MISSING REQUIRED ENVIRONMENT VARIABLES")
+        print("=" * 60)
+        for var in missing_vars:
+            print(f"❌ {var}: {required_env_vars[var]}")
+        print("\nPlease set these variables in your .env file:")
+        for var in missing_vars:
+            print(f"   {var}=your_value_here")
+        print("\nExample .env file:")
+        print("   OPENROUTER_API_KEY=your_openrouter_api_key")
+        print("   NCBI_EMAIL=your_email@example.com")
+        print("   NCBI_API_KEY=your_ncbi_api_key  # Optional but recommended")
+        print("=" * 60)
         sys.exit(1)
+    
+    # Validate optional but recommended environment variables
+    recommended_vars = {
+        "NCBI_API_KEY": "Recommended for higher NCBI API rate limits",
+    }
+    
+    missing_recommended = []
+    for var, description in recommended_vars.items():
+        if not os.getenv(var):
+            missing_recommended.append(var)
+    
+    if missing_recommended:
+        print("⚠️  WARNING: Missing recommended environment variables:")
+        for var in missing_recommended:
+            print(f"   ⚠️  {var}: {recommended_vars[var]}")
+        print("   The workflow will continue but may be rate-limited.")
+        print()
 
     # Run the workflow
     await run_workflow(args.workflow, args.input, args.model)

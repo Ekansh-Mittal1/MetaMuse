@@ -29,10 +29,10 @@ class NCBIClient:
             "NCBI_API_URL", "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
         )
 
-        # Validate required email
-        if not self.email or not self.api_key or not self.api_url:
+        # Validate required email (API key is optional)
+        if not self.email or not self.api_url:
             raise ValueError(
-                "NCBI_EMAIL, NCBI_API_KEY, and NCBI_API_URL environment variables are required"
+                "NCBI_EMAIL and NCBI_API_URL environment variables are required"
             )
 
         # Initialize the E-Utilities client
@@ -40,10 +40,17 @@ class NCBIClient:
             urllib.request.HTTPHandler(debuglevel=0),
             urllib.request.HTTPSHandler(debuglevel=0),
         )
-        self.client.addheaders = [
+        
+        # Set headers - email is required, API key is optional
+        headers = [
             ("User-Agent", "Python-NCBI-E-Utilities/1.0"),
             ("Email", self.email),
         ]
+        
+        if self.api_key:
+            headers.append(("API-Key", self.api_key))
+        
+        self.client.addheaders = headers
 
         # Ensure API URL ends with a slash
         if not self.api_url.endswith("/"):
@@ -211,71 +218,100 @@ class NCBIClient:
             "mesh_terms": [],
         }
 
-        try:
-            # First search for the PMID to get the correct database ID
-            search_params = {"db": "pubmed", "term": str(pmid), "retmode": "json"}
+        max_retries = 3
+        retry_delay = 2  # seconds
 
-            search_url = (
-                f"{self.api_url}esearch.fcgi?{urllib.parse.urlencode(search_params)}"
-            )
+        for attempt in range(max_retries):
+            try:
+                # First search for the PMID to get the correct database ID
+                search_params = {"db": "pubmed", "term": str(pmid), "retmode": "json"}
 
-            # Use urllib.request directly instead of client
-            search_response = urllib.request.urlopen(search_url)
-            search_content = search_response.read().decode("utf-8")
+                search_url = (
+                    f"{self.api_url}esearch.fcgi?{urllib.parse.urlencode(search_params)}"
+                )
 
-            if search_content:
-                search_data = json.loads(search_content)
-                id_list = search_data.get("esearchresult", {}).get("idlist", [])
+                # Use the configured client with proper headers
+                search_response = self.client.open(search_url)
+                search_content = search_response.read().decode("utf-8")
 
-                if id_list:
-                    # Use the first ID from search results
-                    db_id = id_list[0]
+                if search_content:
+                    search_data = json.loads(search_content)
+                    id_list = search_data.get("esearchresult", {}).get("idlist", [])
 
-                    # Get metadata using esummary
-                    summary_params = {"db": "pubmed", "id": db_id, "retmode": "json"}
+                    if id_list:
+                        # Use the first ID from search results
+                        db_id = id_list[0]
 
-                    summary_url = f"{self.api_url}esummary.fcgi?{urllib.parse.urlencode(summary_params)}"
+                        # Get metadata using esummary
+                        summary_params = {"db": "pubmed", "id": db_id, "retmode": "json"}
 
-                    # Use urllib.request directly instead of client
-                    summary_response = urllib.request.urlopen(summary_url)
-                    summary_content = summary_response.read().decode("utf-8")
+                        summary_url = f"{self.api_url}esummary.fcgi?{urllib.parse.urlencode(summary_params)}"
 
-                    if summary_content:
-                        try:
-                            json_data = json.loads(summary_content)
-                            paper_info.update(self._parse_pubmed_json(json_data, pmid))
-                        except json.JSONDecodeError:
-                            # Fallback to XML if JSON fails
-                            paper_info.update(self._parse_pubmed_xml(summary_content))
+                        # Use the configured client with proper headers
+                        summary_response = self.client.open(summary_url)
+                        summary_content = summary_response.read().decode("utf-8")
 
-                    # Get full paper content using efetch to extract abstract
-                    fetch_params = {
-                        "db": "pubmed",
-                        "id": db_id,
-                        "retmode": "xml",
-                        "rettype": "abstract",
-                    }
+                        if summary_content:
+                            try:
+                                json_data = json.loads(summary_content)
+                                paper_info.update(self._parse_pubmed_json(json_data, pmid))
+                            except json.JSONDecodeError:
+                                # Fallback to XML if JSON fails
+                                paper_info.update(self._parse_pubmed_xml(summary_content))
 
-                    fetch_url = f"{self.api_url}efetch.fcgi?{urllib.parse.urlencode(fetch_params)}"
+                        # Get full paper content using efetch to extract abstract
+                        fetch_params = {
+                            "db": "pubmed",
+                            "id": db_id,
+                            "retmode": "xml",
+                            "rettype": "abstract",
+                        }
 
-                    # Use urllib.request directly instead of client
-                    fetch_response = urllib.request.urlopen(fetch_url)
-                    fetch_content = fetch_response.read().decode("utf-8")
+                        fetch_url = f"{self.api_url}efetch.fcgi?{urllib.parse.urlencode(fetch_params)}"
 
-                    if fetch_content:
-                        # Parse the XML to extract the abstract
-                        abstract = self._extract_abstract_from_xml(fetch_content)
-                        if abstract:
-                            paper_info["abstract"] = abstract
+                        # Use the configured client with proper headers
+                        fetch_response = self.client.open(fetch_url)
+                        fetch_content = fetch_response.read().decode("utf-8")
 
-            # Add small delay to respect rate limits
-            time.sleep(1.0)  # Increased delay to avoid rate limiting
+                        if fetch_content:
+                            # Parse the XML to extract the abstract
+                            abstract = self._extract_abstract_from_xml(fetch_content)
+                            if abstract:
+                                paper_info["abstract"] = abstract
 
-            return paper_info
+                # Add small delay to respect rate limits
+                time.sleep(0.34)  # ~3 requests per second
 
-        except Exception as e:
-            traceback.print_exc()
-            raise
+                return paper_info
+
+            except urllib.error.HTTPError as e:
+                if e.code in [502, 503, 504, 429] and attempt < max_retries - 1:
+                    # Retry on server errors (502, 503, 504) and rate limiting (429)
+                    print(
+                        f"⚠️  HTTP {e.code} error for PMID {pmid}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    raise urllib.error.HTTPError(
+                        search_url,
+                        e.code,
+                        f"Failed to retrieve metadata for PMID {pmid} after {attempt + 1} attempts",
+                        e.hdrs,
+                        e.fp,
+                    )
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(
+                        f"⚠️  Unexpected error for PMID {pmid}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    traceback.print_exc()
+                    raise
 
     def _parse_pubmed_xml(self, xml_content: str) -> Dict[str, Any]:
         """
@@ -819,7 +855,7 @@ def get_gse_series_matrix(gse_id: str) -> Dict[str, Any]:
     return NCBIClient().get_gse_series_matrix(gse_id)
 
 
-def get_paper_abstract(pmid: int) -> Dict[str, Any]:
+def get_paper_abstract(pmid: int, email: str = None, api_key: str = None) -> Dict[str, Any]:
     """
     Get paper abstract and metadata for a given PMID.
 
@@ -827,6 +863,10 @@ def get_paper_abstract(pmid: int) -> Dict[str, Any]:
     ----------
     pmid : int
         PubMed ID for the paper.
+    email : str, optional
+        Email address for NCBI E-Utils identification.
+    api_key : str, optional
+        NCBI API key for higher rate limits.
 
     Returns
     -------
@@ -835,7 +875,14 @@ def get_paper_abstract(pmid: int) -> Dict[str, Any]:
         journal, and other metadata.
     """
 
-    return NCBIClient().get_paper_abstract(pmid)
+    # Create client with provided credentials or use environment variables
+    client = NCBIClient()
+    if email:
+        client.email = email
+    if api_key:
+        client.api_key = api_key
+    
+    return client.get_paper_abstract(pmid)
 
 
 def extract_pubmed_id_from_gse_metadata(gse_metadata_file: str) -> Dict[str, Any]:
@@ -905,7 +952,6 @@ def extract_pubmed_id_from_gse_metadata(gse_metadata_file: str) -> Dict[str, Any
         raise ValueError(f"Invalid JSON in GSE metadata file {gse_metadata_file}: {e}")
     except Exception as e:
         traceback.print_exc()
-        raise
         raise RuntimeError(f"Error extracting PubMed ID from {gse_metadata_file}: {e}")
 
 
@@ -974,7 +1020,6 @@ def extract_series_id_from_gsm_metadata(gsm_metadata_file: str) -> Dict[str, Any
         raise ValueError(f"Invalid JSON in GSM metadata file {gsm_metadata_file}: {e}")
     except Exception as e:
         traceback.print_exc()
-        raise
         raise RuntimeError(f"Error extracting Series ID from {gsm_metadata_file}: {e}")
 
 
@@ -1204,7 +1249,7 @@ def extract_paper_abstract_impl(
         raise ValueError(f"Invalid PMID format: {pmid}")
 
     # Extract paper metadata
-    metadata = get_paper_abstract(pmid)
+    metadata = get_paper_abstract(pmid, email, api_key)
 
     # Determine the correct series directory based on source GSE file
     session_path = Path(session_dir)

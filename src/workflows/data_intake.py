@@ -12,7 +12,7 @@ import re
 import sys
 import argparse
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
@@ -78,13 +78,50 @@ class DataIntakeWorkflow:
         self.session_dir = Path(sandbox_dir) / session_id
         self.session_dir.mkdir(parents=True, exist_ok=True)
         
+        # Validate required environment variables
+        required_env_vars = {
+            "NCBI_EMAIL": "Required for NCBI E-Utilities API access (PubMed/GEO data)",
+        }
+        
+        missing_vars = []
+        for var, description in required_env_vars.items():
+            if not os.getenv(var):
+                missing_vars.append(var)
+        
+        if missing_vars:
+            print("❌ MISSING REQUIRED ENVIRONMENT VARIABLES")
+            print("=" * 60)
+            for var in missing_vars:
+                print(f"❌ {var}: {required_env_vars[var]}")
+            print("\nPlease set these variables in your .env file:")
+            for var in missing_vars:
+                print(f"   {var}=your_value_here")
+            print("\nExample .env file:")
+            print("   NCBI_EMAIL=your_email@example.com")
+            print("   NCBI_API_KEY=your_ncbi_api_key  # Optional but recommended")
+            print("=" * 60)
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+        
         # Get environment variables
         self.email = os.getenv("NCBI_EMAIL")
         self.api_key = os.getenv("NCBI_API_KEY")
         
-        if not self.email:
-            print("Warning: NCBI_EMAIL environment variable is not set. Using default.")
-            self.email = "test@example.com"
+        # Validate optional but recommended environment variables
+        recommended_vars = {
+            "NCBI_API_KEY": "Recommended for higher NCBI API rate limits",
+        }
+        
+        missing_recommended = []
+        for var, description in recommended_vars.items():
+            if not os.getenv(var):
+                missing_recommended.append(var)
+        
+        if missing_recommended:
+            print("⚠️  WARNING: Missing recommended environment variables:")
+            for var in missing_recommended:
+                print(f"   ⚠️  {var}: {recommended_vars[var]}")
+            print("   The workflow will continue but may be rate-limited.")
+            print()
     
     def _parse_geo_ids(self, input_text: str) -> Dict[str, List[str]]:
         """
@@ -229,22 +266,27 @@ class DataIntakeWorkflow:
             print(f"Step 4: Extracting PubMed ID from {series_id} metadata")
             pmid_result = extract_pubmed_id_from_gse_metadata_impl(gse_file, str(self.session_dir))
             pmid_data = json.loads(pmid_result)
-            pmid = pmid_data.get('pmid')
+            pmid = pmid_data.get('pubmed_id')
             if pmid:
                 workflow_data['pmid'] = pmid
                 
                 # Step 5: Extract paper abstract
                 print(f"Step 5: Extracting paper abstract for PMID {pmid}")
-                paper_file = extract_paper_abstract_impl(
-                    pmid, str(self.session_dir), self.email, self.api_key, gse_file
-                )
-                files_created.append(paper_file)
-                workflow_data['paper_metadata_file'] = paper_file
+                try:
+                    paper_file = extract_paper_abstract_impl(
+                        pmid, str(self.session_dir), self.email, self.api_key, gse_file
+                    )
+                    files_created.append(paper_file)
+                    workflow_data['paper_metadata_file'] = paper_file
+                except Exception as e:
+                    print(f"⚠️  Warning: Failed to extract paper abstract for PMID {pmid}: {e}")
+                    print(f"⚠️  Continuing workflow without paper abstract...")
+                    workflow_data['paper_extraction_error'] = str(e)
             else:
                 print(f"Step 5: No PMID found for {series_id}, skipping paper extraction")
             
             # Step 6: Create series-sample mapping
-            print(f"Step 6: Creating series-sample mapping")
+            print("Step 6: Creating series-sample mapping")
             mapping_file = create_series_sample_mapping_impl(str(self.session_dir))
             files_created.append(mapping_file)
             workflow_data['mapping_file'] = mapping_file
@@ -295,22 +337,27 @@ class DataIntakeWorkflow:
             print(f"Step 2: Extracting PubMed ID from {gse_id} metadata")
             pmid_result = extract_pubmed_id_from_gse_metadata_impl(gse_file, str(self.session_dir))
             pmid_data = json.loads(pmid_result)
-            pmid = pmid_data.get('pmid')
+            pmid = pmid_data.get('pubmed_id')
             if pmid:
                 workflow_data['pmid'] = pmid
                 
                 # Step 3: Extract paper abstract
                 print(f"Step 3: Extracting paper abstract for PMID {pmid}")
-                paper_file = extract_paper_abstract_impl(
-                    pmid, str(self.session_dir), self.email, self.api_key, gse_file
-                )
-                files_created.append(paper_file)
-                workflow_data['paper_metadata_file'] = paper_file
+                try:
+                    paper_file = extract_paper_abstract_impl(
+                        pmid, str(self.session_dir), self.email, self.api_key, gse_file
+                    )
+                    files_created.append(paper_file)
+                    workflow_data['paper_metadata_file'] = paper_file
+                except Exception as e:
+                    print(f"⚠️  Warning: Failed to extract paper abstract for PMID {pmid}: {e}")
+                    print(f"⚠️  Continuing workflow without paper abstract...")
+                    workflow_data['paper_extraction_error'] = str(e)
             else:
                 print(f"Step 3: No PMID found for {gse_id}, skipping paper extraction")
             
             # Step 4: Create series-sample mapping
-            print(f"Step 4: Creating series-sample mapping")
+            print("Step 4: Creating series-sample mapping")
             mapping_file = create_series_sample_mapping_impl(str(self.session_dir))
             files_created.append(mapping_file)
             workflow_data['mapping_file'] = mapping_file
@@ -351,11 +398,19 @@ class DataIntakeWorkflow:
             
             # Extract paper abstract
             print(f"Step 1: Extracting paper abstract for PMID {pmid}")
-            paper_file = extract_paper_abstract_impl(
-                pmid, str(self.session_dir), self.email, self.api_key
-            )
-            files_created.append(paper_file)
-            workflow_data['paper_metadata_file'] = paper_file
+            try:
+                paper_file = extract_paper_abstract_impl(
+                    pmid, str(self.session_dir), self.email, self.api_key
+                )
+                files_created.append(paper_file)
+                workflow_data['paper_metadata_file'] = paper_file
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to extract paper abstract for PMID {pmid}: {e}")
+                return WorkflowResult(
+                    success=False,
+                    message=f"PMID workflow failed for {pmid}: {str(e)}",
+                    errors=[str(e)]
+                )
             
             return WorkflowResult(
                 success=True,
@@ -391,7 +446,7 @@ class DataIntakeWorkflow:
             print(f"🔧 Starting linker workflow for {sample_id}")
             
             # Step 1: Load mapping file
-            print(f"Step 1: Loading mapping file")
+            print("Step 1: Loading mapping file")
             mapping_result = load_mapping_file_impl(str(self.session_dir))
             if not mapping_result['success']:
                 return WorkflowResult(
@@ -693,7 +748,7 @@ def run_data_intake_workflow(
         return WorkflowResult(
             success=False,
             message=f"Invalid workflow type: {workflow_type}",
-            errors=[f"Supported types: ingestion, linker, complete"]
+            errors=["Supported types: ingestion, linker, complete"]
         )
 
 
@@ -706,12 +761,12 @@ def print_result(result: WorkflowResult):
     print(f"Message: {result.message}")
     
     if result.errors:
-        print(f"\nErrors:")
+        print("\nErrors:")
         for error in result.errors:
             print(f"  - {error}")
     
     if result.data:
-        print(f"\nData Summary:")
+        print("\nData Summary:")
         if 'geo_ids' in result.data:
             geo_ids = result.data['geo_ids']
             print(f"  - GSM IDs: {geo_ids.get('gsm_ids', [])}")
@@ -800,9 +855,50 @@ Examples:
     
     args = parser.parse_args()
     
+    # Validate required environment variables early
+    required_env_vars = {
+        "NCBI_EMAIL": "Required for NCBI E-Utilities API access (PubMed/GEO data)",
+    }
+    
+    missing_vars = []
+    for var, description in required_env_vars.items():
+        if not os.getenv(var):
+            missing_vars.append(var)
+    
+    if missing_vars:
+        print("❌ MISSING REQUIRED ENVIRONMENT VARIABLES")
+        print("=" * 60)
+        for var in missing_vars:
+            print(f"❌ {var}: {required_env_vars[var]}")
+        print("\nPlease set these variables in your .env file:")
+        for var in missing_vars:
+            print(f"   {var}=your_value_here")
+        print("\nExample .env file:")
+        print("   NCBI_EMAIL=your_email@example.com")
+        print("   NCBI_API_KEY=your_ncbi_api_key  # Optional but recommended")
+        print("=" * 60)
+        sys.exit(1)
+    
+    # Validate optional but recommended environment variables
+    recommended_vars = {
+        "NCBI_API_KEY": "Recommended for higher NCBI API rate limits",
+    }
+    
+    missing_recommended = []
+    for var, description in recommended_vars.items():
+        if not os.getenv(var):
+            missing_recommended.append(var)
+    
+    if missing_recommended:
+        print("⚠️  WARNING: Missing recommended environment variables:")
+        for var in missing_recommended:
+            print(f"   ⚠️  {var}: {recommended_vars[var]}")
+        print("   The workflow will continue but may be rate-limited.")
+        print()
+    
     # Set up logging
     if args.verbose:
-        print(f"🔧 Data Intake Workflow")
+        print("🔧 Data Intake Workflow")
         print(f"Input: {args.input}")
         print(f"Type: {args.type}")
         print(f"Session: {args.session or 'auto-generated'}")

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from uuid import uuid4
 
-from agents import Agent, handoff, RunContextWrapper
+from agents import Agent, RunContextWrapper
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from pydantic import Field
 from src.agents.handoff_base import BaseHandoff

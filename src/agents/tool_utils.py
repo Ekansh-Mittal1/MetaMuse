@@ -22,7 +22,6 @@ load_dotenv()
 from src.tools.ingestion_tools import (
     extract_gsm_metadata_impl,
     extract_gse_metadata_impl,
-    extract_series_matrix_metadata_impl,
     extract_paper_abstract_impl,
     extract_pubmed_id_from_gse_metadata_impl,
     extract_series_id_from_gsm_metadata_impl,
@@ -570,7 +569,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             """
             try:
                 print(
-                    f"🧪 Set_testing_session: Setting session directory to sandbox/test-session"
+                    "🧪 Set_testing_session: Setting session directory to sandbox/test-session"
                 )
 
                 # Create the testing session directory
