@@ -82,7 +82,7 @@ class SimpleOrchestrator:
                 kwargs["session_id"] = self.session_id
 
             entry_agent = workflow_func(**kwargs)
-            print(f"✅ Orchestrator: Agent built successfully")
+            print("✅ Orchestrator: Agent built successfully")
 
             # Prepare run config if model provider is specified
             run_config = None
@@ -96,7 +96,7 @@ class SimpleOrchestrator:
                         f"🔧 Debug: Setting max_tokens to {self.provider_max_tokens} in extra_body"
                     )
                 else:
-                    print(f"⚠️  Debug: provider_max_tokens is None")
+                    print("⚠️  Debug: provider_max_tokens is None")
 
                 run_config = RunConfig(
                     model_provider=self.model_provider,

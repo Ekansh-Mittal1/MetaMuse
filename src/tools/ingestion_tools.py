@@ -1274,9 +1274,16 @@ def extract_pubmed_id_from_gse_metadata_impl(
     """
     print(f"🔧 extract_pubmed_id_from_gse_metadata: {Path(gse_metadata_file).name}")
 
-    # Construct full path if relative
-    if not os.path.isabs(gse_metadata_file):
-        gse_metadata_file = os.path.join(session_dir, gse_metadata_file)
+    # The gse_metadata_file should already be a full path from extract_gse_metadata_impl
+    # Just verify the file exists
+    if not os.path.exists(gse_metadata_file):
+        # If it doesn't exist, try constructing the path relative to session_dir
+        if not os.path.isabs(gse_metadata_file):
+            gse_metadata_file = os.path.join(session_dir, gse_metadata_file)
+        
+        # Check again
+        if not os.path.exists(gse_metadata_file):
+            raise FileNotFoundError(f"GSE metadata file not found: {gse_metadata_file}")
 
     # Extract PubMed ID
     result = extract_pubmed_id_from_gse_metadata(gse_metadata_file)
@@ -1305,9 +1312,16 @@ def extract_series_id_from_gsm_metadata_impl(
     """
     print(f"🔧 extract_series_id_from_gsm_metadata: {Path(gsm_metadata_file).name}")
 
-    # Construct full path if relative
-    if not os.path.isabs(gsm_metadata_file):
-        gsm_metadata_file = os.path.join(session_dir, gsm_metadata_file)
+    # The gsm_metadata_file should already be a full path from extract_gsm_metadata_impl
+    # Just verify the file exists
+    if not os.path.exists(gsm_metadata_file):
+        # If it doesn't exist, try constructing the path relative to session_dir
+        if not os.path.isabs(gsm_metadata_file):
+            gsm_metadata_file = os.path.join(session_dir, gsm_metadata_file)
+        
+        # Check again
+        if not os.path.exists(gsm_metadata_file):
+            raise FileNotFoundError(f"GSM metadata file not found: {gsm_metadata_file}")
 
     # Extract Series ID
     result = extract_series_id_from_gsm_metadata(gsm_metadata_file)
