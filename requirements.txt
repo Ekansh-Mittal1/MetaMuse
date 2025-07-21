@@ -1,5 +1,0 @@
-agents
-openai
-python-dotenv
-jinja2
-pydantic 

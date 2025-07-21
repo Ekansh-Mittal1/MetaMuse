@@ -5,6 +5,7 @@
 
 # UV package manager
 uv.lock
+.uv/
 
 # Virtual environments
 .venv/
@@ -218,4 +219,4 @@ z_src_OLD/
 .cursor/
 .lightning_studio/
 .vscode-server
-.windsurf-server
+.windsurf-server 

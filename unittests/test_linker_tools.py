@@ -5,23 +5,14 @@ This module contains unit tests for the LinkerAgent tools that process
 and link metadata files from IngestionAgent output.
 """
 
-import pytest
 import json
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import Mock, patch, mock_open
 from src.tools.linker_tools import (
     LinkerTools,
-    LinkerResult,
     load_mapping_file_impl,
     find_sample_directory_impl,
-    clean_metadata_files_impl,
-    # Legacy series matrix tools - removed from testing
-    # download_series_matrix_impl,
-    # extract_matrix_metadata_impl,
-    # extract_sample_metadata_impl,
-    package_linked_data_impl,
 )
 
 

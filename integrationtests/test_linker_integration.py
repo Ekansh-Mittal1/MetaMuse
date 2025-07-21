@@ -5,7 +5,6 @@ This module contains integration tests that use real data from the sandbox
 directory to test the LinkerAgent functionality end-to-end.
 """
 
-import os
 import json
 import tempfile
 import shutil
@@ -186,7 +185,7 @@ class TestLinkerIntegration:
         # Step 3: Package linked data
         package_result = self.tools.package_linked_data(sample_id)
         if package_result.success:
-            print(f"  ✓ Step 3: Packaged linked data successfully")
+            print("  ✓ Step 3: Packaged linked data successfully")
         else:
             print(f"  ⚠ Step 3: Packaging failed - {package_result.message}")
 

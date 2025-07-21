@@ -6,23 +6,17 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from datetime import datetime
 from uuid import uuid4
 
 from openai import AsyncOpenAI
-from openai.types.shared import Reasoning
 
 from dotenv import load_dotenv
 
 from agents import (
-    RunConfig,
-    Runner,
     set_tracing_disabled,
-    ItemHelpers,
     Model,
     ModelProvider,
     OpenAIChatCompletionsModel,
-    ModelSettings,
 )
 
 from src.workflows.orchestrator import SimpleOrchestrator
@@ -167,14 +161,20 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         elif workflow_name in ["linking", "full_pipeline", "multi_agent_geo"]:
             # These workflows need input_data for testing detection
             result = await orchestrator.run_workflow(
-                lambda **kwargs: workflow_func(session_id=session_id, sandbox_dir=orchestrator.sandbox_dir, input_data=input_data),
+                lambda **kwargs: workflow_func(
+                    session_id=session_id,
+                    sandbox_dir=orchestrator.sandbox_dir,
+                    input_data=input_data,
+                ),
                 input_data,
                 **kwargs,
             )
         else:
             # Extraction pipeline doesn't need input_data
             result = await orchestrator.run_workflow(
-                lambda **kwargs: workflow_func(session_id=session_id, sandbox_dir=orchestrator.sandbox_dir),
+                lambda **kwargs: workflow_func(
+                    session_id=session_id, sandbox_dir=orchestrator.sandbox_dir
+                ),
                 input_data,
                 **kwargs,
             )
@@ -219,7 +219,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         traceback.print_exc()
 
         # Also print to stderr for better visibility
-        print(f"\n❌ ERROR DETAILS (stderr):", file=sys.stderr)
+        print("\n❌ ERROR DETAILS (stderr):", file=sys.stderr)
         print(f"Error type: {type(e).__name__}", file=sys.stderr)
         print(f"Error message: {str(e)}", file=sys.stderr)
         print("Full traceback:", file=sys.stderr)
@@ -292,12 +292,12 @@ Examples:
         "OPENROUTER_API_KEY": "Required for OpenRouter API access (LLM provider)",
         "NCBI_EMAIL": "Required for NCBI E-Utilities API access (PubMed/GEO data)",
     }
-    
+
     missing_vars = []
     for var, description in required_env_vars.items():
         if not os.getenv(var):
             missing_vars.append(var)
-    
+
     if missing_vars:
         print("❌ MISSING REQUIRED ENVIRONMENT VARIABLES")
         print("=" * 60)
@@ -312,17 +312,17 @@ Examples:
         print("   NCBI_API_KEY=your_ncbi_api_key  # Optional but recommended")
         print("=" * 60)
         sys.exit(1)
-    
+
     # Validate optional but recommended environment variables
     recommended_vars = {
         "NCBI_API_KEY": "Recommended for higher NCBI API rate limits",
     }
-    
+
     missing_recommended = []
     for var, description in recommended_vars.items():
         if not os.getenv(var):
             missing_recommended.append(var)
-    
+
     if missing_recommended:
         print("⚠️  WARNING: Missing recommended environment variables:")
         for var in missing_recommended:

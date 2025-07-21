@@ -1,7 +1,6 @@
 import json
 import time
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -40,16 +39,16 @@ class NCBIClient:
             urllib.request.HTTPHandler(debuglevel=0),
             urllib.request.HTTPSHandler(debuglevel=0),
         )
-        
+
         # Set headers - email is required, API key is optional
         headers = [
             ("User-Agent", "Python-NCBI-E-Utilities/1.0"),
             ("Email", self.email),
         ]
-        
+
         if self.api_key:
             headers.append(("API-Key", self.api_key))
-        
+
         self.client.addheaders = headers
 
         # Ensure API URL ends with a slash
@@ -111,7 +110,7 @@ class NCBIClient:
                         e.hdrs,
                         e.fp,
                     )
-            except Exception as e:
+            except Exception:
                 if attempt < max_retries - 1:
                     print(
                         f"⚠️  Unexpected error for {gsm_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
@@ -179,7 +178,7 @@ class NCBIClient:
                         e.hdrs,
                         e.fp,
                     )
-            except Exception as e:
+            except Exception:
                 if attempt < max_retries - 1:
                     print(
                         f"⚠️  Unexpected error for {gse_id}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
@@ -226,9 +225,7 @@ class NCBIClient:
                 # First search for the PMID to get the correct database ID
                 search_params = {"db": "pubmed", "term": str(pmid), "retmode": "json"}
 
-                search_url = (
-                    f"{self.api_url}esearch.fcgi?{urllib.parse.urlencode(search_params)}"
-                )
+                search_url = f"{self.api_url}esearch.fcgi?{urllib.parse.urlencode(search_params)}"
 
                 # Use the configured client with proper headers
                 search_response = self.client.open(search_url)
@@ -243,7 +240,11 @@ class NCBIClient:
                         db_id = id_list[0]
 
                         # Get metadata using esummary
-                        summary_params = {"db": "pubmed", "id": db_id, "retmode": "json"}
+                        summary_params = {
+                            "db": "pubmed",
+                            "id": db_id,
+                            "retmode": "json",
+                        }
 
                         summary_url = f"{self.api_url}esummary.fcgi?{urllib.parse.urlencode(summary_params)}"
 
@@ -254,10 +255,14 @@ class NCBIClient:
                         if summary_content:
                             try:
                                 json_data = json.loads(summary_content)
-                                paper_info.update(self._parse_pubmed_json(json_data, pmid))
+                                paper_info.update(
+                                    self._parse_pubmed_json(json_data, pmid)
+                                )
                             except json.JSONDecodeError:
                                 # Fallback to XML if JSON fails
-                                paper_info.update(self._parse_pubmed_xml(summary_content))
+                                paper_info.update(
+                                    self._parse_pubmed_xml(summary_content)
+                                )
 
                         # Get full paper content using efetch to extract abstract
                         fetch_params = {
@@ -301,7 +306,7 @@ class NCBIClient:
                         e.hdrs,
                         e.fp,
                     )
-            except Exception as e:
+            except Exception:
                 if attempt < max_retries - 1:
                     print(
                         f"⚠️  Unexpected error for PMID {pmid}, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay} seconds..."
@@ -385,7 +390,7 @@ class NCBIClient:
                     mesh_terms.append(mesh_elem.text)
             paper_info["mesh_terms"] = mesh_terms
 
-        except ET.ParseError as e:
+        except ET.ParseError:
             # If XML parsing fails, try to extract basic information from text
             paper_info["abstract"] = xml_content[:1000] if xml_content else ""
 
@@ -443,7 +448,7 @@ class NCBIClient:
                 paper_info["keywords"] = article_data.get("keywords", [])
                 paper_info["mesh_terms"] = article_data.get("mesh", [])
 
-        except Exception as e:
+        except Exception:
             # If JSON parsing fails, return empty data
             pass
 
@@ -737,14 +742,28 @@ class NCBIClient:
                     key, value = line.split("=", 1)
                     key = key.replace("!Sample_", "").strip()
                     value = value.strip()
-                    metadata["attributes"][key] = value
+                    
+                    # Handle multiple values for the same key (e.g., characteristics_ch1)
+                    if key in metadata["attributes"]:
+                        # If the key already exists, concatenate the values with commas
+                        existing_value = metadata["attributes"][key]
+                        metadata["attributes"][key] = f"{existing_value}, {value}"
+                    else:
+                        metadata["attributes"][key] = value
             elif line.startswith("!Series_"):
                 # Parse series attributes
                 if "=" in line:
                     key, value = line.split("=", 1)
                     key = key.replace("!Series_", "").strip()
                     value = value.strip()
-                    metadata["attributes"][key] = value
+                    
+                    # Handle multiple values for the same key (e.g., characteristics_ch1)
+                    if key in metadata["attributes"]:
+                        # If the key already exists, concatenate the values with commas
+                        existing_value = metadata["attributes"][key]
+                        metadata["attributes"][key] = f"{existing_value}, {value}"
+                    else:
+                        metadata["attributes"][key] = value
 
         return metadata
 
@@ -855,7 +874,9 @@ def get_gse_series_matrix(gse_id: str) -> Dict[str, Any]:
     return NCBIClient().get_gse_series_matrix(gse_id)
 
 
-def get_paper_abstract(pmid: int, email: str = None, api_key: str = None) -> Dict[str, Any]:
+def get_paper_abstract(
+    pmid: int, email: str = None, api_key: str = None
+) -> Dict[str, Any]:
     """
     Get paper abstract and metadata for a given PMID.
 
@@ -881,7 +902,7 @@ def get_paper_abstract(pmid: int, email: str = None, api_key: str = None) -> Dic
         client.email = email
     if api_key:
         client.api_key = api_key
-    
+
     return client.get_paper_abstract(pmid)
 
 
@@ -930,18 +951,36 @@ def extract_pubmed_id_from_gse_metadata(gse_metadata_file: str) -> Dict[str, Any
                 f"PubMed ID not found in GSE metadata file: {gse_metadata_file}"
             )
 
-        # Convert to integer if it's a string
-        try:
-            pubmed_id_int = int(pubmed_id)
-        except (ValueError, TypeError):
-            raise ValueError(f"Invalid PubMed ID format: {pubmed_id}")
+        # Handle multiple PubMed IDs (separated by commas or newlines)
+        # Split by both commas and newlines to handle different formats
+        pubmed_ids = []
+        for separator in [',', '\n']:
+            if separator in pubmed_id:
+                pubmed_ids = [pid.strip() for pid in pubmed_id.split(separator) if pid.strip()]
+                break
+        if not pubmed_ids:
+            # If no separators found, treat as single value
+            pubmed_ids = [pubmed_id.strip()] if pubmed_id.strip() else []
+        
+        # Validate and convert all PubMed IDs to integers
+        pubmed_id_ints = []
+        for pid in pubmed_ids:
+            try:
+                pubmed_id_ints.append(int(pid))
+            except (ValueError, TypeError):
+                raise ValueError(f"Invalid PubMed ID format: {pid}")
+
+        # Use the first PubMed ID as the primary one, but return all
+        primary_pubmed_id = pubmed_id_ints[0] if pubmed_id_ints else None
 
         result = {
             "status": "success",
             "gse_metadata_file": gse_metadata_file,
-            "pubmed_id": pubmed_id_int,
+            "pubmed_id": primary_pubmed_id,
             "pubmed_id_original": pubmed_id,
-            "message": f"Successfully extracted PubMed ID {pubmed_id_int} from {gse_metadata_file}",
+            "pubmed_ids": pubmed_id_ints,  # All PubMed IDs
+            "pubmed_id_count": len(pubmed_id_ints),
+            "message": f"Successfully extracted {len(pubmed_id_ints)} PubMed ID(s) from {gse_metadata_file}. Primary: {primary_pubmed_id}",
         }
 
         return result
@@ -1266,7 +1305,7 @@ def extract_paper_abstract_impl(
         else:
             # Fallback to session root if source file format is unexpected
             output_file = session_path / f"PMID_{pmid}_metadata.json"
-            print(f"📁 Source file format unexpected, saving to session root")
+            print("📁 Source file format unexpected, saving to session root")
     else:
         # Check if there are any GSE directories in the session
         gse_dirs = [
@@ -1283,7 +1322,7 @@ def extract_paper_abstract_impl(
         else:
             # No GSE directories found, save to session root
             output_file = session_path / f"PMID_{pmid}_metadata.json"
-            print(f"📁 No series directories found, saving to session root")
+            print("📁 No series directories found, saving to session root")
 
     # Add series_id to the metadata if available
     if series_id:
@@ -1325,7 +1364,7 @@ def extract_pubmed_id_from_gse_metadata_impl(
         # If it doesn't exist, try constructing the path relative to session_dir
         if not os.path.isabs(gse_metadata_file):
             gse_metadata_file = os.path.join(session_dir, gse_metadata_file)
-        
+
         # Check again
         if not os.path.exists(gse_metadata_file):
             raise FileNotFoundError(f"GSE metadata file not found: {gse_metadata_file}")
@@ -1363,7 +1402,7 @@ def extract_series_id_from_gsm_metadata_impl(
         # If it doesn't exist, try constructing the path relative to session_dir
         if not os.path.isabs(gsm_metadata_file):
             gsm_metadata_file = os.path.join(session_dir, gsm_metadata_file)
-        
+
         # Check again
         if not os.path.exists(gsm_metadata_file):
             raise FileNotFoundError(f"GSM metadata file not found: {gsm_metadata_file}")
@@ -1390,7 +1429,7 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
     str
         Path to the created mapping file.
     """
-    print(f"🔧 create_series_sample_mapping")
+    print("🔧 create_series_sample_mapping")
 
     session_path = Path(session_dir)
     mapping = {}
@@ -1533,7 +1572,7 @@ def validate_geo_inputs_impl(
     str
         JSON string containing validation results.
     """
-    print(f"🔧 validate_geo_inputs")
+    print("🔧 validate_geo_inputs")
 
     result = {"validation_status": "success", "validated_inputs": {}, "errors": []}
 
