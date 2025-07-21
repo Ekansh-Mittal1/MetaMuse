@@ -13,7 +13,6 @@ import sys
 import argparse
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from dataclasses import dataclass
 from dotenv import load_dotenv
 
 # Add the project root to Python path when running this file directly
@@ -21,6 +20,12 @@ if __name__ == "__main__":
     # Get the project root directory (two levels up from this file)
     project_root = Path(__file__).parent.parent.parent
     sys.path.insert(0, str(project_root))
+
+# Import new Pydantic models
+from src.models import (
+    WorkflowResult,
+    ModelSerializer
+)
 
 # Import the tool implementations
 from src.tools.ingestion_tools import (
@@ -42,17 +47,6 @@ from src.tools.linker_tools import (
 
 # Load environment variables
 load_dotenv()
-
-
-@dataclass
-class WorkflowResult:
-    """Result structure for workflow operations."""
-
-    success: bool
-    message: str
-    data: Optional[Dict[str, Any]] = None
-    files_created: Optional[List[str]] = None
-    errors: Optional[List[str]] = None
 
 
 class DataIntakeWorkflow:

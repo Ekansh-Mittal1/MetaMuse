@@ -7,23 +7,22 @@ matrix data, and extracting sample-specific information.
 """
 
 import json
-import gzip
-import urllib.request
-import urllib.error
 import traceback
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from dataclasses import dataclass
 
-
-@dataclass
-class LinkerResult:
-    """Result structure for LinkerAgent operations."""
-
-    success: bool
-    message: str
-    data: Optional[Dict[str, Any]] = None
-    files_created: Optional[List[str]] = None
+# Import new Pydantic models
+from src.models import (
+    LinkerResult,
+    GSMMetadata,
+    GSEMetadata,
+    PMIDMetadata,
+    LinkedData,
+    SeriesSampleMapping,
+    ModelSerializer,
+    create_success_result,
+    create_error_result
+)
 
 
 class LinkerTools:
@@ -50,22 +49,35 @@ class LinkerTools:
         Returns
         -------
         LinkerResult
-            Result containing mapping data or error information
+            Result containing validated SeriesSampleMapping object
         """
         try:
             if not self.mapping_file.exists():
-                return LinkerResult(
-                    success=False,
-                    message=f"Mapping file not found: {self.mapping_file}",
+                return create_error_result(
+                    LinkerResult,
+                    f"Mapping file not found: {self.mapping_file}",
+                    session_id=getattr(self, 'session_id', None)
                 )
 
             with open(self.mapping_file, "r") as f:
                 mapping_data = json.load(f)
 
-            return LinkerResult(
-                success=True,
-                message="Mapping file loaded successfully",
-                data=mapping_data,
+            # Validate and convert to Pydantic model
+            try:
+                mapping_obj = SeriesSampleMapping(**mapping_data)
+            except Exception as e:
+                return create_error_result(
+                    LinkerResult,
+                    f"Invalid mapping file format: {str(e)}",
+                    errors=[f"Validation error: {str(e)}"],
+                    session_id=getattr(self, 'session_id', None)
+                )
+
+            return create_success_result(
+                LinkerResult,
+                "Mapping file loaded successfully",
+                data={"mapping": mapping_obj},  # Pass the Pydantic object directly
+                session_id=getattr(self, 'session_id', None)
             )
 
         except Exception as e:
@@ -96,29 +108,30 @@ class LinkerTools:
         if not mapping_result.success:
             return mapping_result
 
-        mapping_data = mapping_result.data
+        # Extract the SeriesSampleMapping object
+        mapping_obj = mapping_result.data["mapping"]
 
         # Check reverse mapping first
-        if (
-            "reverse_mapping" in mapping_data
-            and sample_id in mapping_data["reverse_mapping"]
-        ):
-            series_id = mapping_data["reverse_mapping"][sample_id]
+        if sample_id in mapping_obj.reverse_mapping:
+            series_id = mapping_obj.reverse_mapping[sample_id]
             series_dir = self.session_dir / series_id
 
             if series_dir.exists():
-                return LinkerResult(
-                    success=True,
-                    message=f"Found directory for sample {sample_id}",
+                return create_success_result(
+                    LinkerResult,
+                    f"Found directory for sample {sample_id}",
                     data={
                         "sample_id": sample_id,
                         "series_id": series_id,
                         "directory": str(series_dir),
                     },
+                    session_id=getattr(self, 'session_id', None)
                 )
 
-        return LinkerResult(
-            success=False, message=f"Sample {sample_id} not found in mapping"
+        return create_error_result(
+            LinkerResult,
+            f"Sample {sample_id} not found in mapping",
+            session_id=getattr(self, 'session_id', None)
         )
 
     def clean_metadata_files(
@@ -291,241 +304,7 @@ class LinkerTools:
             for item in data:
                 self._remove_fields_recursive(item, fields_to_remove)
 
-    def download_series_matrix(self, sample_id: str) -> LinkerResult:
-        """
-        Download the smallest series matrix file for a sample.
 
-        Parameters
-        ----------
-        sample_id : str
-            The sample ID to process
-
-        Returns
-        -------
-        LinkerResult
-            Result containing downloaded file path and metadata
-        """
-        dir_result = self.find_sample_directory(sample_id)
-        if not dir_result.success:
-            return dir_result
-
-        series_dir = Path(dir_result.data["directory"])
-        series_id = dir_result.data["series_id"]
-
-        # Load series matrix metadata
-        series_matrix_file = series_dir / f"{series_id}_series_matrix.json"
-        if not series_matrix_file.exists():
-            return LinkerResult(
-                success=False,
-                message=f"Series matrix metadata file not found: {series_matrix_file}",
-            )
-
-        with open(series_matrix_file, "r") as f:
-            matrix_data = json.load(f)
-
-        if "file_links" not in matrix_data or not matrix_data["file_links"]:
-            return LinkerResult(
-                success=False, message="No file links found in series matrix metadata"
-            )
-
-        # Find the smallest file (assume first one is smallest for now)
-        file_url = matrix_data["file_links"][0]
-        file_name = matrix_data["available_files"][0]
-
-        # Download the file
-        download_path = series_dir / file_name
-
-        try:
-            urllib.request.urlretrieve(file_url, download_path)
-
-            return LinkerResult(
-                success=True,
-                message=f"Downloaded series matrix file: {file_name}",
-                data={
-                    "file_path": str(download_path),
-                    "file_name": file_name,
-                    "file_url": file_url,
-                },
-            )
-
-        except Exception as e:
-            error_msg = f"Error downloading file: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
-            print(f"❌ LINKER ERROR: {error_msg}")
-            # Also print to stderr for better visibility
-            import sys
-
-            print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
-            traceback.print_exc()
-            raise
-
-    def extract_matrix_metadata(self, sample_id: str) -> LinkerResult:
-        """
-        Extract metadata from the top of a series matrix file (prefixed with !).
-
-        Parameters
-        ----------
-        sample_id : str
-            The sample ID to process
-
-        Returns
-        -------
-        LinkerResult
-            Result containing extracted metadata
-        """
-        # First download the file if not already downloaded
-        download_result = self.download_series_matrix(sample_id)
-        if not download_result.success:
-            return download_result
-
-        file_path = Path(download_result.data["file_path"])
-
-        try:
-            # Handle gzipped files
-            if file_path.suffix == ".gz":
-                with gzip.open(file_path, "rt") as f:
-                    content = f.read()
-            else:
-                with open(file_path, "r") as f:
-                    content = f.read()
-
-            # Extract metadata lines (those starting with !)
-            metadata_lines = []
-            for line in content.split("\n"):
-                if line.startswith("!"):
-                    metadata_lines.append(line)
-                elif line.strip() and not line.startswith("!"):
-                    # Stop when we hit non-metadata content
-                    break
-
-            # Parse metadata into structured format
-            metadata = {}
-            for line in metadata_lines:
-                if "=" in line:
-                    # Remove the ! prefix and split on =
-                    clean_line = line[1:].strip()
-                    if "=" in clean_line:
-                        key, value = clean_line.split("=", 1)
-                        key = key.strip().strip('"')
-                        value = value.strip().strip('"')
-                        metadata[key] = value
-
-            return LinkerResult(
-                success=True,
-                message=f"Extracted {len(metadata)} metadata fields from series matrix",
-                data=metadata,
-            )
-
-        except Exception as e:
-            error_msg = f"Error extracting metadata: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
-            print(f"❌ LINKER ERROR: {error_msg}")
-            # Also print to stderr for better visibility
-            import sys
-
-            print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
-            traceback.print_exc()
-            raise
-
-    def extract_sample_metadata(self, sample_id: str) -> LinkerResult:
-        """
-        Extract metadata for a specific sample from the series matrix table.
-
-        Parameters
-        ----------
-        sample_id : str
-            The sample ID to extract data for
-
-        Returns
-        -------
-        LinkerResult
-            Result containing sample-specific metadata
-        """
-        # First download the file if not already downloaded
-        download_result = self.download_series_matrix(sample_id)
-        if not download_result.success:
-            return download_result
-
-        file_path = Path(download_result.data["file_path"])
-
-        try:
-            # Handle gzipped files
-            if file_path.suffix == ".gz":
-                with gzip.open(file_path, "rt") as f:
-                    content = f.read()
-            else:
-                with open(file_path, "r") as f:
-                    content = f.read()
-
-            lines = content.split("\n")
-
-            # Find the data section (after metadata lines)
-            data_start = 0
-            for i, line in enumerate(lines):
-                if not line.startswith("!") and line.strip():
-                    data_start = i
-                    break
-
-            if data_start == 0:
-                return LinkerResult(
-                    success=False,
-                    message="Could not find data section in series matrix file",
-                )
-
-            # Parse the data section
-            data_lines = lines[data_start:]
-            if not data_lines:
-                return LinkerResult(
-                    success=False, message="No data lines found in series matrix file"
-                )
-
-            # First line should be headers
-            headers = data_lines[0].split("\t")
-
-            # Find the column for our sample
-            sample_column = None
-            for i, header in enumerate(headers):
-                if sample_id in header:
-                    sample_column = i
-                    break
-
-            if sample_column is None:
-                return LinkerResult(
-                    success=False,
-                    message=f"Sample {sample_id} not found in series matrix columns",
-                )
-
-            # Extract data for this sample
-            sample_data = {}
-            for line in data_lines[1:]:  # Skip header line
-                if line.strip():
-                    values = line.split("\t")
-                    if len(values) > sample_column:
-                        # First column is usually the probe/gene ID
-                        probe_id = values[0] if values else ""
-                        sample_value = (
-                            values[sample_column] if len(values) > sample_column else ""
-                        )
-                        if probe_id and sample_value:
-                            sample_data[probe_id] = sample_value
-
-            return LinkerResult(
-                success=True,
-                message=f"Extracted data for {len(sample_data)} probes/genes for sample {sample_id}",
-                data={
-                    "sample_id": sample_id,
-                    "column_index": sample_column,
-                    "data": sample_data,
-                },
-            )
-
-        except Exception as e:
-            error_msg = f"Error extracting sample metadata: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
-            print(f"❌ LINKER ERROR: {error_msg}")
-            # Also print to stderr for better visibility
-            import sys
-
-            print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
-            traceback.print_exc()
-            raise
 
     def package_linked_data(
         self, sample_id: str, fields_to_remove: List[str] = None
@@ -694,67 +473,7 @@ def clean_metadata_files_impl(
         raise
 
 
-def download_series_matrix_impl(sample_id: str, session_dir: str) -> Dict[str, Any]:
-    """
-    Download the smallest series matrix file for a sample.
 
-    Parameters
-    ----------
-    sample_id : str
-        The sample ID to process
-    session_dir : str
-        Path to the session directory
-
-    Returns
-    -------
-    Dict[str, Any]
-        Result dictionary with success status and download info
-    """
-    tools = LinkerTools(session_dir)
-    result = tools.download_series_matrix(sample_id)
-    return {"success": result.success, "message": result.message, "data": result.data}
-
-
-def extract_matrix_metadata_impl(sample_id: str, session_dir: str) -> Dict[str, Any]:
-    """
-    Extract metadata from the top of a series matrix file (prefixed with !).
-
-    Parameters
-    ----------
-    sample_id : str
-        The sample ID to process
-    session_dir : str
-        Path to the session directory
-
-    Returns
-    -------
-    Dict[str, Any]
-        Result dictionary with success status and extracted metadata
-    """
-    tools = LinkerTools(session_dir)
-    result = tools.extract_matrix_metadata(sample_id)
-    return {"success": result.success, "message": result.message, "data": result.data}
-
-
-def extract_sample_metadata_impl(sample_id: str, session_dir: str) -> Dict[str, Any]:
-    """
-    Extract metadata for a specific sample from the series matrix table.
-
-    Parameters
-    ----------
-    sample_id : str
-        The sample ID to extract data for
-    session_dir : str
-        Path to the session directory
-
-    Returns
-    -------
-    Dict[str, Any]
-        Result dictionary with success status and sample metadata
-    """
-    tools = LinkerTools(session_dir)
-    result = tools.extract_sample_metadata(sample_id)
-    return {"success": result.success, "message": result.message, "data": result.data}
 
 
 def package_linked_data_impl(

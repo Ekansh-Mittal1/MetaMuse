@@ -160,8 +160,11 @@ def create_multi_agent_pipeline(
 def on_handoff_callback(ctx, input_data):
     """Print the original request and any additional handoff fields for debugging."""
     print(f"[Handoff] original_request: {input_data.original_request}")
-    for field_name, value in input_data.dict(exclude={"original_request"}).items():
-        print(f"[Handoff] {field_name}: {value}")
+    for field_name, value in input_data.model_dump(exclude={"original_request"}).items():
+        if hasattr(value, 'model_dump'):  # Pydantic object
+            print(f"[Handoff] {field_name}: <Pydantic {type(value).__name__}>")
+        else:
+            print(f"[Handoff] {field_name}: {value}")
 
 
 def create_curation_pipeline(
@@ -299,6 +302,94 @@ def create_complete_pipeline(
     )
 
     return ingestion_agent  # Return entry point
+
+
+def create_structured_pipeline(
+    session_id: str = None, sandbox_dir: str = None, input_data: str = None
+) -> Agent:
+    """
+    Create a fully structured multi-agent pipeline with Pydantic objects.
+
+    This pipeline demonstrates the new Pydantic-based approach where agents
+    produce validated structured outputs that are passed seamlessly between
+    agents, with JSON serialization only at the end for human inspection.
+
+    Parameters
+    ----------
+    session_id : str, optional
+        The unique session identifier. If not provided, generates a new one.
+    sandbox_dir : str, optional
+        Base sandbox directory. If not provided, defaults to "sandbox"
+    input_data : str, optional
+        Input data containing sample IDs and parameters
+
+    Returns
+    -------
+    Agent
+        The initial agent in the structured pipeline (IngestionAgent)
+    """
+    if session_id is None:
+        session_id = f"mm_struct_{str(uuid4())}"
+    if sandbox_dir is None:
+        sandbox_dir = "sandbox"
+
+    # Parse sample IDs from input_data
+    sample_ids = []
+    if input_data:
+        for part in input_data.replace(",", " ").split():
+            if part.strip():
+                sample_ids.append(part.strip())
+
+    # Create CuratorAgent with structured output
+    curator_agent = create_curator_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[],
+        input_data=input_data,
+    )
+
+    # Create LinkerAgent with handoff to CuratorAgent
+    linker_agent = create_linker_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[
+            handoff(
+                agent=curator_agent,
+                input_type=CuratorHandoff,
+                on_handoff=on_structured_handoff_callback,
+            )
+        ],
+        input_data=input_data,
+    )
+
+    # Create IngestionAgent with handoff to LinkerAgent
+    ingestion_agent = create_ingestion_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[
+            handoff(
+                agent=linker_agent,
+                input_type=LinkerHandoff,
+                on_handoff=on_structured_handoff_callback,
+            )
+        ],
+    )
+
+    return ingestion_agent
+
+
+def on_structured_handoff_callback(ctx, input_data):
+    """Enhanced handoff callback for structured Pydantic workflows."""
+    print(f"🔄 [Structured Handoff] Request: {input_data.original_request}")
+    
+    # Log structured data presence
+    for field_name, value in input_data.model_dump(exclude={"original_request"}).items():
+        if hasattr(value, 'model_dump'):  # Pydantic object
+            print(f"📦 [Structured Handoff] {field_name}: {type(value).__name__} (validated)")
+        elif isinstance(value, list) and value:
+            print(f"📋 [Structured Handoff] {field_name}: {len(value)} items")
+        else:
+            print(f"🔤 [Structured Handoff] {field_name}: {value}")
 
 
 def create_full_pipeline(

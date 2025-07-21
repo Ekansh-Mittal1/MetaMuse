@@ -6,10 +6,14 @@ from uuid import uuid4
 from agents import Agent, RunContextWrapper
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from pydantic import Field
+from typing import Optional
 from src.agents.handoff_base import BaseHandoff
 
 from src.agents.tool_utils import get_session_tools
 from src.utils.prompts import load_prompt
+
+# Import Pydantic models for structured data
+from src.models import IngestionOutput, LinkerOutput
 
 
 class LinkerHandoff(BaseHandoff):
@@ -31,6 +35,12 @@ class LinkerHandoff(BaseHandoff):
         default=[],
         description="List of all sample IDs that were processed by the IngestionAgent.",
     )
+    
+    # Following DendroForge pattern: no complex nested structures in handoffs
+    # ingestion_output: Optional[IngestionOutput] = Field(
+    #     default=None,
+    #     description="Complete structured output from the IngestionAgent, containing extracted metadata and mapping information",
+    # )
 
 
 def on_handoff_callback(ctx: RunContextWrapper[None], input_data: BaseHandoff):
@@ -105,6 +115,10 @@ def create_linker_agent(
             RECOMMENDED_PROMPT_PREFIX
             + "\n\n"
             + load_prompt("linker_agent.md", session_dir=str(session_dir))
+            + "\n\n"
+            + "IMPORTANT: At the end of your work, provide a structured summary using the LinkerOutput format. "
+            + "Include all linked data objects, cleaned files, processing statistics, and sample IDs ready for curation. "
+            + "Use the serialize_agent_output tool to persist your results as JSON files for inspection."
         )
 
         agent = Agent(
@@ -112,6 +126,7 @@ def create_linker_agent(
             instructions=instructions,
             tools=tools,
             handoffs=handoffs or [],
+            # Following DendroForge pattern: no structured outputs, natural language responses
         )
 
         return agent

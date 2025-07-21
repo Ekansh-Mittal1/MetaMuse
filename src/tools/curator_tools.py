@@ -12,10 +12,16 @@ import re
 import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-from dataclasses import dataclass
 
 from openai import OpenAI
 from pydantic import BaseModel, Field
+
+# Import new Pydantic models
+from src.models import (
+    CuratorResult,
+    CandidateExtraction,
+    ModelSerializer
+)
 
 
 class ExtractionCandidate(BaseModel):
@@ -30,17 +36,6 @@ class ExtractionResponse(BaseModel):
     """Pydantic model for LLM extraction response."""
     
     candidates: List[ExtractionCandidate] = Field(default_factory=list, description="List of extracted candidates")
-
-
-@dataclass
-class CuratorResult:
-    """Result object for curator operations."""
-    
-    success: bool
-    message: str
-    data: Optional[Dict[str, Any]] = None
-    files_created: Optional[List[str]] = None
-    candidates: Optional[Dict[str, List[str]]] = None
 
 
 def load_extraction_template(target_field: str) -> str:

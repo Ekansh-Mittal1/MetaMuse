@@ -26,6 +26,7 @@ from src.workflows.MetaMuse import (
     create_linking_pipeline,
     create_full_pipeline,
     create_curation_pipeline,
+    create_structured_pipeline,
 )
 
 load_dotenv(override=True)
@@ -144,6 +145,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         "linking": create_linking_pipeline,
         "full_pipeline": create_full_pipeline,
         "curation": create_curation_pipeline,
+        "structured_pipeline": create_structured_pipeline,
     }
 
     if workflow_name not in workflow_funcs:
@@ -170,7 +172,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
                 session_id=session_id,  # Pass session_id explicitly to avoid orchestrator adding it
                 **kwargs,
             )
-        elif workflow_name in ["linking", "full_pipeline", "multi_agent_geo", "curation"]:
+        elif workflow_name in ["linking", "full_pipeline", "multi_agent_geo", "curation", "structured_pipeline"]:
             # These workflows need input_data for testing detection
             result = await orchestrator.run_workflow(
                 lambda **kwargs: workflow_func(

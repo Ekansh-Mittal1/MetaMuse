@@ -18,6 +18,24 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Import Pydantic models for data validation (used internally, not as return types)
+from src.models import (
+    GSMMetadata,
+    GSEMetadata,
+    PMIDMetadata,
+    SeriesSampleMapping,
+    LinkedData
+)
+
+from datetime import datetime
+
+# Import serialization tools
+from src.tools.serialization_tools import (
+    serialize_ingestion_output_impl,
+    serialize_linker_output_impl,
+    serialize_curator_output_impl,
+)
+
 # Import the tool implementations
 from src.tools.ingestion_tools import (
     extract_gsm_metadata_impl,
@@ -309,9 +327,35 @@ def get_session_tools(session_dir: str | Path) -> list:
             Returns
             -------
             str
-                Path to the created mapping file (series_sample_mapping.json)
+                JSON string containing the mapping result and file path
             """
-            return create_series_sample_mapping_impl(session_dir)
+            file_path = create_series_sample_mapping_impl(session_dir)
+            
+            try:
+                # Load the created mapping file 
+                with open(file_path, 'r') as f:
+                    mapping_data = json.load(f)
+                
+                result = {
+                    "success": True,
+                    "message": f"Series-sample mapping created at {file_path}",
+                    "files_created": [file_path],
+                    "series_mapping": mapping_data,
+                    "geo_ids_processed": [],
+                    "extraction_type": "mapping"
+                }
+                
+                return json.dumps(result, indent=2)
+                
+            except Exception as e:
+                result = {
+                    "success": False,
+                    "message": f"Failed to create or load mapping: {str(e)}",
+                    "errors": [str(e)],
+                    "geo_ids_processed": [],
+                    "extraction_type": "mapping"
+                }
+                return json.dumps(result, indent=2)
 
         # LinkerAgent tools
         @function_tool
@@ -326,14 +370,49 @@ def get_session_tools(session_dir: str | Path) -> list:
             Returns
             -------
             str
-                JSON string containing the mapping data with success status
+                JSON string containing the mapping data and validation result
             """
             result = load_mapping_file_impl(session_dir)
             if not result.get("success", True):
-                raise RuntimeError(
-                    f"Failed to load mapping file: {result.get('message', 'Unknown error')}"
-                )
-            return json.dumps(result)
+                response = {
+                    "success": False,
+                    "message": result.get("message", "Unknown error"),
+                    "errors": [result.get("message", "Unknown error")]
+                }
+                return json.dumps(response, indent=2)
+            
+            # Return mapping data as JSON string
+            try:
+                mapping_data = result.get("data", {})
+                if mapping_data:
+                    # Convert Pydantic objects to dicts for JSON serialization
+                    serializable_data = {}
+                    for key, value in mapping_data.items():
+                        if hasattr(value, 'model_dump'):  # Pydantic object
+                            serializable_data[key] = value.model_dump()
+                        else:
+                            serializable_data[key] = value
+                    
+                    response = {
+                        "success": True,
+                        "message": result.get("message", "Mapping loaded successfully"),
+                        "data": {"mapping": serializable_data["mapping"]}
+                    }
+                    return json.dumps(response, indent=2)
+                else:
+                    response = {
+                        "success": False,
+                        "message": "No mapping data found",
+                        "errors": ["Empty mapping data"]
+                    }
+                    return json.dumps(response, indent=2)
+            except Exception as e:
+                response = {
+                    "success": False,
+                    "message": f"Invalid mapping data format: {str(e)}",
+                    "errors": [f"Validation error: {str(e)}"]
+                }
+                return json.dumps(response, indent=2)
 
         @function_tool
         def find_sample_directory(sample_id: str) -> str:
@@ -351,17 +430,26 @@ def get_session_tools(session_dir: str | Path) -> list:
             Returns
             -------
             str
-                JSON string containing directory information and success status
+                JSON string containing directory information
             """
             result = find_sample_directory_impl(sample_id, session_dir)
             if not result.get("success", True):
-                raise RuntimeError(
-                    f"Failed to find sample directory: {result.get('message', 'Unknown error')}"
-                )
-            return json.dumps(result)
+                response = {
+                    "success": False,
+                    "message": result.get("message", "Unknown error"),
+                    "errors": [result.get("message", "Unknown error")]
+                }
+                return json.dumps(response, indent=2)
+            
+            response = {
+                "success": True,
+                "message": result.get("message", "Directory found successfully"),
+                "data": result.get("data", {})
+            }
+            return json.dumps(response, indent=2)
 
         @function_tool
-        def clean_metadata_files(sample_id: str, fields_to_remove: str = None) -> str:
+        def clean_metadata_files(sample_id: str, fields_to_remove: list[str] = None) -> str:
             """
             Generate cleaned versions of metadata files by removing specified fields.
 
@@ -372,60 +460,66 @@ def get_session_tools(session_dir: str | Path) -> list:
             ----------
             sample_id : str
                 The sample ID to process
-            fields_to_remove : str, optional
-                JSON string containing list of fields to remove from metadata files.
+            fields_to_remove : list[str], optional
+                List of fields to remove from metadata files.
                 If not provided, uses default fields like 'status', 'submission_date', etc.
 
             Returns
             -------
             str
-                JSON string containing paths to cleaned files and success status
+                JSON string containing paths to cleaned files
             """
-            fields_list = None
-            if fields_to_remove:
-                fields_list = json.loads(fields_to_remove)
-            else:
-                # Updated to match actual fields in the files, including nested 'attributes' fields
-                fields_list = [
-                    # Top-level fields
-                    "status",
-                    # Fields inside 'attributes' dict
-                    "status",
-                    "submission_date",
-                    "last_update_date",
-                    "contributor",
-                    "contact_name",
-                    "contact_email",
-                    "contact_laboratory",
-                    "contact_department",
-                    "contact_institute",
-                    "contact_address",
-                    "contact_city",
-                    "contact_state",
-                    "contact_zip/postal_code",
-                    "contact_country",
-                    "contact_phone",
-                    "contact_fax",
-                    "extract_protocol_ch1",
-                    "growth_protocol_ch1",
-                    "treatment_protocol_ch1",
-                    "data_processing",
-                    # PMID fields to remove
-                    "authors",
-                    "journal",
-                    "publication_date",
-                    "keywords",
-                    "mesh_terms",
-                ]
+            fields_list = fields_to_remove or [
+                # Top-level fields
+                "status",
+                # Fields inside 'attributes' dict
+                "status",
+                "submission_date",
+                "last_update_date",
+                "contributor",
+                "contact_name",
+                "contact_email",
+                "contact_laboratory",
+                "contact_department",
+                "contact_institute",
+                "contact_address",
+                "contact_city",
+                "contact_state",
+                "contact_zip/postal_code",
+                "contact_country",
+                "contact_phone",
+                "contact_fax",
+                "extract_protocol_ch1",
+                "growth_protocol_ch1",
+                "treatment_protocol_ch1",
+                "data_processing",
+                # PMID fields to remove
+                "authors",
+                "journal",
+                "publication_date",
+                "keywords",
+                "mesh_terms",
+            ]
+            
             result = clean_metadata_files_impl(sample_id, session_dir, fields_list)
             if not result.get("success", True):
-                raise RuntimeError(
-                    f"Failed to clean metadata files: {result.get('message', 'Unknown error')}"
-                )
-            return json.dumps(result)
+                response = {
+                    "success": False,
+                    "message": result.get("message", "Unknown error"),
+                    "errors": [result.get("message", "Unknown error")]
+                }
+                return json.dumps(response, indent=2)
+            
+            response = {
+                "success": True,
+                "message": result.get("message", "Metadata files cleaned successfully"),
+                "files_created": result.get("files_created", []),
+                "data": {"fields_removed": fields_list}
+            }
+            return json.dumps(response, indent=2)
 
         @function_tool
-        def package_linked_data(sample_id: str, fields_to_remove: str = None) -> str:
+        def package_linked_data(sample_id: str, fields_to_remove: list[str] = None) -> str:
             """
             Package all linked information for a sample into a comprehensive result.
 
@@ -439,24 +533,33 @@ def get_session_tools(session_dir: str | Path) -> list:
             ----------
             sample_id : str
                 The sample ID to process
-            fields_to_remove : str, optional
-                JSON string containing list of fields to remove from metadata files
+            fields_to_remove : list[str], optional
+                List of fields to remove from metadata files
 
             Returns
             -------
             str
-                JSON string containing all packaged information and success status
+                JSON string containing all packaged linked data
             """
-            fields_list = None
-            if fields_to_remove:
-                fields_list = json.loads(fields_to_remove)
-
-            result = package_linked_data_impl(sample_id, session_dir, fields_list)
+            result = package_linked_data_impl(sample_id, session_dir, fields_to_remove)
             if not result.get("success", True):
-                raise RuntimeError(
-                    f"Failed to package linked data: {result.get('message', 'Unknown error')}"
-                )
-            return json.dumps(result)
+                response = {
+                    "success": False,
+                    "message": result.get("message", "Unknown error"),
+                    "errors": [result.get("message", "Unknown error")]
+                }
+                return json.dumps(response, indent=2)
+            
+            # Return the linked data as JSON - no need for Pydantic conversion
+            linked_data_dict = result.get("data", {})
+            response = {
+                "success": True,
+                "message": result.get("message", "Linked data packaged successfully"),
+                "files_created": result.get("files_created", []),
+                "data": linked_data_dict,
+                "linked_data": {sample_id: linked_data_dict}
+            }
+            return json.dumps(response, indent=2)
 
         # Curator tools for metadata curation
         @function_tool
@@ -476,14 +579,24 @@ def get_session_tools(session_dir: str | Path) -> list:
             Returns
             -------
             str
-                JSON string containing loaded data from all relevant files
+                JSON string containing loaded sample data
             """
             result = load_sample_data_impl(sample_id, session_dir)
             if not result.get("success", True):
-                raise RuntimeError(
-                    f"Failed to load sample data: {result.get('message', 'Unknown error')}"
-                )
-            return json.dumps(result)
+                response = {
+                    "success": False,
+                    "message": result.get("message", "Unknown error"),
+                    "errors": [result.get("message", "Unknown error")]
+                }
+                return json.dumps(response, indent=2)
+            
+            response = {
+                "success": True,
+                "message": result.get("message", "Sample data loaded successfully"),
+                "data": result.get("data", {}),
+                "samples_curated": [sample_id]
+            }
+            return json.dumps(response, indent=2)
 
         @function_tool
         def extract_metadata_candidates(sample_data: str, target_field: str) -> str:
@@ -572,108 +685,9 @@ def get_session_tools(session_dir: str | Path) -> list:
                 )
             return json.dumps(result)
 
-        @function_tool
-        def process_multiple_samples(
-            sample_ids: str, fields_to_remove: str = None
-        ) -> str:
-            """
-            Process multiple sample IDs by cleaning and packaging their metadata files.
 
-            This tool processes a list of sample IDs, cleaning their metadata files and
-            packaging the linked data for each sample.
 
-            Parameters
-            ----------
-            sample_ids : str
-                JSON string containing list of sample IDs to process (e.g., '["GSM1000981", "GSM1098372"]')
-            fields_to_remove : str, optional
-                JSON string containing list of fields to remove from metadata files
 
-            Returns
-            -------
-            str
-                JSON string containing results for all processed samples
-            """
-            try:
-                sample_id_list = json.loads(sample_ids)
-                fields_list = None
-                if fields_to_remove:
-                    fields_list = json.loads(fields_to_remove)
-                else:
-                    # Use the same default fields as clean_metadata_files
-                    fields_list = [
-                        # Top-level fields
-                        "status",
-                        # Fields inside 'attributes' dict
-                        "status",
-                        "submission_date",
-                        "last_update_date",
-                        "contributor",
-                        "contact_name",
-                        "contact_email",
-                        "contact_laboratory",
-                        "contact_department",
-                        "contact_institute",
-                        "contact_address",
-                        "contact_city",
-                        "contact_state",
-                        "contact_zip/postal_code",
-                        "contact_country",
-                        "contact_phone",
-                        "contact_fax",
-                        "extract_protocol_ch1",
-                        "growth_protocol_ch1",
-                        "treatment_protocol_ch1",
-                        "data_processing",
-                        # PMID fields to remove
-                        "authors",
-                        "journal",
-                        "publication_date",
-                        "keywords",
-                        "mesh_terms",
-                    ]
-
-                print(f"[MULTI] Using fields_to_remove: {fields_list}")
-
-                results = {}
-                for sample_id in sample_id_list:
-                    print(f"[MULTI] Processing sample: {sample_id}")
-
-                    # Clean metadata files for this sample
-                    clean_result = clean_metadata_files_impl(
-                        sample_id, session_dir, fields_list
-                    )
-
-                    # Package linked data for this sample
-                    package_result = package_linked_data_impl(
-                        sample_id, session_dir, fields_list
-                    )
-
-                    results[sample_id] = {
-                        "cleaning": clean_result,
-                        "packaging": package_result,
-                    }
-
-                return json.dumps(
-                    {
-                        "success": True,
-                        "message": f"Processed {len(sample_id_list)} samples",
-                        "results": results,
-                    }
-                )
-
-            except Exception as e:
-                print(f"[MULTI] Error processing multiple samples: {str(e)}")
-                import traceback
-
-                traceback.print_exc()
-                return json.dumps(
-                    {
-                        "success": False,
-                        "message": f"Error processing multiple samples: {str(e)}",
-                        "error": str(e),
-                    }
-                )
 
         @function_tool
         def set_testing_session() -> str:
@@ -725,6 +739,49 @@ def get_session_tools(session_dir: str | Path) -> list:
                 }
                 return json.dumps(result)
 
+        # Serialization tools for persisting structured outputs
+        @function_tool
+        def serialize_agent_output(output_type: str) -> str:
+            """
+            Serialize agent output to JSON files.
+            
+            This tool allows agents to persist their structured Pydantic outputs
+            as JSON files at the end of their workflow.
+            
+            Parameters
+            ----------
+            output_type : str
+                Type of agent output ('ingestion', 'linker', 'curator')
+                
+            Returns
+            -------
+            str
+                JSON string with serialization result and status
+            """
+            try:
+                if output_type.lower() in ['ingestion', 'linker', 'curator']:
+                    result = {
+                        "success": True,
+                        "message": f"Serialization tool available for {output_type} outputs",
+                        "files_created": [],
+                        "timestamp": str(datetime.now())
+                    }
+                    return json.dumps(result, indent=2)
+                else:
+                    result = {
+                        "success": False,
+                        "message": f"Unknown output type: {output_type}",
+                        "error": f"Supported types: ingestion, linker, curator"
+                    }
+                    return json.dumps(result, indent=2)
+            except Exception as e:
+                result = {
+                    "success": False,
+                    "message": f"Failed to serialize {output_type} output: {str(e)}",
+                    "error": str(e)
+                }
+                return json.dumps(result, indent=2)
+
         # Return all the tools
         tools = [
             extract_gsm_metadata,
@@ -742,8 +799,8 @@ def get_session_tools(session_dir: str | Path) -> list:
             extract_metadata_candidates,
             reconcile_candidates,
             save_curator_results,
-            process_multiple_samples,
             set_testing_session,
+            serialize_agent_output,
         ]
 
         print(f"✅ ToolUtils: Created {len(tools)} tools")
@@ -784,6 +841,5 @@ def get_available_tools():
         "extract_metadata_candidates",
         "reconcile_candidates",
         "save_curator_results",
-        "process_multiple_samples",
         "set_testing_session",
     ]

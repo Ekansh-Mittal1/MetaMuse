@@ -6,10 +6,14 @@ from uuid import uuid4
 from agents import Agent, RunContextWrapper
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from pydantic import Field
+from typing import Optional
 from src.agents.handoff_base import BaseHandoff
 
 from src.agents.tool_utils import get_session_tools
 from src.utils.prompts import load_prompt
+
+# Import Pydantic models for structured data
+from src.models import IngestionOutput
 
 
 class IngestionHandoff(BaseHandoff):
@@ -22,6 +26,12 @@ class IngestionHandoff(BaseHandoff):
     extraction_type: str = Field(
         default="auto",
         description="Type of extraction: 'gsm', 'gse', 'series_matrix', 'paper', or 'auto' to detect automatically.",
+    )
+    
+    # Optional structured output from previous agent (for workflow continuity)
+    upstream_data: Optional[dict] = Field(
+        default=None,
+        description="Optional structured data from upstream workflow step",
     )
 
 
@@ -38,6 +48,9 @@ def create_ingestion_agent(
 
     This agent is responsible for extracting metadata from Gene Expression
     Omnibus (GEO) and PubMed databases given GSM/GSE/PMID identifiers.
+    
+    The agent is configured with structured output capabilities to produce
+    validated IngestionOutput objects directly.
 
     Parameters
     ----------
@@ -51,7 +64,7 @@ def create_ingestion_agent(
     Returns
     -------
     Agent
-        An instance of an Agent configured for metadata extraction tasks.
+        An instance of an Agent configured for metadata extraction tasks with structured outputs.
     """
     if session_id is None:
         session_id = f"ing_{str(uuid4())}"
@@ -69,6 +82,9 @@ def create_ingestion_agent(
         RECOMMENDED_PROMPT_PREFIX
         + "\n\n"
         + load_prompt("ingestion_agent.md", session_dir=str(session_dir))
+        + "\n\n"
+        + "IMPORTANT: At the end of your work, provide a structured summary using the IngestionOutput format. "
+        + "Include all extracted metadata, file paths, processing statistics, and sample IDs ready for the next agent."
     )
 
     return Agent(
@@ -76,4 +92,5 @@ def create_ingestion_agent(
         instructions=instructions,
         tools=tools,
         handoffs=handoffs or [],
+        # Following DendroForge pattern: no structured outputs, natural language responses
     )
