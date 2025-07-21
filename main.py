@@ -25,6 +25,7 @@ from src.workflows.MetaMuse import (
     create_multi_agent_pipeline,
     create_linking_pipeline,
     create_full_pipeline,
+    create_curation_pipeline,
 )
 
 load_dotenv(override=True)
@@ -99,11 +100,21 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
     **kwargs
         Additional arguments for the workflow
     """
-    session_id = str(uuid4())
+    # Generate session ID with pipeline prefix
+    pipeline_prefixes = {
+        "geo_extraction": "ge",
+        "multi_agent_geo": "mag", 
+        "linking": "link",
+        "full_pipeline": "fp",
+        "curation": "c",
+    }
+    
+    prefix = pipeline_prefixes.get(workflow_name, "unknown")
+    session_id = f"{prefix}_{str(uuid4())}"
     existing_session_dir = None
 
-    # Extract session directory from input for linking workflow
-    if workflow_name == "linking":
+    # Extract session directory from input for linking and curation workflows
+    if workflow_name in ["linking", "curation"]:
         import re
 
         session_match = re.search(
@@ -132,6 +143,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         "multi_agent_geo": create_multi_agent_pipeline,
         "linking": create_linking_pipeline,
         "full_pipeline": create_full_pipeline,
+        "curation": create_curation_pipeline,
     }
 
     if workflow_name not in workflow_funcs:
@@ -149,7 +161,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
 
     try:
         # Run the workflow with existing session directory if specified
-        if existing_session_dir and workflow_name == "linking":
+        if existing_session_dir and workflow_name in ["linking", "curation"]:
             result = await orchestrator.run_workflow(
                 lambda **kwargs: workflow_func(
                     existing_session_dir=existing_session_dir, input_data=input_data
@@ -158,7 +170,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
                 session_id=session_id,  # Pass session_id explicitly to avoid orchestrator adding it
                 **kwargs,
             )
-        elif workflow_name in ["linking", "full_pipeline", "multi_agent_geo"]:
+        elif workflow_name in ["linking", "full_pipeline", "multi_agent_geo", "curation"]:
             # These workflows need input_data for testing detection
             result = await orchestrator.run_workflow(
                 lambda **kwargs: workflow_func(
@@ -236,6 +248,7 @@ def list_workflows():
         "multi_agent_geo": "Multi-agent GEO metadata extraction pipeline (extensible)",
         "linking": "Single-agent metadata linking and processing pipeline",
         "full_pipeline": "Complete pipeline: IngestionAgent → LinkerAgent",
+        "curation": "Single-agent metadata curation pipeline for extracting specific fields",
     }
 
     print("Available workflows:")
@@ -252,6 +265,8 @@ async def main():
 Examples:
   python main.py geo_extraction "Extract metadata for GSM1019742" --model openai/gpt-4o
   python main.py geo_extraction "Get series info for GSE41588 and paper abstract for PMID 23902433"
+  python main.py linking "session directory sandbox/di_c414a6ee-346e-469b-bae5-2c5316872314"
+  python main.py curation "session directory sandbox/test-session target_field Disease samples GSM1000981,GSM1000984"
   python main.py --list-workflows
         """,
     )
@@ -259,7 +274,7 @@ Examples:
     parser.add_argument(
         "workflow",
         nargs="?",
-        choices=["geo_extraction", "multi_agent_geo", "linking", "full_pipeline"],
+        choices=["geo_extraction", "multi_agent_geo", "linking", "full_pipeline", "curation"],
         help="Workflow to run",
     )
 

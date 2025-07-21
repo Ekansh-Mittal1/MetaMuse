@@ -54,7 +54,7 @@ def create_ingestion_agent(
         An instance of an Agent configured for metadata extraction tasks.
     """
     if session_id is None:
-        session_id = str(uuid4())
+        session_id = f"ing_{str(uuid4())}"
 
     if sandbox_dir is None:
         sandbox_dir = "sandbox"

@@ -40,6 +40,13 @@ from src.tools.linker_tools import (
     package_linked_data_impl,
 )
 
+from src.tools.curator_tools import (
+    load_sample_data_impl,
+    extract_metadata_candidates_impl,
+    reconcile_candidates_impl,
+    save_curator_results_impl,
+)
+
 
 def get_session_tools(session_dir: str | Path) -> list:
     """
@@ -451,6 +458,120 @@ def get_session_tools(session_dir: str | Path) -> list:
                 )
             return json.dumps(result)
 
+        # Curator tools for metadata curation
+        @function_tool
+        def load_sample_data(sample_id: str) -> str:
+            """
+            Load sample data from linked_data.json and all referenced cleaned files.
+            
+            This tool loads comprehensive sample data including the linked_data.json file
+            and all cleaned metadata files referenced within it. This provides a complete
+            view of all available metadata for a sample.
+            
+            Parameters
+            ----------
+            sample_id : str
+                The sample ID (e.g., GSM1000981) to load data for
+                
+            Returns
+            -------
+            str
+                JSON string containing loaded data from all relevant files
+            """
+            result = load_sample_data_impl(sample_id, session_dir)
+            if not result.get("success", True):
+                raise RuntimeError(
+                    f"Failed to load sample data: {result.get('message', 'Unknown error')}"
+                )
+            return json.dumps(result)
+
+        @function_tool
+        def extract_metadata_candidates(sample_data: str, target_field: str) -> str:
+            """
+            Extract potential candidates for a target metadata field from all files.
+            
+            This tool analyzes sample data loaded from load_sample_data and extracts
+            potential candidates for a specific metadata field (e.g., "Disease", "Tissue", "Age").
+            It searches through all available data sources independently and returns
+            candidates found in each source.
+            
+            Parameters
+            ----------
+            sample_data : str
+                JSON string containing sample data from load_sample_data
+            target_field : str
+                The target metadata field to extract candidates for (e.g., "Disease", "Tissue", "Age")
+                
+            Returns
+            -------
+            str
+                JSON string containing candidates extracted from each file
+            """
+            sample_data_dict = json.loads(sample_data)
+            result = extract_metadata_candidates_impl(sample_data_dict, target_field, session_dir)
+            if not result.get("success", True):
+                raise RuntimeError(
+                    f"Failed to extract candidates: {result.get('message', 'Unknown error')}"
+                )
+            return json.dumps(result)
+
+        @function_tool
+        def reconcile_candidates(candidates_by_file: str, target_field: str) -> str:
+            """
+            Reconcile candidates across files and determine final result.
+            
+            This tool compares candidates extracted from different files and determines
+            a final curated value. It handles consensus building when multiple sources
+            agree, and flags conflicts when sources disagree.
+            
+            Parameters
+            ----------
+            candidates_by_file : str
+                JSON string containing candidates extracted from each file
+            target_field : str
+                The target metadata field being reconciled
+                
+            Returns
+            -------
+            str
+                JSON string containing reconciled result with confidence scoring
+            """
+            candidates_dict = json.loads(candidates_by_file)
+            result = reconcile_candidates_impl(candidates_dict, target_field, session_dir)
+            if not result.get("success", True):
+                raise RuntimeError(
+                    f"Failed to reconcile candidates: {result.get('message', 'Unknown error')}"
+                )
+            return json.dumps(result)
+
+        @function_tool
+        def save_curator_results(sample_id: str, results_data: str) -> str:
+            """
+            Save curation results to a JSON file.
+            
+            This tool saves the final curation results for a sample to a JSON file
+            named {sample_id}_metadata_candidates.json in the session directory.
+            
+            Parameters
+            ----------
+            sample_id : str
+                The sample ID being curated
+            results_data : str
+                JSON string containing the final curation results
+                
+            Returns
+            -------
+            str
+                JSON string indicating success or failure of save operation
+            """
+            results_dict = json.loads(results_data)
+            result = save_curator_results_impl(sample_id, results_dict, session_dir)
+            if not result.get("success", True):
+                raise RuntimeError(
+                    f"Failed to save results: {result.get('message', 'Unknown error')}"
+                )
+            return json.dumps(result)
+
         @function_tool
         def process_multiple_samples(
             sample_ids: str, fields_to_remove: str = None
@@ -617,6 +738,10 @@ def get_session_tools(session_dir: str | Path) -> list:
             find_sample_directory,
             clean_metadata_files,
             package_linked_data,
+            load_sample_data,
+            extract_metadata_candidates,
+            reconcile_candidates,
+            save_curator_results,
             process_multiple_samples,
             set_testing_session,
         ]
@@ -655,6 +780,10 @@ def get_available_tools():
         "find_sample_directory",
         "clean_metadata_files",
         "package_linked_data",
+        "load_sample_data",
+        "extract_metadata_candidates",
+        "reconcile_candidates",
+        "save_curator_results",
         "process_multiple_samples",
         "set_testing_session",
     ]

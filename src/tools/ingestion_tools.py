@@ -1039,16 +1039,28 @@ def extract_series_id_from_gsm_metadata(gsm_metadata_file: str) -> Dict[str, Any
                 f"Series ID not found in GSM metadata file: {gsm_metadata_file}"
             )
 
-        # Validate Series ID format
-        if not series_id.upper().startswith("GSE") or not series_id[3:].isdigit():
-            raise ValueError(f"Invalid Series ID format: {series_id}")
+        # Handle multiple series IDs (separated by commas)
+        series_ids = [sid.strip() for sid in series_id.split(',') if sid.strip()]
+        
+        # Validate all series IDs
+        valid_series_ids = []
+        for sid in series_ids:
+            if sid.upper().startswith("GSE") and sid[3:].isdigit():
+                valid_series_ids.append(sid.upper())
+            else:
+                raise ValueError(f"Invalid Series ID format: {sid}")
+
+        # Use the first series ID as the primary one
+        primary_series_id = valid_series_ids[0] if valid_series_ids else None
 
         result = {
             "status": "success",
             "gsm_metadata_file": gsm_metadata_file,
-            "series_id": series_id.upper(),  # Normalize to uppercase
+            "series_id": primary_series_id,  # Primary (first) series ID
             "series_id_original": series_id,
-            "message": f"Successfully extracted Series ID {series_id.upper()} from {gsm_metadata_file}",
+            "series_ids": valid_series_ids,  # All valid series IDs
+            "series_id_count": len(valid_series_ids),
+            "message": f"Successfully extracted {len(valid_series_ids)} Series ID(s) from {gsm_metadata_file}. Primary: {primary_series_id}",
         }
 
         return result
@@ -1127,18 +1139,32 @@ def extract_gsm_metadata_impl(
         print(f"⚠️  No series ID found for {gsm_id}, saving to session root")
         output_file = Path(session_dir) / f"{gsm_id}_metadata.json"
     else:
-        # Normalize series ID and create subdirectory
-        series_id = series_id.upper()
-        if not series_id.startswith("GSE") or not series_id[3:].isdigit():
-            print(
-                f"⚠️  Invalid series ID format '{series_id}' for {gsm_id}, saving to session root"
-            )
+        # Handle multiple series IDs (separated by commas)
+        series_ids = [sid.strip() for sid in series_id.split(',') if sid.strip()]
+        
+        # Validate all series IDs
+        valid_series_ids = []
+        for sid in series_ids:
+            if sid.upper().startswith("GSE") and sid[3:].isdigit():
+                valid_series_ids.append(sid.upper())
+            else:
+                print(f"⚠️  Invalid series ID format '{sid}' for {gsm_id}")
+        
+        if not valid_series_ids:
+            # If no valid series IDs found, save to session root
+            print(f"⚠️  No valid series IDs found for {gsm_id}, saving to session root")
             output_file = Path(session_dir) / f"{gsm_id}_metadata.json"
         else:
-            # Create series subdirectory and save there
-            series_dir = _get_series_subdirectory(session_dir, series_id)
+            # Use the first valid series ID for directory organization
+            primary_series_id = valid_series_ids[0]
+            series_dir = _get_series_subdirectory(session_dir, primary_series_id)
             output_file = series_dir / f"{gsm_id}_metadata.json"
-            print(f"📁 Saving to series subdirectory: {series_id}")
+            print(f"📁 Saving to series subdirectory: {primary_series_id}")
+            
+            # If there are multiple series IDs, add a note to the metadata
+            if len(valid_series_ids) > 1:
+                metadata["attributes"]["all_series_ids"] = ", ".join(valid_series_ids)
+                print(f"📝 Sample {gsm_id} belongs to multiple series: {', '.join(valid_series_ids)}")
 
     # Save metadata
     with open(output_file, "w") as f:

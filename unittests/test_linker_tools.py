@@ -116,7 +116,7 @@ class TestLinkerTools:
         result = self.tools.clean_metadata_files("GSM1000981", fields_to_remove)
 
         assert result.success is True
-        assert len(result.files_created) == 2  # series and abstract files
+        assert len(result.files_created) == 1  # only series file (sample file creation removed)
 
         # Check that cleaned files exist
         cleaned_dir = self.series_dir / "cleaned"
@@ -136,7 +136,7 @@ class TestLinkerTools:
         result = self.tools.clean_metadata_files("GSM1000981")
 
         assert result.success is True
-        assert len(result.files_created) == 2
+        assert len(result.files_created) == 1  # only series file (sample file creation removed)
 
 
 class TestLinkerToolsImplementations:

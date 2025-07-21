@@ -704,6 +704,37 @@ class DataIntakeWorkflow:
                     errors=["No sample IDs extracted from ingestion workflow"],
                 )
 
+            # Ensure we use the same field removal list as the full_pipeline
+            if fields_to_remove is None:
+                fields_to_remove = [
+                    # GSE and GSM fields to remove from attributes
+                    "status",
+                    "submission_date",
+                    "last_update_date", 
+                    "contributor",
+                    # Contact fields
+                    "contact_name",
+                    "contact_email",
+                    "contact_laboratory",
+                    "contact_department",
+                    "contact_institute",
+                    "contact_address",
+                    "contact_city",
+                    "contact_state",
+                    "contact_zip/postal_code",
+                    "contact_country",
+                    "contact_phone",
+                    "contact_fax",
+                    # Protocol and processing fields
+                    # PMID fields to remove
+                    "authors",
+                    "journal",
+                    "publication_date",
+                    "keywords",
+                    "mesh_terms",
+                ]
+                print(f"📋 Using default field removal list ({len(fields_to_remove)} fields)")
+
             # Run linker workflow
             linker_result = self.run_linker_workflow(sample_ids, fields_to_remove)
             if not linker_result.success:
@@ -765,7 +796,15 @@ def run_data_intake_workflow(
     import uuid
 
     if session_id is None:
-        session_id = str(uuid.uuid4())
+        # Generate session ID with pipeline prefix
+        pipeline_prefixes = {
+            "ingestion": "di_ing",
+            "linker": "di_link", 
+            "complete": "di",
+        }
+        
+        prefix = pipeline_prefixes.get(workflow_type, "di_unknown")
+        session_id = f"{prefix}_{str(uuid.uuid4())}"
 
     workflow = DataIntakeWorkflow(session_id, sandbox_dir)
 

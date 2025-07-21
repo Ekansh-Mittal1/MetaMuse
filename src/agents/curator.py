@@ -1,3 +1,11 @@
+"""
+Curator agent for metadata curation tasks.
+
+This module provides the CuratorAgent that performs metadata curation
+on GEO samples, extracting candidate values for specific metadata fields
+and reconciling conflicts across multiple data sources.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,24 +20,20 @@ from src.agents.tool_utils import get_session_tools
 from src.utils.prompts import load_prompt
 
 
-class LinkerHandoff(BaseHandoff):
-    """Input to the LinkerAgent."""
+class CuratorHandoff(BaseHandoff):
+    """Input to the CuratorAgent."""
 
-    sample_id: str = Field(
+    sample_ids: list[str] = Field(
         ...,
-        description="The sample ID to process and link metadata for (e.g., GSM1000981).",
+        description="List of sample IDs (GSM) to perform metadata curation on.",
     )
-    fields_to_remove: list[str] = Field(
-        default=[],
-        description="List of fields to remove from metadata files during cleaning. If not provided, uses default fields.",
+    target_field: str = Field(
+        default="Disease",
+        description="The target metadata field to extract candidates for (e.g., 'Disease', 'Tissue', 'Age').",
     )
     session_directory: str = Field(
         ...,
-        description="Path to the session directory containing IngestionAgent output files.",
-    )
-    all_sample_ids: list[str] = Field(
-        default=[],
-        description="List of all sample IDs that were processed by the IngestionAgent.",
+        description="Path to the session directory containing LinkerAgent output files.",
     )
 
 
@@ -38,7 +42,7 @@ def on_handoff_callback(ctx: RunContextWrapper[None], input_data: BaseHandoff):
     pass
 
 
-def create_linker_agent(
+def create_curator_agent(
     session_id: str = None,
     sandbox_dir: str = None,
     handoffs: list = None,
@@ -46,11 +50,11 @@ def create_linker_agent(
     input_data: str = None,
 ) -> Agent:
     """
-    Factory method to create a metadata linking agent.
+    Factory method to create a metadata curation agent.
 
-    This agent is responsible for processing and linking metadata files
-    created by the IngestionAgent, including cleaning files, downloading
-    series matrix data, and extracting sample-specific information.
+    This agent is responsible for performing metadata curation tasks on
+    GEO samples, including extracting candidate values for specific metadata
+    fields and reconciling conflicts across multiple data sources.
 
     Parameters
     ----------
@@ -62,17 +66,19 @@ def create_linker_agent(
         List of handoff objects to configure for this agent
     existing_session_dir : str, optional
         Path to an existing session directory to use instead of creating a new one
+    input_data : str, optional
+        Input data string that may contain sample IDs and target field information
 
     Returns
     -------
     Agent
-        An instance of an Agent configured for metadata linking tasks.
+        An instance of an Agent configured for metadata curation tasks.
     """
     try:
         # Check if "testing" is in the input data
         is_testing = input_data and "testing" in input_data.lower()
         if is_testing:
-            print("🧪 LinkerAgent: Testing mode detected")
+            print("🧪 CuratorAgent: Testing mode detected")
             # Force testing session directory
             session_dir = Path("sandbox/test-session").absolute()
             session_dir.mkdir(parents=True, exist_ok=True)
@@ -84,13 +90,13 @@ def create_linker_agent(
                 error_msg = (
                     f"Existing session directory does not exist: {existing_session_dir}"
                 )
-                print(f"❌ LinkerAgent: {error_msg}")
+                print(f"❌ CuratorAgent: {error_msg}")
                 raise ValueError(error_msg)
             session_id = session_dir.name
         else:
             # Create new session directory
             if session_id is None:
-                session_id = f"link_{str(uuid4())}"
+                session_id = f"curator_{str(uuid4())}"
 
             if sandbox_dir is None:
                 sandbox_dir = "sandbox"
@@ -99,16 +105,16 @@ def create_linker_agent(
             session_dir.mkdir(parents=True, exist_ok=True)
 
         tools = get_session_tools(session_dir)
-        print(f"✅ LinkerAgent: Initialized with {len(tools)} tools")
+        print(f"✅ CuratorAgent: Initialized with {len(tools)} tools")
 
         instructions = (
             RECOMMENDED_PROMPT_PREFIX
             + "\n\n"
-            + load_prompt("linker_agent.md", session_dir=str(session_dir))
+            + load_prompt("curator_agent.md", session_dir=str(session_dir))
         )
 
         agent = Agent(
-            name="LinkerAgent",
+            name="CuratorAgent",
             instructions=instructions,
             tools=tools,
             handoffs=handoffs or [],
@@ -117,9 +123,9 @@ def create_linker_agent(
         return agent
 
     except Exception as e:
-        print(f"❌ LinkerAgent creation error: {str(e)}")
+        print(f"❌ CuratorAgent creation error: {str(e)}")
         import traceback
 
-        print("🔍 LinkerAgent creation traceback:")
+        print("🔍 CuratorAgent creation traceback:")
         traceback.print_exc()
-        raise
+        raise 

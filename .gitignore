@@ -220,3 +220,6 @@ z_src_OLD/
 .lightning_studio/
 .vscode-server
 .windsurf-server 
+
+# Data
+sample_characteristics.tsv
