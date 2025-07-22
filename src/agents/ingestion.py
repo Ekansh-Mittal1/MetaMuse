@@ -27,6 +27,10 @@ class IngestionHandoff(BaseHandoff):
         default="auto",
         description="Type of extraction: 'gsm', 'gse', 'series_matrix', 'paper', or 'auto' to detect automatically.",
     )
+    target_field: str = Field(
+        default="Disease",
+        description="Target metadata field for curation (e.g., 'Disease', 'Tissue', 'Age').",
+    )
     
     # Optional structured output from previous agent (for workflow continuity)
     upstream_data: Optional[dict] = Field(

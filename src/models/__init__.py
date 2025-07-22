@@ -35,7 +35,19 @@ from .agent_outputs import (
 
 from .serialization import (
     ModelSerializer,
+    WorkflowSerializer,
     SerializationError,
+    serialize_any_metadata,
+    load_metadata_from_json,
+)
+
+from .curation_models import (
+    CleanedSeriesMetadata,
+    CleanedSampleMetadata,
+    CleanedAbstractMetadata,
+    CurationDataPackage,
+    ExtractedCandidate,
+    CurationResult,
 )
 
 __all__ = [
@@ -63,5 +75,15 @@ __all__ = [
     "CuratorOutput",
     # Serialization
     "ModelSerializer",
+    "WorkflowSerializer",
     "SerializationError",
+    "serialize_any_metadata",
+    "load_metadata_from_json",
+    # Curation models
+    "CleanedSeriesMetadata",
+    "CleanedSampleMetadata", 
+    "CleanedAbstractMetadata",
+    "CurationDataPackage",
+    "ExtractedCandidate",
+    "CurationResult",
 ] 

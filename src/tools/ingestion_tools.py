@@ -1531,24 +1531,21 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
         sample_ids = sorted(list(set(sample_ids)))
 
         if sample_ids:
-            mapping[series_id] = {
-                "sample_ids": sample_ids,
-                "sample_count": len(sample_ids),
-                "series_directory": str(series_dir.relative_to(session_path)),
-            }
+            # Store just the list of sample IDs to match Pydantic model expectation
+            mapping[series_id] = sample_ids
             print(f"📁 Found {len(sample_ids)} samples for series {series_id}")
         else:
             print(f"⚠️  No samples found for series {series_id}")
 
     # Create reverse mapping (sample_id -> series_id) for quick lookup
     reverse_mapping = {}
-    for series_id, series_data in mapping.items():
-        for sample_id in series_data["sample_ids"]:
+    for series_id, sample_ids in mapping.items():
+        for sample_id in sample_ids:
             reverse_mapping[sample_id] = series_id
 
     # Calculate totals
     total_series = len(mapping)
-    total_samples = sum(series_data["sample_count"] for series_data in mapping.values())
+    total_samples = sum(len(sample_ids) for sample_ids in mapping.values())
 
     # Create the mapping file
     mapping_data = {

@@ -396,10 +396,10 @@ def create_full_pipeline(
     session_id: str = None, sandbox_dir: str = None, input_data: str = None
 ) -> Agent:
     """
-    Create a complete metadata extraction and linking pipeline.
+    Create a complete metadata extraction, linking, and curation pipeline.
 
-    This is an alias for create_multi_agent_pipeline that provides a complete
-    workflow from metadata extraction to linking and processing.
+    This pipeline chains together the IngestionAgent, LinkerAgent, and CuratorAgent 
+    to provide a complete workflow from metadata extraction to final curation.
 
     Parameters
     ----------
@@ -407,14 +407,69 @@ def create_full_pipeline(
         The unique session identifier. If not provided, generates a new one.
     sandbox_dir : str, optional
         Base sandbox directory. If not provided, defaults to "sandbox"
+    input_data : str, optional
+        Input data string that may contain sample IDs and target field information
 
     Returns
     -------
     Agent
         The initial agent in the pipeline (IngestionAgent)
     """
-    # For full_pipeline, we want to use the mm_fp prefix instead of mm_mag
     if session_id is None:
         session_id = f"mm_fp_{str(uuid4())}"
+    if sandbox_dir is None:
+        sandbox_dir = "sandbox"
+
+    # Parse input_data for multiple sample IDs and target field
+    sample_ids = []
+    target_field = "Disease"  # Default target field
     
-    return create_multi_agent_pipeline(session_id, sandbox_dir, input_data)
+    if input_data:
+        # Look for target field specification
+        if "target_field:" in input_data.lower():
+            parts = input_data.split("target_field:")
+            if len(parts) > 1:
+                target_field = parts[1].split()[0].strip()
+                input_data = parts[0].strip()
+        
+        # Accept comma or whitespace separated sample IDs
+        for part in input_data.replace(",", " ").split():
+            if part.strip() and part.strip().startswith("GSM"):
+                sample_ids.append(part.strip())
+
+    # Create CuratorAgent
+    curator_agent = create_curator_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[],
+        input_data=f"target_field:{target_field} {' '.join(sample_ids)}"
+    )
+
+    # Create LinkerAgent with handoff to CuratorAgent
+    linker_agent = create_linker_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[
+            handoff(
+                agent=curator_agent,
+                input_type=CuratorHandoff,
+                on_handoff=on_handoff_callback,
+            )
+        ],
+        input_data=input_data,
+    )
+
+    # Create IngestionAgent with handoff to LinkerAgent
+    ingestion_agent = create_ingestion_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[
+            handoff(
+                agent=linker_agent,
+                input_type=LinkerHandoff,
+                on_handoff=on_handoff_callback,
+            )
+        ],
+    )
+
+    return ingestion_agent  # Return entry point

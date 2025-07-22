@@ -21,7 +21,7 @@ from .metadata_models import (
 class AgentResult(BaseModel):
     """Base result model for all agent operations."""
     
-    # Removed strict model_config for handoff compatibility with DendroForge pattern
+    model_config = ConfigDict(extra="forbid")
     
     success: bool = Field(..., description="Whether the operation succeeded")
     message: str = Field(..., description="Human-readable status message")
@@ -84,7 +84,7 @@ class LinkerResult(AgentResult):
 class CandidateExtraction(BaseModel):
     """Individual candidate extraction result."""
     
-    # Removed strict model_config for handoff compatibility with DendroForge pattern
+    model_config = ConfigDict(extra="forbid")
     
     value: str = Field(..., description="Extracted candidate value")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0-1)")
@@ -186,7 +186,7 @@ def create_error_result(
 class SerializationResult(BaseModel):
     """Result from serialization operations - DendroForge pattern compatible."""
     
-    # Removed strict model_config for handoff compatibility with DendroForge pattern
+    model_config = ConfigDict(extra="forbid")
     
     success: bool = Field(..., description="Whether serialization succeeded")
     message: str = Field(..., description="Status message")

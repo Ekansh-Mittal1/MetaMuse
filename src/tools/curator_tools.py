@@ -20,7 +20,9 @@ from pydantic import BaseModel, Field
 from src.models import (
     CuratorResult,
     CandidateExtraction,
-    ModelSerializer
+    ModelSerializer,
+    CurationResult,
+    ExtractedCandidate
 )
 
 
@@ -594,32 +596,95 @@ def reconcile_candidates_impl(
     }
 
 
-def save_curator_results_impl(
-    sample_id: str, 
-    results_data: Dict[str, Any], 
-    session_dir: str
-) -> Dict[str, Any]:
+def dummy_reconciliation_impl(
+    curation_result: CurationResult, session_dir: str
+) -> dict:
     """
-    Save curation results to a JSON file.
+    Dummy reconciliation tool that flags samples with conflicting candidates.
     
     Parameters
     ----------
-    sample_id : str
-        The sample ID
-    results_data : Dict[str, Any]
-        The results data to save
+    curation_result : CurationResult
+        The curation result to check for conflicts
     session_dir : str
         Path to the session directory
         
     Returns
     -------
-    Dict[str, Any]
+    dict
+        Result dictionary with conflict status
+    """
+    try:
+        if curation_result.has_conflicting_candidates():
+            all_candidates = curation_result.get_all_candidates()
+            unique_values = set(c.value.lower().strip() for c in all_candidates)
+            
+            return {
+                "success": False,
+                "message": f"Manual reconciliation needed for sample {curation_result.sample_id}",
+                "conflict_detected": True,
+                "conflicting_values": list(unique_values),
+                "reason": f"Found {len(unique_values)} different candidate values across sources"
+            }
+        else:
+            return {
+                "success": True,
+                "message": f"No conflicts detected for sample {curation_result.sample_id}",
+                "conflict_detected": False
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error checking for conflicts: {str(e)}",
+            "error": str(e)
+        }
+
+
+def save_curation_results_impl(
+    curation_results: List[CurationResult], session_dir: str
+) -> dict:
+    """
+    Save curation results to individual JSON files for each sample.
+    
+    Parameters
+    ----------
+    curation_results : List[CurationResult]
+        List of curation results to save
+    session_dir : str
+        Path to the session directory
+        
+    Returns
+    -------
+    dict
         Result dictionary with success status and files created
     """
-    tools = CuratorTools(session_dir)
-    result = tools.save_curator_results(sample_id, results_data)
-    return {
-        "success": result.success,
-        "message": result.message,
-        "files_created": result.files_created
-    } 
+    try:
+        session_path = Path(session_dir)
+        files_created = []
+        
+        for result in curation_results:
+            # Create filename for this sample
+            filename = f"{result.sample_id}_{result.target_field.lower()}_candidates.json"
+            file_path = session_path / filename
+            
+            # Convert to dict for JSON serialization
+            result_dict = result.model_dump()
+            
+            # Save to file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(result_dict, f, indent=2, ensure_ascii=False)
+            
+            files_created.append(str(file_path))
+        
+        return {
+            "success": True,
+            "message": f"Saved curation results for {len(curation_results)} samples",
+            "files_created": files_created,
+            "samples_processed": [r.sample_id for r in curation_results]
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error saving curation results: {str(e)}",
+            "error": str(e)
+        } 

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, validator, ConfigDict
 class GSMAttributes(BaseModel):
     """Attributes section of GSM metadata."""
     
-    # Removed strict model_config for DendroForge pattern compatibility
+    model_config = ConfigDict(extra="forbid")
     
     # Core required fields
     title: str = Field(..., description="Sample title")
@@ -68,7 +68,7 @@ class GSMAttributes(BaseModel):
 class GSMMetadata(BaseModel):
     """Complete GSM (Gene Expression Omnibus Sample) metadata."""
     
-    # Removed strict model_config for DendroForge pattern compatibility
+    model_config = ConfigDict(extra="forbid")
     
     gsm_id: str = Field(..., pattern=r"^GSM\d+$", description="GSM identifier")
     status: str = Field(default="retrieved", description="Retrieval status")
@@ -84,7 +84,7 @@ class GSMMetadata(BaseModel):
 class GSEAttributes(BaseModel):
     """Attributes section of GSE metadata."""
     
-    # Removed strict model_config for DendroForge pattern compatibility
+    model_config = ConfigDict(extra="forbid")
     
     # Core required fields
     title: str = Field(..., description="Series title")
@@ -124,7 +124,7 @@ class GSEAttributes(BaseModel):
 class GSEMetadata(BaseModel):
     """Complete GSE (Gene Expression Omnibus Series) metadata."""
     
-    # Removed strict model_config for DendroForge pattern compatibility
+    model_config = ConfigDict(extra="forbid")
     
     gse_id: str = Field(..., pattern=r"^GSE\d+$", description="GSE identifier")
     status: str = Field(default="retrieved", description="Retrieval status") 
@@ -140,7 +140,7 @@ class GSEMetadata(BaseModel):
 class PMIDMetadata(BaseModel):
     """PubMed article metadata."""
     
-    # Removed strict model_config for DendroForge pattern compatibility
+    model_config = ConfigDict(extra="forbid")
     
     pmid: int = Field(..., gt=0, description="PubMed ID")
     title: str = Field(..., description="Article title")
@@ -157,7 +157,7 @@ class PMIDMetadata(BaseModel):
 class SeriesSampleMapping(BaseModel):
     """Series to sample mapping structure."""
     
-    # Removed strict model_config for DendroForge pattern compatibility
+    model_config = ConfigDict(extra="forbid")
     
     mapping: Dict[str, List[str]] = Field(..., description="Series ID to sample IDs mapping")
     reverse_mapping: Dict[str, str] = Field(..., description="Sample ID to series ID mapping")
@@ -170,7 +170,7 @@ class SeriesSampleMapping(BaseModel):
 class LinkedData(BaseModel):
     """Linked and processed data for a sample."""
     
-    # Removed strict model_config for DendroForge pattern compatibility
+    model_config = ConfigDict(extra="forbid")
     
     sample_id: str = Field(..., pattern=r"^GSM\d+$", description="Sample ID")
     series_id: str = Field(..., pattern=r"^GSE\d+$", description="Series ID")

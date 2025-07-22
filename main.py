@@ -249,7 +249,7 @@ def list_workflows():
         "geo_extraction": "Single-agent GEO metadata extraction pipeline",
         "multi_agent_geo": "Multi-agent GEO metadata extraction pipeline (extensible)",
         "linking": "Single-agent metadata linking and processing pipeline",
-        "full_pipeline": "Complete pipeline: IngestionAgent → LinkerAgent",
+        "full_pipeline": "Complete pipeline: IngestionAgent → LinkerAgent → CuratorAgent",
         "curation": "Single-agent metadata curation pipeline for extracting specific fields",
     }
 
@@ -268,6 +268,7 @@ Examples:
   python main.py geo_extraction "Extract metadata for GSM1019742" --model openai/gpt-4o
   python main.py geo_extraction "Get series info for GSE41588 and paper abstract for PMID 23902433"
   python main.py linking "session directory sandbox/di_c414a6ee-346e-469b-bae5-2c5316872314"
+  python main.py full_pipeline "GSM1000981 target_field Disease"
   python main.py curation "session directory sandbox/test-session target_field Disease samples GSM1000981,GSM1000984"
   python main.py --list-workflows
         """,

@@ -21,15 +21,21 @@ from src.agents.tool_utils import get_session_tools
 from src.utils.prompts import load_prompt
 
 # Import Pydantic models for structured data  
-from src.models import LinkerOutput, CuratorOutput
+from src.models import (
+    LinkerOutput, 
+    CuratorOutput,
+    CurationDataPackage,
+    CurationResult,
+    ExtractedCandidate
+)
 
 
 class CuratorHandoff(BaseHandoff):
     """Input to the CuratorAgent."""
 
-    sample_ids: list[str] = Field(
+    curation_packages: list[CurationDataPackage] = Field(
         ...,
-        description="List of sample IDs (GSM) to perform metadata curation on.",
+        description="List of CurationDataPackage objects containing cleaned metadata from all sources.",
     )
     target_field: str = Field(
         default="Disease",
@@ -37,7 +43,7 @@ class CuratorHandoff(BaseHandoff):
     )
     session_directory: str = Field(
         ...,
-        description="Path to the session directory containing LinkerAgent output files.",
+        description="Path to the session directory for saving output files.",
     )
     
     # Following DendroForge pattern: no complex nested structures in handoffs
@@ -117,14 +123,44 @@ def create_curator_agent(
         tools = get_session_tools(session_dir)
         print(f"✅ CuratorAgent: Initialized with {len(tools)} tools")
 
+        # Load extraction template based on target field
+        # Extract target field from input_data if available, otherwise default to "Disease"
+        target_field = "Disease"  # Default
+        if input_data:
+            # Try to extract target field from input_data string
+            if "target_field=" in input_data.lower():
+                # Simple parsing for development
+                parts = input_data.split("target_field=")
+                if len(parts) > 1:
+                    target_field = parts[1].split()[0].strip('"\'')
+            elif "disease" in input_data.lower():
+                target_field = "Disease"
+            elif "tissue" in input_data.lower():
+                target_field = "Tissue"
+            elif "age" in input_data.lower():
+                target_field = "Age"
+        
+        try:
+            template_file = Path(__file__).parent.parent / "prompts" / "extraction_templates" / f"{target_field.lower()}.md"
+            if template_file.exists():
+                with open(template_file, 'r', encoding='utf-8') as f:
+                    extraction_template = f.read()
+            else:
+                extraction_template = "# Generic Extraction Template\nExtract relevant candidates for the target field."
+        except Exception as e:
+            print(f"⚠️  Could not load extraction template for {target_field}: {e}")
+            extraction_template = "# Generic Extraction Template\nExtract relevant candidates for the target field."
+
+        # Load the base instructions and inject the template
+        base_instructions = load_prompt("curator_agent_v2.md", session_dir=str(session_dir))
         instructions = (
             RECOMMENDED_PROMPT_PREFIX
             + "\n\n"
-            + load_prompt("curator_agent.md", session_dir=str(session_dir))
+            + base_instructions.replace("{EXTRACTION_TEMPLATE}", extraction_template)
             + "\n\n"
-            + "IMPORTANT: At the end of your work, provide a structured summary using the CuratorOutput format. "
-            + "Include all curation results, confidence scores, samples needing review, and final curated values. "
-            + "Use the serialize_agent_output tool to persist your results as JSON files for inspection."
+            + "IMPORTANT: Focus on creating accurate CurationResult objects. Do not use file-reading tools. "
+            + "Work directly with the Pydantic objects provided in the handoff. "
+            + "Save your final results using the save_curation_results tool."
         )
 
         agent = Agent(

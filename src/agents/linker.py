@@ -13,7 +13,14 @@ from src.agents.tool_utils import get_session_tools
 from src.utils.prompts import load_prompt
 
 # Import Pydantic models for structured data
-from src.models import IngestionOutput, LinkerOutput
+from src.models import (
+    IngestionOutput, 
+    LinkerOutput,
+    CurationDataPackage,
+    CleanedSeriesMetadata,
+    CleanedSampleMetadata, 
+    CleanedAbstractMetadata
+)
 
 
 class LinkerHandoff(BaseHandoff):
@@ -34,6 +41,10 @@ class LinkerHandoff(BaseHandoff):
     all_sample_ids: list[str] = Field(
         default=[],
         description="List of all sample IDs that were processed by the IngestionAgent.",
+    )
+    target_field: str = Field(
+        default="Disease",
+        description="Target metadata field for curation (e.g., 'Disease', 'Tissue', 'Age').",
     )
     
     # Following DendroForge pattern: no complex nested structures in handoffs

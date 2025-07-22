@@ -21,7 +21,11 @@ from src.models import (
     SeriesSampleMapping,
     ModelSerializer,
     create_success_result,
-    create_error_result
+    create_error_result,
+    CurationDataPackage,
+    CleanedSeriesMetadata,
+    CleanedSampleMetadata,
+    CleanedAbstractMetadata
 )
 
 
@@ -304,7 +308,196 @@ class LinkerTools:
             for item in data:
                 self._remove_fields_recursive(item, fields_to_remove)
 
+    def create_curation_data_package(
+        self, sample_id: str, fields_to_remove: List[str] = None
+    ) -> LinkerResult:
+        """
+        Create a CurationDataPackage with cleaned metadata from all sources.
 
+        Parameters
+        ----------
+        sample_id : str
+            The sample ID to process
+        fields_to_remove : List[str], optional
+            List of fields to remove from metadata files
+
+        Returns
+        -------
+        LinkerResult
+            Result containing CurationDataPackage object
+        """
+        try:
+            # First find the sample directory
+            directory_result = self.find_sample_directory(sample_id)
+            if not directory_result.success:
+                return directory_result
+
+            # Clean metadata files first
+            clean_result = self.clean_metadata_files(sample_id, fields_to_remove)
+            if not clean_result.success:
+                return clean_result
+
+            # Get paths
+            series_id = directory_result.data["series_id"]
+            series_dir = self.session_dir / series_id
+            cleaned_dir = series_dir / "cleaned"
+
+            # Load cleaned metadata content
+            series_metadata = None
+            sample_metadata = None
+            abstract_metadata = None
+
+            # Load series metadata
+            cleaned_series_file = cleaned_dir / f"{series_id}_metadata_cleaned.json"
+            if cleaned_series_file.exists():
+                with open(cleaned_series_file, 'r') as f:
+                    series_content = json.load(f)
+                series_metadata = CleanedSeriesMetadata(
+                    series_id=series_id,
+                    content=series_content,
+                    original_file_path=str(cleaned_series_file)
+                )
+
+            # Load sample metadata
+            cleaned_sample_file = cleaned_dir / f"{sample_id}_metadata_cleaned.json"
+            if cleaned_sample_file.exists():
+                with open(cleaned_sample_file, 'r') as f:
+                    sample_content = json.load(f)
+                sample_metadata = CleanedSampleMetadata(
+                    sample_id=sample_id,
+                    content=sample_content,
+                    original_file_path=str(cleaned_sample_file)
+                )
+
+            # Load abstract metadata
+            abstract_files = list(cleaned_dir.glob("PMID_*_metadata_cleaned.json"))
+            if abstract_files:
+                abstract_file = abstract_files[0]  # Take the first one
+                with open(abstract_file, 'r') as f:
+                    abstract_content = json.load(f)
+                # Extract PMID from filename
+                pmid = abstract_file.stem.replace("PMID_", "").replace("_metadata_cleaned", "")
+                abstract_metadata = CleanedAbstractMetadata(
+                    pmid=pmid,
+                    content=abstract_content,
+                    original_file_path=str(abstract_file)
+                )
+
+            # Create the curation data package
+            curation_package = CurationDataPackage(
+                sample_id=sample_id,
+                series_metadata=series_metadata,
+                sample_metadata=sample_metadata,
+                abstract_metadata=abstract_metadata
+            )
+
+            return create_success_result(
+                LinkerResult,
+                f"Created curation data package for {sample_id}",
+                data={"curation_package": curation_package},
+                files_created=clean_result.files_created,
+                session_id=getattr(self, 'session_id', None)
+            )
+
+        except Exception as e:
+            error_msg = f"Error creating curation data package for {sample_id}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
+            print(f"❌ LINKER ERROR: {error_msg}")
+            return create_error_result(
+                LinkerResult,
+                f"Error creating curation data package: {str(e)}",
+                errors=[str(e)],
+                session_id=getattr(self, 'session_id', None)
+            )
+
+
+
+    def process_multiple_samples(
+        self, sample_ids: List[str], fields_to_remove: List[str] = None
+    ) -> LinkerResult:
+        """
+        Process multiple sample IDs at once (clean and package for all samples).
+
+        Parameters
+        ----------
+        sample_ids : List[str]
+            List of sample IDs to process
+        fields_to_remove : List[str], optional
+            List of fields to remove from metadata files
+
+        Returns
+        -------
+        LinkerResult
+            Result containing processing summary for all samples
+        """
+        try:
+            results = []
+            all_files_created = []
+            successful_samples = []
+            failed_samples = []
+
+            print(f"🔧 Processing {len(sample_ids)} samples: {sample_ids}")
+
+            for sample_id in sample_ids:
+                print(f"🔧 Processing sample: {sample_id}")
+                
+                # Process each sample individually
+                result = self.package_linked_data(sample_id, fields_to_remove)
+                
+                if result.success:
+                    successful_samples.append(sample_id)
+                    if result.files_created:
+                        all_files_created.extend(result.files_created)
+                    results.append({
+                        "sample_id": sample_id,
+                        "success": True,
+                        "message": result.message,
+                        "files_created": result.files_created or []
+                    })
+                else:
+                    failed_samples.append(sample_id)
+                    results.append({
+                        "sample_id": sample_id,
+                        "success": False,
+                        "message": result.message,
+                        "errors": result.errors or []
+                    })
+
+            # Create summary
+            summary = {
+                "total_samples": len(sample_ids),
+                "successful_samples": successful_samples,
+                "failed_samples": failed_samples,
+                "success_rate": len(successful_samples) / len(sample_ids) if sample_ids else 0,
+                "individual_results": results
+            }
+
+            if failed_samples:
+                return create_error_result(
+                    LinkerResult,
+                    f"Processed {len(successful_samples)}/{len(sample_ids)} samples successfully. Failed: {failed_samples}",
+                    errors=[f"Failed to process: {failed_samples}"],
+                    data={"summary": summary},
+                    files_created=all_files_created,
+                    session_id=getattr(self, 'session_id', None)
+                )
+            else:
+                return create_success_result(
+                    LinkerResult,
+                    f"Successfully processed all {len(sample_ids)} samples",
+                    data={"summary": summary},
+                    files_created=all_files_created,
+                    session_id=getattr(self, 'session_id', None)
+                )
+
+        except Exception as e:
+            error_msg = f"Error processing multiple samples: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
+            print(f"❌ LINKER ERROR: {error_msg}")
+            return create_error_result(
+                LinkerResult,
+                f"Error processing multiple samples: {str(e)}",
+                errors=[str(e)],
+                session_id=getattr(self, 'session_id', None)
+            )
 
     def package_linked_data(
         self, sample_id: str, fields_to_remove: List[str] = None
@@ -474,6 +667,66 @@ def clean_metadata_files_impl(
 
 
 
+
+
+def create_curation_data_package_impl(
+    sample_id: str, session_dir: str, fields_to_remove: List[str] = None
+) -> Dict[str, Any]:
+    """
+    Create a CurationDataPackage with cleaned metadata from all sources.
+
+    Parameters
+    ----------
+    sample_id : str
+        The sample ID to process
+    session_dir : str
+        Path to the session directory
+    fields_to_remove : List[str], optional
+        List of fields to remove from metadata files
+
+    Returns
+    -------
+    Dict[str, Any]
+        Result dictionary with success status and CurationDataPackage
+    """
+    tools = LinkerTools(session_dir)
+    result = tools.create_curation_data_package(sample_id, fields_to_remove)
+    return {
+        "success": result.success,
+        "message": result.message,
+        "data": result.data,
+        "files_created": result.files_created,
+    }
+
+
+def process_multiple_samples_impl(
+    sample_ids: List[str], session_dir: str, fields_to_remove: List[str] = None
+) -> Dict[str, Any]:
+    """
+    Process multiple sample IDs at once (clean and package for all samples).
+
+    Parameters
+    ----------
+    sample_ids : List[str]
+        List of sample IDs to process
+    session_dir : str
+        Path to the session directory
+    fields_to_remove : List[str], optional
+        List of fields to remove from metadata files
+
+    Returns
+    -------
+    Dict[str, Any]
+        Result dictionary with success status and processing summary
+    """
+    tools = LinkerTools(session_dir)
+    result = tools.process_multiple_samples(sample_ids, fields_to_remove)
+    return {
+        "success": result.success,
+        "message": result.message,
+        "data": result.data,
+        "files_created": result.files_created,
+    }
 
 
 def package_linked_data_impl(

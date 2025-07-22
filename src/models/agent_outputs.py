@@ -23,7 +23,7 @@ from .result_models import CandidateExtraction
 class IngestionOutput(BaseModel):
     """Structured output from IngestionAgent."""
     
-    # Removed strict model_config for handoff compatibility with DendroForge pattern
+    model_config = ConfigDict(extra="forbid")
     
     # Execution summary
     success: bool = Field(..., description="Whether ingestion completed successfully")
@@ -71,7 +71,7 @@ class IngestionOutput(BaseModel):
 class LinkerOutput(BaseModel):
     """Structured output from LinkerAgent."""
     
-    # Removed strict model_config for handoff compatibility with DendroForge pattern
+    model_config = ConfigDict(extra="forbid")
     
     # Execution summary
     success: bool = Field(..., description="Whether linking completed successfully")
@@ -131,7 +131,7 @@ class LinkerOutput(BaseModel):
 class CuratorOutput(BaseModel):
     """Structured output from CuratorAgent."""
     
-    # Removed strict model_config for handoff compatibility with DendroForge pattern
+    model_config = ConfigDict(extra="forbid")
     
     # Execution summary
     success: bool = Field(..., description="Whether curation completed successfully")

@@ -51,6 +51,8 @@ from src.tools.linker_tools import (
     load_mapping_file_impl,
     find_sample_directory_impl,
     clean_metadata_files_impl,
+    process_multiple_samples_impl,
+    create_curation_data_package_impl,
     # Legacy series matrix tools - removed from agent access
     # download_series_matrix_impl,
     # extract_matrix_metadata_impl,
@@ -59,10 +61,8 @@ from src.tools.linker_tools import (
 )
 
 from src.tools.curator_tools import (
-    load_sample_data_impl,
-    extract_metadata_candidates_impl,
-    reconcile_candidates_impl,
-    save_curator_results_impl,
+    dummy_reconciliation_impl,
+    save_curation_results_impl,
 )
 
 
@@ -561,27 +561,73 @@ def get_session_tools(session_dir: str | Path) -> list:
             }
             return json.dumps(response, indent=2)
 
-        # Curator tools for metadata curation
         @function_tool
-        def load_sample_data(sample_id: str) -> str:
+        def create_curation_data_package(sample_id: str, fields_to_remove: list[str] = None) -> str:
             """
-            Load sample data from linked_data.json and all referenced cleaned files.
-            
-            This tool loads comprehensive sample data including the linked_data.json file
-            and all cleaned metadata files referenced within it. This provides a complete
-            view of all available metadata for a sample.
-            
+            Create a CurationDataPackage with cleaned metadata from all sources.
+
+            This tool processes a sample ID to create a comprehensive data package
+            containing cleaned metadata from series, sample, and abstract sources.
+
             Parameters
             ----------
             sample_id : str
-                The sample ID (e.g., GSM1000981) to load data for
-                
+                The sample ID to process (e.g., "GSM1000981")
+            fields_to_remove : list[str], optional
+                List of fields to remove from metadata files
+
             Returns
             -------
             str
-                JSON string containing loaded sample data
+                JSON string containing CurationDataPackage object
             """
-            result = load_sample_data_impl(sample_id, session_dir)
+            result = create_curation_data_package_impl(sample_id, session_dir, fields_to_remove)
+            if not result.get("success", True):
+                response = {
+                    "success": False,
+                    "message": result.get("message", "Unknown error"),
+                    "errors": [result.get("message", "Unknown error")]
+                }
+                return json.dumps(response, indent=2)
+            
+            # Extract the CurationDataPackage from the result
+            curation_package = result.get("data", {}).get("curation_package")
+            if curation_package:
+                response = {
+                    "success": True,
+                    "message": result.get("message", "Curation data package created successfully"),
+                    "curation_package": curation_package.model_dump() if hasattr(curation_package, 'model_dump') else curation_package,
+                    "files_created": result.get("files_created", [])
+                }
+            else:
+                response = {
+                    "success": False,
+                    "message": "No curation package found in result",
+                    "errors": ["Missing curation package data"]
+                }
+            return json.dumps(response, indent=2)
+
+        @function_tool
+        def process_multiple_samples(sample_ids: list[str], fields_to_remove: list[str] = None) -> str:
+            """
+            Process multiple sample IDs at once (clean and package for all samples).
+
+            This tool processes multiple samples efficiently by cleaning metadata files
+            and packaging linked data for each sample in the list.
+
+            Parameters
+            ----------
+            sample_ids : list[str]
+                List of sample IDs to process (e.g., ["GSM1000981", "GSM1002543"])
+            fields_to_remove : list[str], optional
+                List of fields to remove from metadata files
+
+            Returns
+            -------
+            str
+                JSON string containing processing summary for all samples
+            """
+            result = process_multiple_samples_impl(sample_ids, session_dir, fields_to_remove)
             if not result.get("success", True):
                 response = {
                     "success": False,
@@ -592,98 +638,87 @@ def get_session_tools(session_dir: str | Path) -> list:
             
             response = {
                 "success": True,
-                "message": result.get("message", "Sample data loaded successfully"),
+                "message": result.get("message", "Multiple samples processed successfully"),
+                "files_created": result.get("files_created", []),
                 "data": result.get("data", {}),
-                "samples_curated": [sample_id]
+                "summary": result.get("data", {}).get("summary", {})
             }
             return json.dumps(response, indent=2)
 
+        # Curator tools for metadata curation
         @function_tool
-        def extract_metadata_candidates(sample_data: str, target_field: str) -> str:
+        def dummy_reconciliation(curation_result_json: str) -> str:
             """
-            Extract potential candidates for a target metadata field from all files.
+            Check for conflicts in curation results and flag samples needing manual reconciliation.
             
-            This tool analyzes sample data loaded from load_sample_data and extracts
-            potential candidates for a specific metadata field (e.g., "Disease", "Tissue", "Age").
-            It searches through all available data sources independently and returns
-            candidates found in each source.
+            This tool performs a dummy reconciliation check to identify samples with conflicting
+            candidate values across different data sources.
             
             Parameters
             ----------
-            sample_data : str
-                JSON string containing sample data from load_sample_data
-            target_field : str
-                The target metadata field to extract candidates for (e.g., "Disease", "Tissue", "Age")
+            curation_result_json : str
+                JSON string representing a CurationResult object
                 
             Returns
             -------
             str
-                JSON string containing candidates extracted from each file
+                JSON string with conflict detection results
             """
-            sample_data_dict = json.loads(sample_data)
-            result = extract_metadata_candidates_impl(sample_data_dict, target_field, session_dir)
-            if not result.get("success", True):
-                raise RuntimeError(
-                    f"Failed to extract candidates: {result.get('message', 'Unknown error')}"
-                )
-            return json.dumps(result)
+            try:
+                # Parse the JSON to get the curation result data
+                import json as json_module
+                from src.models import CurationResult
+                
+                result_data = json_module.loads(curation_result_json)
+                curation_result = CurationResult(**result_data)
+                
+                result = dummy_reconciliation_impl(curation_result, session_dir)
+                return json.dumps(result, indent=2)
+            except Exception as e:
+                response = {
+                    "success": False,
+                    "message": f"Error in dummy reconciliation: {str(e)}",
+                    "error": str(e)
+                }
+                return json.dumps(response, indent=2)
 
         @function_tool
-        def reconcile_candidates(candidates_by_file: str, target_field: str) -> str:
+        def save_curation_results(curation_results_json: str) -> str:
             """
-            Reconcile candidates across files and determine final result.
+            Save curation results to individual JSON files for each sample.
             
-            This tool compares candidates extracted from different files and determines
-            a final curated value. It handles consensus building when multiple sources
-            agree, and flags conflicts when sources disagree.
+            This tool takes a list of CurationResult objects and saves them as individual
+            JSON files in the session directory for inspection and downstream processing.
             
             Parameters
             ----------
-            candidates_by_file : str
-                JSON string containing candidates extracted from each file
-            target_field : str
-                The target metadata field being reconciled
+            curation_results_json : str
+                JSON string containing a list of CurationResult objects
                 
             Returns
             -------
             str
-                JSON string containing reconciled result with confidence scoring
+                JSON string with file creation results
             """
-            candidates_dict = json.loads(candidates_by_file)
-            result = reconcile_candidates_impl(candidates_dict, target_field, session_dir)
-            if not result.get("success", True):
-                raise RuntimeError(
-                    f"Failed to reconcile candidates: {result.get('message', 'Unknown error')}"
-                )
-            return json.dumps(result)
+            try:
+                # Parse the JSON to get the curation results
+                import json as json_module
+                from src.models import CurationResult
+                
+                results_data = json_module.loads(curation_results_json)
+                curation_results = [CurationResult(**result) for result in results_data]
+                
+                result = save_curation_results_impl(curation_results, session_dir)
+                return json.dumps(result, indent=2)
+            except Exception as e:
+                response = {
+                    "success": False,
+                    "message": f"Error saving curation results: {str(e)}",
+                    "error": str(e)
+                }
+                return json.dumps(response, indent=2)
 
-        @function_tool
-        def save_curator_results(sample_id: str, results_data: str) -> str:
-            """
-            Save curation results to a JSON file.
-            
-            This tool saves the final curation results for a sample to a JSON file
-            named {sample_id}_metadata_candidates.json in the session directory.
-            
-            Parameters
-            ----------
-            sample_id : str
-                The sample ID being curated
-            results_data : str
-                JSON string containing the final curation results
-                
-            Returns
-            -------
-            str
-                JSON string indicating success or failure of save operation
-            """
-            results_dict = json.loads(results_data)
-            result = save_curator_results_impl(sample_id, results_dict, session_dir)
-            if not result.get("success", True):
-                raise RuntimeError(
-                    f"Failed to save results: {result.get('message', 'Unknown error')}"
-                )
-            return json.dumps(result)
+
 
 
 
@@ -795,10 +830,10 @@ def get_session_tools(session_dir: str | Path) -> list:
             find_sample_directory,
             clean_metadata_files,
             package_linked_data,
-            load_sample_data,
-            extract_metadata_candidates,
-            reconcile_candidates,
-            save_curator_results,
+            create_curation_data_package,
+            process_multiple_samples,
+            dummy_reconciliation,
+            save_curation_results,
             set_testing_session,
             serialize_agent_output,
         ]
@@ -837,9 +872,9 @@ def get_available_tools():
         "find_sample_directory",
         "clean_metadata_files",
         "package_linked_data",
-        "load_sample_data",
-        "extract_metadata_candidates",
-        "reconcile_candidates",
-        "save_curator_results",
+        "create_curation_data_package",
+        "process_multiple_samples",
+        "dummy_reconciliation",
+        "save_curation_results",
         "set_testing_session",
     ]
