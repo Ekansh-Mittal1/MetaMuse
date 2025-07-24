@@ -63,6 +63,7 @@ from src.tools.linker_tools import (
 from src.tools.curator_tools import (
     dummy_reconciliation_impl,
     save_curation_results_impl,
+    load_curation_data_for_samples_impl,
 )
 
 
@@ -683,6 +684,60 @@ def get_session_tools(session_dir: str | Path) -> list:
                 return json.dumps(response, indent=2)
 
         @function_tool
+        def trigger_curator_handoff(sample_ids_json: str, target_field: str = "Disease") -> str:
+            """
+            Trigger handoff to the CuratorAgent for metadata curation.
+            
+            This tool explicitly triggers the handoff to the CuratorAgent when the LinkerAgent
+            has completed processing all samples.
+            
+            Parameters
+            ----------
+            sample_ids_json : str
+                JSON string containing a list of sample IDs to hand off for curation
+            target_field : str
+                The target metadata field for curation (default: "Disease")
+                
+            Returns
+            -------
+            str
+                JSON string confirming the handoff has been triggered
+            """
+            try:
+                import json as json_module
+                
+                sample_ids = json_module.loads(sample_ids_json)
+                
+                result = {
+                    "success": True,
+                    "message": f"Handoff to CuratorAgent triggered for {len(sample_ids)} samples",
+                    "sample_ids": sample_ids,
+                    "target_field": target_field,
+                    "session_directory": str(session_dir),
+                    "handoff_triggered": True,
+                    "handoff_trigger": "HANDOFF_TO_CURATOR",
+                    "completion_status": "COMPLETE",
+                    "next_agent": "CuratorAgent"
+                }
+                
+                print(f"🔗 Triggering handoff to CuratorAgent for samples: {sample_ids}")
+                print(f"🎯 Target field: {target_field}")
+                print(f"📁 Session directory: {session_dir}")
+                print(f"🚀 Handoff trigger: HANDOFF_TO_CURATOR")
+                print(f"✅ Completion status: COMPLETE")
+                print(f"🔄 Next agent: CuratorAgent")
+                
+                return json.dumps(result, indent=2)
+                
+            except Exception as e:
+                response = {
+                    "success": False,
+                    "message": f"Error triggering handoff: {str(e)}",
+                    "error": str(e)
+                }
+                return json.dumps(response, indent=2)
+
+        @function_tool
         def save_curation_results(curation_results_json: str) -> str:
             """
             Save curation results to individual JSON files for each sample.
@@ -714,6 +769,38 @@ def get_session_tools(session_dir: str | Path) -> list:
                 response = {
                     "success": False,
                     "message": f"Error saving curation results: {str(e)}",
+                    "error": str(e)
+                }
+                return json.dumps(response, indent=2)
+
+        @function_tool
+        def load_curation_data_for_samples(sample_ids_json: str) -> str:
+            """
+            Load curation data for multiple samples from the session directory.
+            
+            This tool loads the necessary data for curation from the session directory
+            when using SimpleCuratorHandoff (which doesn't include the full data).
+            
+            Parameters
+            ----------
+            sample_ids_json : str
+                JSON string containing a list of sample IDs to load data for
+                
+            Returns
+            -------
+            str
+                JSON string with curation packages data
+            """
+            try:
+                import json as json_module
+                
+                sample_ids = json_module.loads(sample_ids_json)
+                result = load_curation_data_for_samples_impl(sample_ids, session_dir)
+                return json.dumps(result, indent=2)
+            except Exception as e:
+                response = {
+                    "success": False,
+                    "message": f"Error loading curation data: {str(e)}",
                     "error": str(e)
                 }
                 return json.dumps(response, indent=2)

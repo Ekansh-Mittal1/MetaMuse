@@ -72,6 +72,9 @@ def create_linker_agent(
     This agent is responsible for processing and linking metadata files
     created by the IngestionAgent, including cleaning files, downloading
     series matrix data, and extracting sample-specific information.
+    
+    The agent is configured with structured output capabilities to produce
+    validated LinkerOutput objects directly using the output_type parameter.
 
     Parameters
     ----------
@@ -87,7 +90,7 @@ def create_linker_agent(
     Returns
     -------
     Agent
-        An instance of an Agent configured for metadata linking tasks.
+        An instance of an Agent configured for metadata linking tasks with structured outputs.
     """
     try:
         # Check if "testing" is in the input data
@@ -121,15 +124,24 @@ def create_linker_agent(
 
         tools = get_session_tools(session_dir)
         print(f"✅ LinkerAgent: Initialized with {len(tools)} tools")
+        
+        # Parse target field from input_data if provided
+        target_field = "Disease"  # Default
+        if input_data:
+            if "target_field:" in input_data.lower():
+                parts = input_data.split("target_field:")
+                if len(parts) > 1:
+                    target_field = parts[1].split()[0].strip()
+            elif "target_field=" in input_data.lower():
+                parts = input_data.split("target_field=")
+                if len(parts) > 1:
+                    target_field = parts[1].split()[0].strip()
+            print(f"🎯 LinkerAgent: Target field parsed: {target_field}")
 
         instructions = (
             RECOMMENDED_PROMPT_PREFIX
             + "\n\n"
             + load_prompt("linker_agent.md", session_dir=str(session_dir))
-            + "\n\n"
-            + "IMPORTANT: At the end of your work, provide a structured summary using the LinkerOutput format. "
-            + "Include all linked data objects, cleaned files, processing statistics, and sample IDs ready for curation. "
-            + "Use the serialize_agent_output tool to persist your results as JSON files for inspection."
         )
 
         agent = Agent(
@@ -137,7 +149,7 @@ def create_linker_agent(
             instructions=instructions,
             tools=tools,
             handoffs=handoffs or [],
-            # Following DendroForge pattern: no structured outputs, natural language responses
+            output_type=LinkerOutput
         )
 
         return agent

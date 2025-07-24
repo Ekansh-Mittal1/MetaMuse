@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any, Union
 from pydantic import BaseModel, Field, ConfigDict
 
+from .common import KeyValue
+
 from .metadata_models import (
     GSMMetadata, 
     GSEMetadata, 
@@ -132,25 +134,7 @@ class WorkflowResult(AgentResult):
         None, description="Path to final consolidated output"
     )
     
-    @property
-    def overall_success(self) -> bool:
-        """Check if all agent results in the workflow succeeded."""
-        if not self.agent_results:
-            return self.success
-        
-        return all(result.success for result in self.agent_results)
-    
-    @property 
-    def error_summary(self) -> List[str]:
-        """Get all errors from the workflow and individual agents."""
-        all_errors = self.errors or []
-        
-        if self.agent_results:
-            for result in self.agent_results:
-                if result.errors:
-                    all_errors.extend(result.errors)
-        
-        return all_errors
+
 
 
 # Utility functions for working with results

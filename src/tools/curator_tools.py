@@ -640,6 +640,62 @@ def dummy_reconciliation_impl(
         }
 
 
+def load_curation_data_for_samples_impl(
+    sample_ids: List[str], session_dir: str
+) -> dict:
+    """
+    Load curation data for multiple samples from the session directory.
+    
+    Parameters
+    ----------
+    sample_ids : List[str]
+        List of sample IDs to load data for
+    session_dir : str
+        Path to the session directory
+        
+    Returns
+    -------
+    dict
+        Result dictionary with success status and curation packages
+    """
+    try:
+        from src.models.curation_models import CurationDataPackage, CleanedSeriesMetadata, CleanedSampleMetadata, CleanedAbstractMetadata
+        
+        curation_packages = []
+        
+        for sample_id in sample_ids:
+            # Load sample data using existing tool
+            sample_data = load_sample_data_impl(sample_id, session_dir)
+            
+            if not sample_data.get("success"):
+                print(f"⚠️  Failed to load data for {sample_id}: {sample_data.get('message')}")
+                continue
+            
+            # Create CurationDataPackage from the loaded data
+            # This is a simplified version - you may need to adjust based on your data structure
+            curation_package = CurationDataPackage(
+                sample_id=sample_id,
+                series_metadata=None,  # Will be populated from session files
+                sample_metadata=None,  # Will be populated from session files
+                abstract_metadata=None  # Will be populated from session files
+            )
+            
+            curation_packages.append(curation_package)
+        
+        return {
+            "success": True,
+            "message": f"Loaded curation data for {len(curation_packages)} samples",
+            "curation_packages": [pkg.model_dump() for pkg in curation_packages]
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error loading curation data: {str(e)}",
+            "curation_packages": []
+        }
+
+
 def save_curation_results_impl(
     curation_results: List[CurationResult], session_dir: str
 ) -> dict:

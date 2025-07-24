@@ -45,7 +45,7 @@ def on_handoff_callback(ctx: RunContextWrapper[None], input_data: BaseHandoff):
 
 
 def create_ingestion_agent(
-    session_id: str, sandbox_dir: str = None, handoffs: list = None
+    session_id: str, sandbox_dir: str = None, handoffs: list = None, input_data: str = None
 ) -> Agent:
     """
     Factory method to create a metadata ingestion agent.
@@ -54,7 +54,7 @@ def create_ingestion_agent(
     Omnibus (GEO) and PubMed databases given GSM/GSE/PMID identifiers.
     
     The agent is configured with structured output capabilities to produce
-    validated IngestionOutput objects directly.
+    validated IngestionOutput objects directly using the output_type parameter.
 
     Parameters
     ----------
@@ -81,14 +81,24 @@ def create_ingestion_agent(
 
     tools = get_session_tools(session_dir)
     print(f"✅ IngestionAgent: Initialized with {len(tools)} tools")
+    
+    # Parse target field from input_data if provided
+    target_field = "Disease"  # Default
+    if input_data:
+        if "target_field:" in input_data.lower():
+            parts = input_data.split("target_field:")
+            if len(parts) > 1:
+                target_field = parts[1].split()[0].strip()
+        elif "target_field=" in input_data.lower():
+            parts = input_data.split("target_field=")
+            if len(parts) > 1:
+                target_field = parts[1].split()[0].strip()
+        print(f"🎯 IngestionAgent: Target field parsed: {target_field}")
 
     instructions = (
         RECOMMENDED_PROMPT_PREFIX
         + "\n\n"
         + load_prompt("ingestion_agent.md", session_dir=str(session_dir))
-        + "\n\n"
-        + "IMPORTANT: At the end of your work, provide a structured summary using the IngestionOutput format. "
-        + "Include all extracted metadata, file paths, processing statistics, and sample IDs ready for the next agent."
     )
 
     return Agent(
@@ -96,5 +106,5 @@ def create_ingestion_agent(
         instructions=instructions,
         tools=tools,
         handoffs=handoffs or [],
-        # Following DendroForge pattern: no structured outputs, natural language responses
+        output_type=IngestionOutput
     )

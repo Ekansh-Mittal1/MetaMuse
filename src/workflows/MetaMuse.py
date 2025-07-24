@@ -6,7 +6,8 @@ from agents import Agent, handoff
 
 from src.agents.ingestion import create_ingestion_agent
 from src.agents.linker import create_linker_agent, LinkerHandoff
-from src.agents.curator import create_curator_agent, CuratorHandoff
+from src.agents.curator import create_curator_agent, CuratorHandoff, SimpleCuratorHandoff
+from src.workflows.data_intake import run_data_intake_workflow
 
 
 def create_extraction_pipeline(
@@ -160,11 +161,14 @@ def create_multi_agent_pipeline(
 def on_handoff_callback(ctx, input_data):
     """Print the original request and any additional handoff fields for debugging."""
     print(f"[Handoff] original_request: {input_data.original_request}")
+    print(f"[Handoff] handoff_type: {type(input_data).__name__}")
+    print(f"[Handoff] handoff_data: {input_data.model_dump()}")
     for field_name, value in input_data.model_dump(exclude={"original_request"}).items():
         if hasattr(value, 'model_dump'):  # Pydantic object
             print(f"[Handoff] {field_name}: <Pydantic {type(value).__name__}>")
         else:
             print(f"[Handoff] {field_name}: {value}")
+    print(f"[Handoff] Handoff callback executed successfully")
 
 
 def create_curation_pipeline(
@@ -254,9 +258,14 @@ def create_complete_pipeline(
     target_field = "Disease"  # Default target field
     
     if input_data:
-        # Look for target field specification
+        # Look for target field specification (support both : and = formats)
         if "target_field:" in input_data.lower():
             parts = input_data.split("target_field:")
+            if len(parts) > 1:
+                target_field = parts[1].split()[0].strip()
+                input_data = parts[0].strip()
+        elif "target_field=" in input_data.lower():
+            parts = input_data.split("target_field=")
             if len(parts) > 1:
                 target_field = parts[1].split()[0].strip()
                 input_data = parts[0].strip()
@@ -392,6 +401,89 @@ def on_structured_handoff_callback(ctx, input_data):
             print(f"🔤 [Structured Handoff] {field_name}: {value}")
 
 
+def create_hybrid_pipeline(
+    session_id: str = None, sandbox_dir: str = None, input_data: str = None
+) -> Agent:
+    """
+    Create a hybrid pipeline that uses deterministic data_intake.py followed by CuratorAgent.
+
+    This pipeline combines the reliability of deterministic processing with the intelligence
+    of the curator agent for metadata curation.
+
+    Parameters
+    ----------
+    session_id : str, optional
+        The unique session identifier. If not provided, generates a new one.
+    sandbox_dir : str, optional
+        Base sandbox directory. If not provided, defaults to "sandbox"
+    input_data : str, optional
+        Input data string that may contain sample IDs and target field information
+
+    Returns
+    -------
+    Agent
+        The curator agent that will process the deterministic output
+    """
+    if session_id is None:
+        session_id = f"mm_hybrid_{str(uuid4())}"
+    if sandbox_dir is None:
+        sandbox_dir = "sandbox"
+
+    # Parse input_data for multiple sample IDs and target field
+    sample_ids = []
+    target_field = "Disease"  # Default target field
+    geo_input = input_data
+    
+    if input_data:
+        # Look for target field specification
+        if "target_field:" in input_data.lower():
+            parts = input_data.split("target_field:")
+            if len(parts) > 1:
+                target_field = parts[1].split()[0].strip()
+                geo_input = parts[0].strip()
+        
+        # Extract sample IDs for curator
+        for part in geo_input.replace(",", " ").split():
+            if part.strip() and part.strip().startswith("GSM"):
+                sample_ids.append(part.strip())
+
+    print(f"🔗 Hybrid pipeline: Running deterministic data_intake workflow...")
+    print(f"📋 Input: {geo_input}")
+    print(f"🔄 Session ID: {session_id}")
+    
+    # Run the deterministic data_intake workflow first
+    data_intake_result = run_data_intake_workflow(
+        input_text=geo_input,
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        workflow_type="complete"
+    )
+    
+    if not data_intake_result.success:
+        print(f"❌ Data intake workflow failed: {data_intake_result.message}")
+        if data_intake_result.errors:
+            for error in data_intake_result.errors:
+                print(f"   - {error}")
+        raise RuntimeError(f"Data intake workflow failed: {data_intake_result.message}")
+    
+    print(f"✅ Data intake workflow completed successfully")
+    print(f"📁 Files created: {len(data_intake_result.files_created) if data_intake_result.files_created else 0}")
+    
+    # Create CuratorAgent that will process the deterministic output
+    curator_agent = create_curator_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[],
+        input_data=f"target_field:{target_field} {' '.join(sample_ids)}"
+    )
+    
+    print(f"🔗 Hybrid pipeline configured with deterministic data_intake + CuratorAgent")
+    print(f"📋 Target field: {target_field}")
+    print(f"📁 Sample IDs: {sample_ids}")
+
+    return curator_agent
+
+
 def create_full_pipeline(
     session_id: str = None, sandbox_dir: str = None, input_data: str = None
 ) -> Agent:
@@ -425,9 +517,14 @@ def create_full_pipeline(
     target_field = "Disease"  # Default target field
     
     if input_data:
-        # Look for target field specification
+        # Look for target field specification (support both : and = formats)
         if "target_field:" in input_data.lower():
             parts = input_data.split("target_field:")
+            if len(parts) > 1:
+                target_field = parts[1].split()[0].strip()
+                input_data = parts[0].strip()
+        elif "target_field=" in input_data.lower():
+            parts = input_data.split("target_field=")
             if len(parts) > 1:
                 target_field = parts[1].split()[0].strip()
                 input_data = parts[0].strip()
@@ -445,21 +542,30 @@ def create_full_pipeline(
         input_data=f"target_field:{target_field} {' '.join(sample_ids)}"
     )
 
-    # Create LinkerAgent with handoff to CuratorAgent
+    # Create LinkerAgent with handoff to CuratorAgent using SimpleCuratorHandoff
+    # Pass the target field information to the LinkerAgent
+    linker_input_data = f"target_field:{target_field} {input_data}" if input_data else f"target_field:{target_field}"
     linker_agent = create_linker_agent(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
         handoffs=[
             handoff(
                 agent=curator_agent,
-                input_type=CuratorHandoff,
+                input_type=SimpleCuratorHandoff,
                 on_handoff=on_handoff_callback,
             )
         ],
-        input_data=input_data,
+        input_data=linker_input_data,
     )
+    
+    print(f"🔗 LinkerAgent configured with handoff to CuratorAgent")
+    print(f"📋 Handoff type: SimpleCuratorHandoff")
+    print(f"🎯 Target field: {target_field}")
+    print(f"📁 Sample IDs: {sample_ids}")
 
     # Create IngestionAgent with handoff to LinkerAgent
+    # Pass the target field information to the IngestionAgent
+    ingestion_input_data = f"target_field:{target_field} {input_data}" if input_data else f"target_field:{target_field}"
     ingestion_agent = create_ingestion_agent(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
@@ -470,6 +576,7 @@ def create_full_pipeline(
                 on_handoff=on_handoff_callback,
             )
         ],
+        input_data=ingestion_input_data,
     )
 
     return ingestion_agent  # Return entry point

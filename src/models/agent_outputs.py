@@ -18,6 +18,7 @@ from .metadata_models import (
     LinkedData
 )
 from .result_models import CandidateExtraction
+from .common import KeyValue
 
 
 class IngestionOutput(BaseModel):
@@ -34,14 +35,14 @@ class IngestionOutput(BaseModel):
     geo_ids_requested: List[str] = Field(..., description="List of GEO/PMID IDs requested")
     extraction_type: str = Field(..., description="Type of extraction performed")
     
-    # Output data (simplified for DendroForge pattern compatibility)
-    extracted_metadata: Optional[dict] = Field(
+    # Output data (strict JSON schema compatible)
+    extracted_metadata: Optional[List[KeyValue]] = Field(
         default=None,
-        description="Raw extracted metadata by ID"
+        description="Raw extracted metadata as key-value pairs"
     )
-    series_sample_mapping: Optional[dict] = Field(
+    series_sample_mapping: Optional[List[KeyValue]] = Field(
         default=None,
-        description="Series to sample mapping"
+        description="Series to sample mapping as key-value pairs"
     )
     
     # File management
@@ -58,14 +59,6 @@ class IngestionOutput(BaseModel):
         default_factory=list,
         description="Sample IDs ready for linking process"
     )
-    
-    @property
-    def extraction_success_rate(self) -> float:
-        """Calculate the success rate of extractions."""
-        total = len(self.geo_ids_requested)
-        if total == 0:
-            return 0.0
-        return len(self.successful_extractions) / total
 
 
 class LinkerOutput(BaseModel):
@@ -88,14 +81,14 @@ class LinkerOutput(BaseModel):
         description="Fields that were removed during metadata cleaning"
     )
     
-    # Output data (simplified for DendroForge pattern compatibility)
-    linked_data: Optional[dict] = Field(
+    # Output data (strict JSON schema compatible)
+    linked_data: Optional[List[KeyValue]] = Field(
         default=None,
-        description="Linked data objects by sample ID"
+        description="Linked data objects as key-value pairs"
     )
-    cleaned_metadata_files: Optional[dict] = Field(
+    cleaned_metadata_files: Optional[List[KeyValue]] = Field(
         default=None,
-        description="Paths to cleaned metadata files by sample ID"
+        description="Paths to cleaned metadata files as key-value pairs"
     )
     
     # File management  
@@ -115,17 +108,6 @@ class LinkerOutput(BaseModel):
         default_factory=list,
         description="Suggested metadata fields for curation"
     )
-    
-    @property
-    def linking_success_rate(self) -> float:
-        """Calculate the success rate of linking operations."""
-        total = len(self.sample_ids_requested)
-        if total == 0:
-            return 0.0
-        return len(self.successfully_linked) / total
-
-
-
 
 
 class CuratorOutput(BaseModel):
@@ -143,10 +125,10 @@ class CuratorOutput(BaseModel):
     target_field: str = Field(..., description="Target metadata field that was curated")
     session_directory: str = Field(..., description="Session directory used")
     
-    # Output data (simplified for DendroForge pattern compatibility)
-    curation_results: Optional[dict] = Field(
+    # Output data (strict JSON schema compatible)
+    curation_results: Optional[List[KeyValue]] = Field(
         default=None,
-        description="Detailed curation results for each sample"
+        description="Detailed curation results as key-value pairs"
     )
     
     # Summary statistics
@@ -167,36 +149,6 @@ class CuratorOutput(BaseModel):
     
     # Processing summary
     warnings: List[str] = Field(default_factory=list, description="Warnings generated")
-    
-    @property
-    def curation_success_rate(self) -> float:
-        """Calculate the success rate of curation operations."""
-        if self.total_samples_processed == 0:
-            return 0.0
-        return self.successful_curations / self.total_samples_processed
-    
-    @property
-    def manual_review_rate(self) -> float:
-        """Calculate the rate of samples requiring manual review."""
-        if self.total_samples_processed == 0:
-            return 0.0
-        return self.samples_needing_review / self.total_samples_processed
-    
-    def get_final_values(self) -> Dict[str, str]:
-        """Get a dictionary of sample_id -> final_value for all successfully curated samples."""
-        return {
-            result.sample_id: result.final_value
-            for result in self.curation_results
-            if result.curation_successful and result.final_value is not None
-        }
-    
-    def get_samples_for_review(self) -> List[str]:
-        """Get list of sample IDs that need manual review."""
-        return [
-            result.sample_id
-            for result in self.curation_results
-            if result.needs_manual_review
-        ]
 
 
 # Utility functions for creating outputs

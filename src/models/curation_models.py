@@ -8,6 +8,8 @@ for efficient handoff to the CuratorAgent without requiring file I/O operations.
 from typing import Dict, List, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
+from .common import KeyValue
+
 
 class CleanedSeriesMetadata(BaseModel):
     """Cleaned series metadata from GSE files."""
@@ -15,7 +17,10 @@ class CleanedSeriesMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
     
     series_id: str = Field(..., description="Series ID (e.g., GSE29282)")
-    content: Dict[str, Any] = Field(..., description="Cleaned series metadata content")
+    content: List[KeyValue] = Field(
+        ..., 
+        description="Cleaned series metadata content as key-value pairs"
+    )
     source_type: str = Field(default="series", description="Source type identifier")
     original_file_path: Optional[str] = Field(None, description="Original file path for reference")
 
@@ -26,7 +31,10 @@ class CleanedSampleMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
     
     sample_id: str = Field(..., description="Sample ID (e.g., GSM1000981)")
-    content: Dict[str, Any] = Field(..., description="Cleaned sample metadata content")
+    content: List[KeyValue] = Field(
+        ..., 
+        description="Cleaned sample metadata content as key-value pairs"
+    )
     source_type: str = Field(default="sample", description="Source type identifier")
     original_file_path: Optional[str] = Field(None, description="Original file path for reference")
 
@@ -37,7 +45,10 @@ class CleanedAbstractMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
     
     pmid: str = Field(..., description="PubMed ID (e.g., 23911289)")
-    content: Dict[str, Any] = Field(..., description="Cleaned abstract metadata content")
+    content: List[KeyValue] = Field(
+        ..., 
+        description="Cleaned abstract metadata content as key-value pairs"
+    )
     source_type: str = Field(default="abstract", description="Source type identifier")
     original_file_path: Optional[str] = Field(None, description="Original file path for reference")
 
@@ -52,34 +63,7 @@ class CurationDataPackage(BaseModel):
     sample_metadata: Optional[CleanedSampleMetadata] = Field(None, description="Cleaned sample metadata")
     abstract_metadata: Optional[CleanedAbstractMetadata] = Field(None, description="Cleaned abstract metadata")
     
-    def get_available_sources(self) -> List[str]:
-        """Get list of available data sources."""
-        sources = []
-        if self.series_metadata:
-            sources.append("series")
-        if self.sample_metadata:
-            sources.append("sample")
-        if self.abstract_metadata:
-            sources.append("abstract")
-        return sources
-    
-    def get_all_content_text(self) -> str:
-        """Flatten all available metadata content to text for LLM processing."""
-        text_parts = []
-        
-        if self.series_metadata:
-            text_parts.append(f"=== SERIES METADATA ({self.series_metadata.series_id}) ===")
-            text_parts.append(str(self.series_metadata.content))
-            
-        if self.sample_metadata:
-            text_parts.append(f"=== SAMPLE METADATA ({self.sample_metadata.sample_id}) ===")
-            text_parts.append(str(self.sample_metadata.content))
-            
-        if self.abstract_metadata:
-            text_parts.append(f"=== ABSTRACT METADATA (PMID {self.abstract_metadata.pmid}) ===")
-            text_parts.append(str(self.abstract_metadata.content))
-            
-        return "\n\n".join(text_parts)
+
 
 
 class ExtractedCandidate(BaseModel):
@@ -117,12 +101,4 @@ class CurationResult(BaseModel):
     sources_processed: List[str] = Field(default_factory=list, description="Sources that were processed")
     processing_notes: List[str] = Field(default_factory=list, description="Processing notes and warnings")
     
-    def get_all_candidates(self) -> List[ExtractedCandidate]:
-        """Get all candidates from all sources."""
-        return self.series_candidates + self.sample_candidates + self.abstract_candidates
-    
-    def has_conflicting_candidates(self) -> bool:
-        """Check if there are conflicting candidates across sources."""
-        all_values = [c.value.lower().strip() for c in self.get_all_candidates()]
-        unique_values = set(all_values)
-        return len(unique_values) > 1 
+ 

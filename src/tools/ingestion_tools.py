@@ -947,9 +947,17 @@ def extract_pubmed_id_from_gse_metadata(gse_metadata_file: str) -> Dict[str, Any
             )
 
         if not pubmed_id:
-            raise KeyError(
-                f"PubMed ID not found in GSE metadata file: {gse_metadata_file}"
-            )
+            # Return a result indicating no PubMed ID was found, but don't fail the pipeline
+            result = {
+                "status": "warning",
+                "gse_metadata_file": gse_metadata_file,
+                "pubmed_id": None,
+                "pubmed_id_original": None,
+                "pubmed_ids": [],
+                "pubmed_id_count": 0,
+                "message": f"No PubMed ID found in GSE metadata file: {gse_metadata_file}. This is normal for some datasets.",
+            }
+            return result
 
         # Handle multiple PubMed IDs (separated by commas or newlines)
         # Split by both commas and newlines to handle different formats

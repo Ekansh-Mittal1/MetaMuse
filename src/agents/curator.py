@@ -53,6 +53,27 @@ class CuratorHandoff(BaseHandoff):
     # )
 
 
+class SimpleCuratorHandoff(BaseHandoff):
+    """Simplified input to the CuratorAgent that avoids Dict[str, Any] content fields."""
+
+    sample_ids: list[str] = Field(
+        ...,
+        description="List of sample IDs to curate (e.g., ['GSM1000981', 'GSM1021412']).",
+    )
+    target_field: str = Field(
+        default="Disease",
+        description="The target metadata field to extract candidates for (e.g., 'Disease', 'Tissue', 'Age').",
+    )
+    session_directory: str = Field(
+        ...,
+        description="Path to the session directory for saving output files.",
+    )
+    
+    # Note: We don't include the full CurationDataPackage objects here
+    # The CuratorAgent will load the data it needs from the session directory
+    # This avoids the Dict[str, Any] content fields that cause schema validation issues
+
+
 def on_handoff_callback(ctx: RunContextWrapper[None], input_data: BaseHandoff):
     """A no-op callback to satisfy the handoff function's requirement."""
     pass
@@ -71,6 +92,9 @@ def create_curator_agent(
     This agent is responsible for performing metadata curation tasks on
     GEO samples, including extracting candidate values for specific metadata
     fields and reconciling conflicts across multiple data sources.
+    
+    The agent is configured with structured output capabilities to produce
+    validated CuratorOutput objects directly using the output_type parameter.
 
     Parameters
     ----------
@@ -88,7 +112,7 @@ def create_curator_agent(
     Returns
     -------
     Agent
-        An instance of an Agent configured for metadata curation tasks.
+        An instance of an Agent configured for metadata curation tasks with structured outputs.
     """
     try:
         # Check if "testing" is in the input data
@@ -133,12 +157,19 @@ def create_curator_agent(
                 parts = input_data.split("target_field=")
                 if len(parts) > 1:
                     target_field = parts[1].split()[0].strip('"\'')
+            elif "target_field:" in input_data.lower():
+                # Support colon format as well
+                parts = input_data.split("target_field:")
+                if len(parts) > 1:
+                    target_field = parts[1].split()[0].strip('"\'')
             elif "disease" in input_data.lower():
                 target_field = "Disease"
             elif "tissue" in input_data.lower():
                 target_field = "Tissue"
             elif "age" in input_data.lower():
                 target_field = "Age"
+            elif "organ" in input_data.lower():
+                target_field = "Organ"
         
         try:
             template_file = Path(__file__).parent.parent / "prompts" / "extraction_templates" / f"{target_field.lower()}.md"
@@ -157,10 +188,6 @@ def create_curator_agent(
             RECOMMENDED_PROMPT_PREFIX
             + "\n\n"
             + base_instructions.replace("{EXTRACTION_TEMPLATE}", extraction_template)
-            + "\n\n"
-            + "IMPORTANT: Focus on creating accurate CurationResult objects. Do not use file-reading tools. "
-            + "Work directly with the Pydantic objects provided in the handoff. "
-            + "Save your final results using the save_curation_results tool."
         )
 
         agent = Agent(
@@ -168,7 +195,7 @@ def create_curator_agent(
             instructions=instructions,
             tools=tools,
             handoffs=handoffs or [],
-            # Following DendroForge pattern: no structured outputs, natural language responses
+            output_type=CuratorOutput
         )
 
         return agent

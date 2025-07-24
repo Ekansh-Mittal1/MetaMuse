@@ -29,6 +29,7 @@ from src.models import (
 )
 
 
+
 class LinkerTools:
     """
     Tools for processing and linking metadata files from IngestionAgent output.
@@ -80,7 +81,7 @@ class LinkerTools:
             return create_success_result(
                 LinkerResult,
                 "Mapping file loaded successfully",
-                data={"mapping": mapping_obj},  # Pass the Pydantic object directly
+                data={"mapping": mapping_obj.model_dump()},  # Pass as dict
                 session_id=getattr(self, 'session_id', None)
             )
 
@@ -113,7 +114,8 @@ class LinkerTools:
             return mapping_result
 
         # Extract the SeriesSampleMapping object
-        mapping_obj = mapping_result.data["mapping"]
+        mapping_data = mapping_result.data["mapping"]
+        mapping_obj = SeriesSampleMapping(**mapping_data)
 
         # Check reverse mapping first
         if sample_id in mapping_obj.reverse_mapping:
@@ -174,6 +176,7 @@ class LinkerTools:
                     "contact_city",
                     "contact_state",
                     "contact_zip/postal_code",
+                    "contact_zip_postal_code",
                     "contact_country",
                     "contact_phone",
                     "contact_fax",
@@ -238,10 +241,11 @@ class LinkerTools:
                 )
                 files_created.append(str(cleaned_matrix_file))
 
-            return LinkerResult(
-                success=True,
-                message=f"Cleaned {len(files_created)} metadata files",
+            return create_success_result(
+                LinkerResult,
+                f"Cleaned {len(files_created)} metadata files",
                 files_created=files_created,
+                session_id=getattr(self, 'session_id', None)
             )
         except Exception as e:
             error_msg = f"Error cleaning metadata files: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
@@ -299,9 +303,11 @@ class LinkerTools:
             List of fields to remove
         """
         if isinstance(data, dict):
+            # Remove fields from current level
             for field in fields_to_remove:
                 if field in data:
                     data.pop(field)
+            # Recursively process all values
             for value in data.values():
                 self._remove_fields_recursive(value, fields_to_remove)
         elif isinstance(data, list):
@@ -332,51 +338,81 @@ class LinkerTools:
             if not directory_result.success:
                 return directory_result
 
-            # Clean metadata files first
-            clean_result = self.clean_metadata_files(sample_id, fields_to_remove)
-            if not clean_result.success:
-                return clean_result
-
             # Get paths
             series_id = directory_result.data["series_id"]
             series_dir = self.session_dir / series_id
-            cleaned_dir = series_dir / "cleaned"
 
-            # Load cleaned metadata content
+            # Set default fields to remove if not provided
+            if fields_to_remove is None or len(fields_to_remove) == 0:
+                fields_to_remove = [
+                    # GSE and GSM fields to remove from attributes
+                    "status",
+                    "submission_date",
+                    "last_update_date",
+                    "contributor",
+                    # Contact fields
+                    "contact_name",
+                    "contact_email",
+                    "contact_laboratory",
+                    "contact_department",
+                    "contact_institute",
+                    "contact_address",
+                    "contact_city",
+                    "contact_state",
+                    "contact_zip/postal_code",
+                    "contact_country",
+                    "contact_phone",
+                    "contact_fax",
+                    # Protocol and processing fields
+                    # PMID fields to remove
+                    "authors",
+                    "journal",
+                    "publication_date",
+                    "keywords",
+                    "mesh_terms",
+                ]
+
+            # Load and clean metadata content in memory
             series_metadata = None
             sample_metadata = None
             abstract_metadata = None
 
-            # Load series metadata
-            cleaned_series_file = cleaned_dir / f"{series_id}_metadata_cleaned.json"
-            if cleaned_series_file.exists():
-                with open(cleaned_series_file, 'r') as f:
+            # Load and clean series metadata
+            series_metadata_file = series_dir / f"{series_id}_metadata.json"
+            if series_metadata_file.exists():
+                with open(series_metadata_file, 'r') as f:
                     series_content = json.load(f)
+                # Clean the content in memory
+                self._remove_fields_recursive(series_content, fields_to_remove)
                 series_metadata = CleanedSeriesMetadata(
                     series_id=series_id,
                     content=series_content,
-                    original_file_path=str(cleaned_series_file)
+                    original_file_path=str(series_metadata_file)
                 )
 
-            # Load sample metadata
-            cleaned_sample_file = cleaned_dir / f"{sample_id}_metadata_cleaned.json"
-            if cleaned_sample_file.exists():
-                with open(cleaned_sample_file, 'r') as f:
+            # Load and clean sample metadata
+            sample_metadata_file = series_dir / f"{sample_id}_metadata.json"
+            if sample_metadata_file.exists():
+                with open(sample_metadata_file, 'r') as f:
                     sample_content = json.load(f)
+                # Clean the content in memory
+                self._remove_fields_recursive(sample_content, fields_to_remove)
                 sample_metadata = CleanedSampleMetadata(
                     sample_id=sample_id,
                     content=sample_content,
-                    original_file_path=str(cleaned_sample_file)
+                    original_file_path=str(sample_metadata_file)
                 )
 
-            # Load abstract metadata
-            abstract_files = list(cleaned_dir.glob("PMID_*_metadata_cleaned.json"))
+            # Load and clean abstract metadata
+            abstract_files = list(series_dir.glob("PMID_*_metadata.json"))
             if abstract_files:
                 abstract_file = abstract_files[0]  # Take the first one
                 with open(abstract_file, 'r') as f:
                     abstract_content = json.load(f)
+                # Clean the content in memory
+                self._remove_fields_recursive(abstract_content, fields_to_remove)
                 # Extract PMID from filename
-                pmid = abstract_file.stem.replace("PMID_", "").replace("_metadata_cleaned", "")
+                pmid = abstract_file.stem.replace("PMID_", "").replace("_metadata", "")
                 abstract_metadata = CleanedAbstractMetadata(
                     pmid=pmid,
                     content=abstract_content,
@@ -393,9 +429,9 @@ class LinkerTools:
 
             return create_success_result(
                 LinkerResult,
-                f"Created curation data package for {sample_id}",
-                data={"curation_package": curation_package},
-                files_created=clean_result.files_created,
+                f"Created curation data package for {sample_id} with cleaned metadata",
+                data={"curation_package": curation_package.model_dump()},
+                files_created=[],  # No files created since we clean in memory
                 session_id=getattr(self, 'session_id', None)
             )
 
@@ -526,37 +562,55 @@ class LinkerTools:
             if not dir_result.success:
                 return dir_result
 
-            # Clean metadata files
-            clean_result = self.clean_metadata_files(sample_id, fields_to_remove)
-            if not clean_result.success:
-                return clean_result
+            # Set default fields to remove if not provided
+            if fields_to_remove is None or len(fields_to_remove) == 0:
+                fields_to_remove = [
+                    # GSE and GSM fields to remove from attributes
+                    "status",
+                    "submission_date",
+                    "last_update_date",
+                    "contributor",
+                    # Contact fields
+                    "contact_name",
+                    "contact_email",
+                    "contact_laboratory",
+                    "contact_department",
+                    "contact_institute",
+                    "contact_address",
+                    "contact_city",
+                    "contact_state",
+                    "contact_zip/postal_code",
+                    "contact_country",
+                    "contact_phone",
+                    "contact_fax",
+                    # Protocol and processing fields
+                    # PMID fields to remove
+                    "authors",
+                    "journal",
+                    "publication_date",
+                    "keywords",
+                    "mesh_terms",
+                ]
 
-            # Load cleaned sample metadata
+            # Load and clean sample metadata in memory
             series_dir = Path(dir_result.data["directory"])
-            cleaned_dir = series_dir / "cleaned"
-            cleaned_sample_metadata_file = (
-                cleaned_dir / f"{sample_id}_metadata_cleaned.json"
-            )
+            sample_metadata_file = series_dir / f"{sample_id}_metadata.json"
             sample_metadata = {}
-            if cleaned_sample_metadata_file.exists():
-                with open(cleaned_sample_metadata_file, "r") as f:
+            if sample_metadata_file.exists():
+                with open(sample_metadata_file, "r") as f:
                     sample_metadata = json.load(f)
-            else:
-                # Fallback to original if cleaned doesn't exist
-                sample_metadata_file = series_dir / f"{sample_id}_metadata.json"
-                if sample_metadata_file.exists():
-                    with open(sample_metadata_file, "r") as f:
-                        sample_metadata = json.load(f)
+                # Clean the content in memory
+                self._remove_fields_recursive(sample_metadata, fields_to_remove)
 
             # Package everything together (without series matrix data)
             packaged_data = {
                 "sample_id": sample_id,
                 "series_id": dir_result.data["series_id"],
                 "directory": dir_result.data["directory"],
-                "cleaned_files": clean_result.files_created,
                 "sample_metadata": sample_metadata,
                 "processing_summary": {
-                    "cleaned_files_count": len(clean_result.files_created),
+                    "cleaned_in_memory": True,
+                    "fields_removed": fields_to_remove,
                     "note": "Series matrix functionality has been removed from agent access",
                 },
             }
@@ -566,11 +620,12 @@ class LinkerTools:
             with open(packaged_file, "w") as f:
                 json.dump(packaged_data, f, indent=2)
 
-            return LinkerResult(
-                success=True,
-                message=f"Successfully packaged linked data for sample {sample_id} (series matrix functionality removed)",
-                data=packaged_data,
+            return create_success_result(
+                LinkerResult,
+                f"Successfully packaged linked data for sample {sample_id} with cleaned metadata (series matrix functionality removed)",
+                data={"packaged_data": packaged_data},
                 files_created=[str(packaged_file)],
+                session_id=getattr(self, 'session_id', None)
             )
 
         except Exception as e:

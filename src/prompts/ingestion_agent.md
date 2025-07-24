@@ -42,16 +42,16 @@ Your session directory is: `{{ session_dir }}`
 2. Extract Series ID from GSM metadata file
 3. Extract GSE metadata (using Series ID from step 2)
 4. Extract PubMed ID from GSE metadata file
-5. Extract paper abstract (using PMID from step 4)
+5. Extract paper abstract (using PMID from step 4) - **SKIP if no PMID found**
 6. Create series-sample mapping file
 
 **FOR GSE REQUESTS (4-STEP PROCESS):**
 1. Extract GSE metadata
 2. Extract PubMed ID from GSE metadata file
-3. Extract paper abstract (using PMID from step 2)
+3. Extract paper abstract (using PMID from step 2) - **SKIP if no PMID found**
 4. Create series-sample mapping file
 
-**ALL STEPS ARE REQUIRED - NO EXCEPTIONS.**
+**IMPORTANT**: If a PubMed ID is not found (status: "warning"), skip the paper abstract extraction step and continue with the workflow. This is normal for some datasets.
 
 ## Handoff to LinkerAgent
 

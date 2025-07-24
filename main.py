@@ -25,6 +25,7 @@ from src.workflows.MetaMuse import (
     create_multi_agent_pipeline,
     create_linking_pipeline,
     create_full_pipeline,
+    create_hybrid_pipeline,
     create_curation_pipeline,
     create_structured_pipeline,
 )
@@ -54,9 +55,20 @@ if not API_KEY:
 # ---------------------------------------------------------------------------
 # Only the following models are supported. Each entry also defines its context
 # window so that the orchestrator can automatically respect model limits.
-MODEL_CHOICES = ("google/gemini-2.5-flash",)
-MODEL_TOKEN_LIMITS: dict[str, int] = {
+MODEL_CHOICES = ("google/gemini-2.5-flash", "openai/gpt-4o", "openai/gpt-4o-mini")
+
+# Context window limits for each model
+MODEL_CONTEXT_LIMITS: dict[str, int] = {
     "google/gemini-2.5-flash": 4_096,
+    "openai/gpt-4o": 128_000,
+    "openai/gpt-4o-mini": 128_000,
+}
+
+# Maximum response tokens for each model (much smaller than context window)
+MODEL_RESPONSE_LIMITS: dict[str, int] = {
+    "google/gemini-2.5-flash": 2_048,
+    "openai/gpt-4o": 100_000,
+    "openai/gpt-4o-mini": 100_000,
 }
 
 # Disable tracing for OpenRouter
@@ -107,6 +119,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         "multi_agent_geo": "mag", 
         "linking": "link",
         "full_pipeline": "fp",
+        "hybrid_pipeline": "hybrid",
         "curation": "c",
     }
     
@@ -129,13 +142,13 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
 
     # Create model provider
     model_provider = CustomModelProvider(model_name)
-    max_tokens = MODEL_TOKEN_LIMITS.get(model_name, 128_000)
+    max_response_tokens = MODEL_RESPONSE_LIMITS.get(model_name, 4_096)
 
     # Create orchestrator
     orchestrator = SimpleOrchestrator(
         session_id=session_id,
         model_provider=model_provider,
-        provider_max_tokens=max_tokens,
+        provider_max_tokens=max_response_tokens,
     )
 
     # Select workflow function
@@ -144,6 +157,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         "multi_agent_geo": create_multi_agent_pipeline,
         "linking": create_linking_pipeline,
         "full_pipeline": create_full_pipeline,
+        "hybrid_pipeline": create_hybrid_pipeline,
         "curation": create_curation_pipeline,
         "structured_pipeline": create_structured_pipeline,
     }
@@ -172,7 +186,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
                 session_id=session_id,  # Pass session_id explicitly to avoid orchestrator adding it
                 **kwargs,
             )
-        elif workflow_name in ["linking", "full_pipeline", "multi_agent_geo", "curation", "structured_pipeline"]:
+        elif workflow_name in ["linking", "full_pipeline", "hybrid_pipeline", "multi_agent_geo", "curation", "structured_pipeline"]:
             # These workflows need input_data for testing detection
             result = await orchestrator.run_workflow(
                 lambda **kwargs: workflow_func(
@@ -250,6 +264,7 @@ def list_workflows():
         "multi_agent_geo": "Multi-agent GEO metadata extraction pipeline (extensible)",
         "linking": "Single-agent metadata linking and processing pipeline",
         "full_pipeline": "Complete pipeline: IngestionAgent → LinkerAgent → CuratorAgent",
+        "hybrid_pipeline": "Hybrid pipeline: Deterministic data_intake + CuratorAgent",
         "curation": "Single-agent metadata curation pipeline for extracting specific fields",
     }
 
@@ -266,9 +281,10 @@ async def main():
         epilog="""
 Examples:
   python main.py geo_extraction "Extract metadata for GSM1019742" --model openai/gpt-4o
-  python main.py geo_extraction "Get series info for GSE41588 and paper abstract for PMID 23902433"
-  python main.py linking "session directory sandbox/di_c414a6ee-346e-469b-bae5-2c5316872314"
-  python main.py full_pipeline "GSM1000981 target_field Disease"
+  python main.py geo_extraction "Get series info for GSE41588 and paper abstract for PMID 23902433" --model openai/gpt-4o-mini
+  python main.py linking "session directory sandbox/di_c414a6ee-346e-469b-bae5-2c5316872314" --model google/gemini-2.5-flash
+  python main.py full_pipeline "GSM1000981 target_field Disease" --model openai/gpt-4o
+  python main.py hybrid_pipeline "GSM1000981 target_field Disease" --model openai/gpt-4o
   python main.py curation "session directory sandbox/test-session target_field Disease samples GSM1000981,GSM1000984"
   python main.py --list-workflows
         """,
@@ -277,7 +293,7 @@ Examples:
     parser.add_argument(
         "workflow",
         nargs="?",
-        choices=["geo_extraction", "multi_agent_geo", "linking", "full_pipeline", "curation"],
+        choices=["geo_extraction", "multi_agent_geo", "linking", "full_pipeline", "hybrid_pipeline", "curation"],
         help="Workflow to run",
     )
 
@@ -287,7 +303,7 @@ Examples:
         "--model",
         choices=MODEL_CHOICES,
         default="google/gemini-2.5-flash",
-        help="Model to use for processing",
+        help="Model to use for processing (default: google/gemini-2.5-flash)",
     )
 
     parser.add_argument(

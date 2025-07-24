@@ -82,6 +82,29 @@ uv run python main.py --list-workflows
 uv run python src/workflows/data_intake.py -i "GSM1000981" --type complete
 ```
 
+## Model Options
+
+The system supports multiple LLM models through OpenRouter:
+
+| Model | Context Window | Max Response | Description |
+|-------|----------------|--------------|-------------|
+| `google/gemini-2.5-flash` | 4,096 tokens | 2,048 tokens | Fast, cost-effective (default) |
+| `openai/gpt-4o` | 128,000 tokens | 4,096 tokens | High performance, larger context |
+| `openai/gpt-4o-mini` | 128,000 tokens | 4,096 tokens | Balanced performance and cost |
+
+### Usage Examples
+
+```bash
+# Use default model (Gemini)
+uv run python main.py full_pipeline "GSM1000981 target_field=Disease"
+
+# Use GPT-4o for better performance
+uv run python main.py full_pipeline "GSM1000981 target_field=Disease" --model openai/gpt-4o
+
+# Use GPT-4o-mini for balanced performance
+uv run python main.py full_pipeline "GSM1000981 target_field=Disease" --model openai/gpt-4o-mini
+```
+
 ## Environment Variables
 
 | Variable | Required | Description |

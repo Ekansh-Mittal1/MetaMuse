@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Any, Union
 from pathlib import Path
 from pydantic import BaseModel, Field, validator, ConfigDict
 
+from .common import KeyValue
+
 
 class GSMAttributes(BaseModel):
     """Attributes section of GSM metadata."""
@@ -159,8 +161,14 @@ class SeriesSampleMapping(BaseModel):
     
     model_config = ConfigDict(extra="forbid")
     
-    mapping: Dict[str, List[str]] = Field(..., description="Series ID to sample IDs mapping")
-    reverse_mapping: Dict[str, str] = Field(..., description="Sample ID to series ID mapping")
+    mapping: Dict[str, List[str]] = Field(
+        ..., 
+        description="Series ID to sample IDs mapping"
+    )
+    reverse_mapping: Dict[str, str] = Field(
+        ..., 
+        description="Sample ID to series ID mapping"
+    )
     total_series: int = Field(..., ge=0, description="Total number of series")
     total_samples: int = Field(..., ge=0, description="Total number of samples")
     generated_at: str = Field(..., description="Path where mapping was generated")
@@ -176,5 +184,11 @@ class LinkedData(BaseModel):
     series_id: str = Field(..., pattern=r"^GSE\d+$", description="Series ID")
     directory: str = Field(..., description="Directory path")
     cleaned_files: List[str] = Field(..., description="Paths to cleaned files")
-    sample_metadata: Optional[dict] = Field(default=None, description="Sample metadata")
-    processing_summary: Optional[dict] = Field(default=None, description="Processing summary") 
+    sample_metadata: Optional[List[KeyValue]] = Field(
+        default=None, 
+        description="Sample metadata as key-value pairs"
+    )
+    processing_summary: Optional[List[KeyValue]] = Field(
+        default=None, 
+        description="Processing summary as key-value pairs"
+    ) 
