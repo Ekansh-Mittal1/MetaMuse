@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import uuid4
 
 from agents import Agent, handoff
 
 from src.agents.ingestion import create_ingestion_agent
 from src.agents.linker import create_linker_agent, LinkerHandoff
-from src.agents.curator import create_curator_agent, CuratorHandoff, SimpleCuratorHandoff
+from src.agents.curator import (
+    create_curator_agent,
+    CuratorHandoff,
+    SimpleCuratorHandoff,
+)
 from src.workflows.data_intake import run_data_intake_workflow
 
 
@@ -163,12 +168,14 @@ def on_handoff_callback(ctx, input_data):
     print(f"[Handoff] original_request: {input_data.original_request}")
     print(f"[Handoff] handoff_type: {type(input_data).__name__}")
     print(f"[Handoff] handoff_data: {input_data.model_dump()}")
-    for field_name, value in input_data.model_dump(exclude={"original_request"}).items():
-        if hasattr(value, 'model_dump'):  # Pydantic object
+    for field_name, value in input_data.model_dump(
+        exclude={"original_request"}
+    ).items():
+        if hasattr(value, "model_dump"):  # Pydantic object
             print(f"[Handoff] {field_name}: <Pydantic {type(value).__name__}>")
         else:
             print(f"[Handoff] {field_name}: {value}")
-    print(f"[Handoff] Handoff callback executed successfully")
+    print("[Handoff] Handoff callback executed successfully")
 
 
 def create_curation_pipeline(
@@ -231,7 +238,7 @@ def create_complete_pipeline(
     """
     Create a complete metadata extraction, linking, and curation pipeline.
 
-    This pipeline chains together the IngestionAgent, LinkerAgent, and CuratorAgent 
+    This pipeline chains together the IngestionAgent, LinkerAgent, and CuratorAgent
     to provide a complete workflow from metadata extraction to final curation.
 
     Parameters
@@ -256,7 +263,7 @@ def create_complete_pipeline(
     # Parse input_data for multiple sample IDs and target field
     sample_ids = []
     target_field = "Disease"  # Default target field
-    
+
     if input_data:
         # Look for target field specification (support both : and = formats)
         if "target_field:" in input_data.lower():
@@ -269,7 +276,7 @@ def create_complete_pipeline(
             if len(parts) > 1:
                 target_field = parts[1].split()[0].strip()
                 input_data = parts[0].strip()
-        
+
         # Accept comma or whitespace separated sample IDs
         for part in input_data.replace(",", " ").split():
             if part.strip() and part.strip().startswith("GSM"):
@@ -280,7 +287,7 @@ def create_complete_pipeline(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
         handoffs=[],
-        input_data=f"target_field:{target_field} {' '.join(sample_ids)}"
+        input_data=f"target_field:{target_field} {' '.join(sample_ids)}",
     )
 
     # Create LinkerAgent with handoff to CuratorAgent
@@ -390,11 +397,15 @@ def create_structured_pipeline(
 def on_structured_handoff_callback(ctx, input_data):
     """Enhanced handoff callback for structured Pydantic workflows."""
     print(f"🔄 [Structured Handoff] Request: {input_data.original_request}")
-    
+
     # Log structured data presence
-    for field_name, value in input_data.model_dump(exclude={"original_request"}).items():
-        if hasattr(value, 'model_dump'):  # Pydantic object
-            print(f"📦 [Structured Handoff] {field_name}: {type(value).__name__} (validated)")
+    for field_name, value in input_data.model_dump(
+        exclude={"original_request"}
+    ).items():
+        if hasattr(value, "model_dump"):  # Pydantic object
+            print(
+                f"📦 [Structured Handoff] {field_name}: {type(value).__name__} (validated)"
+            )
         elif isinstance(value, list) and value:
             print(f"📋 [Structured Handoff] {field_name}: {len(value)} items")
         else:
@@ -433,7 +444,7 @@ def create_hybrid_pipeline(
     sample_ids = []
     target_field = "Disease"  # Default target field
     geo_input = input_data
-    
+
     if input_data:
         # Look for target field specification
         if "target_field:" in input_data.lower():
@@ -441,45 +452,64 @@ def create_hybrid_pipeline(
             if len(parts) > 1:
                 target_field = parts[1].split()[0].strip()
                 geo_input = parts[0].strip()
-        
+
         # Extract sample IDs for curator
         for part in geo_input.replace(",", " ").split():
             if part.strip() and part.strip().startswith("GSM"):
                 sample_ids.append(part.strip())
 
-    print(f"🔗 Hybrid pipeline: Running deterministic data_intake workflow...")
+    print("🔗 Hybrid pipeline: Running deterministic data_intake workflow...")
     print(f"📋 Input: {geo_input}")
     print(f"🔄 Session ID: {session_id}")
-    
+
     # Run the deterministic data_intake workflow first
     data_intake_result = run_data_intake_workflow(
         input_text=geo_input,
         session_id=session_id,
         sandbox_dir=sandbox_dir,
-        workflow_type="complete"
+        workflow_type="complete",
     )
-    
+
     if not data_intake_result.success:
         print(f"❌ Data intake workflow failed: {data_intake_result.message}")
-        if data_intake_result.errors:
-            for error in data_intake_result.errors:
-                print(f"   - {error}")
+        if data_intake_result.warnings:
+            for warning in data_intake_result.warnings:
+                print(f"   - {warning}")
         raise RuntimeError(f"Data intake workflow failed: {data_intake_result.message}")
-    
-    print(f"✅ Data intake workflow completed successfully")
-    print(f"📁 Files created: {len(data_intake_result.files_created) if data_intake_result.files_created else 0}")
-    
+
+    print("✅ Data intake workflow completed successfully")
+    print(
+        f"📁 Files created: {len(data_intake_result.files_created) if data_intake_result.files_created else 0}"
+    )
+    print(f"📋 Sample IDs for curation: {data_intake_result.sample_ids_for_curation}")
+
     # Create CuratorAgent that will process the deterministic output
+    # Note: The CuratorAgent will only have access to curation-specific tools,
+    # not the data intake tools, since the data is already available from the data_intake workflow
+    existing_session_dir = data_intake_result.session_directory
+    sample_ids_for_curation = data_intake_result.sample_ids_for_curation
+
+    # Pass the LinkerOutput data directly to the CuratorAgent via data_intake_output parameter
+    print("🔍 Hybrid pipeline: Passing LinkerOutput data to CuratorAgent...")
+
+    # Create clean input_data without the LinkerOutput JSON
+    curator_input_data = (
+        f"target_field:{target_field} {' '.join(sample_ids_for_curation)}"
+    )
+
+    # Create CuratorAgent with the LinkerOutput data via data_intake_output parameter
     curator_agent = create_curator_agent(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
         handoffs=[],
-        input_data=f"target_field:{target_field} {' '.join(sample_ids)}"
+        existing_session_dir=existing_session_dir,
+        input_data=curator_input_data,
+        data_intake_output=data_intake_result,
     )
-    
-    print(f"🔗 Hybrid pipeline configured with deterministic data_intake + CuratorAgent")
+
+    print("🔗 Hybrid pipeline configured with deterministic data_intake + CuratorAgent")
     print(f"📋 Target field: {target_field}")
-    print(f"📁 Sample IDs: {sample_ids}")
+    print(f"📁 Sample IDs: {sample_ids_for_curation}")
 
     return curator_agent
 
@@ -490,7 +520,7 @@ def create_full_pipeline(
     """
     Create a complete metadata extraction, linking, and curation pipeline.
 
-    This pipeline chains together the IngestionAgent, LinkerAgent, and CuratorAgent 
+    This pipeline chains together the IngestionAgent, LinkerAgent, and CuratorAgent
     to provide a complete workflow from metadata extraction to final curation.
 
     Parameters
@@ -515,7 +545,7 @@ def create_full_pipeline(
     # Parse input_data for multiple sample IDs and target field
     sample_ids = []
     target_field = "Disease"  # Default target field
-    
+
     if input_data:
         # Look for target field specification (support both : and = formats)
         if "target_field:" in input_data.lower():
@@ -528,7 +558,7 @@ def create_full_pipeline(
             if len(parts) > 1:
                 target_field = parts[1].split()[0].strip()
                 input_data = parts[0].strip()
-        
+
         # Accept comma or whitespace separated sample IDs
         for part in input_data.replace(",", " ").split():
             if part.strip() and part.strip().startswith("GSM"):
@@ -539,12 +569,16 @@ def create_full_pipeline(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
         handoffs=[],
-        input_data=f"target_field:{target_field} {' '.join(sample_ids)}"
+        input_data=f"target_field:{target_field} {' '.join(sample_ids)}",
     )
 
     # Create LinkerAgent with handoff to CuratorAgent using SimpleCuratorHandoff
     # Pass the target field information to the LinkerAgent
-    linker_input_data = f"target_field:{target_field} {input_data}" if input_data else f"target_field:{target_field}"
+    linker_input_data = (
+        f"target_field:{target_field} {input_data}"
+        if input_data
+        else f"target_field:{target_field}"
+    )
     linker_agent = create_linker_agent(
         session_id=session_id,
         sandbox_dir=sandbox_dir,
@@ -557,15 +591,19 @@ def create_full_pipeline(
         ],
         input_data=linker_input_data,
     )
-    
-    print(f"🔗 LinkerAgent configured with handoff to CuratorAgent")
-    print(f"📋 Handoff type: SimpleCuratorHandoff")
+
+    print("🔗 LinkerAgent configured with handoff to CuratorAgent")
+    print("📋 Handoff type: SimpleCuratorHandoff")
     print(f"🎯 Target field: {target_field}")
     print(f"📁 Sample IDs: {sample_ids}")
 
     # Create IngestionAgent with handoff to LinkerAgent
     # Pass the target field information to the IngestionAgent
-    ingestion_input_data = f"target_field:{target_field} {input_data}" if input_data else f"target_field:{target_field}"
+    ingestion_input_data = (
+        f"target_field:{target_field} {input_data}"
+        if input_data
+        else f"target_field:{target_field}"
+    )
     ingestion_agent = create_ingestion_agent(
         session_id=session_id,
         sandbox_dir=sandbox_dir,

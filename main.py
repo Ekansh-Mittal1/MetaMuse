@@ -67,8 +67,8 @@ MODEL_CONTEXT_LIMITS: dict[str, int] = {
 # Maximum response tokens for each model (much smaller than context window)
 MODEL_RESPONSE_LIMITS: dict[str, int] = {
     "google/gemini-2.5-flash": 2_048,
-    "openai/gpt-4o": 100_000,
-    "openai/gpt-4o-mini": 100_000,
+    "openai/gpt-4o": 50_000,
+    "openai/gpt-4o-mini": 50_000,
 }
 
 # Disable tracing for OpenRouter
@@ -116,13 +116,13 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
     # Generate session ID with pipeline prefix
     pipeline_prefixes = {
         "geo_extraction": "ge",
-        "multi_agent_geo": "mag", 
+        "multi_agent_geo": "mag",
         "linking": "link",
         "full_pipeline": "fp",
         "hybrid_pipeline": "hybrid",
         "curation": "c",
     }
-    
+
     prefix = pipeline_prefixes.get(workflow_name, "unknown")
     session_id = f"{prefix}_{str(uuid4())}"
     existing_session_dir = None
@@ -186,7 +186,14 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
                 session_id=session_id,  # Pass session_id explicitly to avoid orchestrator adding it
                 **kwargs,
             )
-        elif workflow_name in ["linking", "full_pipeline", "hybrid_pipeline", "multi_agent_geo", "curation", "structured_pipeline"]:
+        elif workflow_name in [
+            "linking",
+            "full_pipeline",
+            "hybrid_pipeline",
+            "multi_agent_geo",
+            "curation",
+            "structured_pipeline",
+        ]:
             # These workflows need input_data for testing detection
             result = await orchestrator.run_workflow(
                 lambda **kwargs: workflow_func(
@@ -293,7 +300,14 @@ Examples:
     parser.add_argument(
         "workflow",
         nargs="?",
-        choices=["geo_extraction", "multi_agent_geo", "linking", "full_pipeline", "hybrid_pipeline", "curation"],
+        choices=[
+            "geo_extraction",
+            "multi_agent_geo",
+            "linking",
+            "full_pipeline",
+            "hybrid_pipeline",
+            "curation",
+        ],
         help="Workflow to run",
     )
 

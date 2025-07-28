@@ -14,20 +14,18 @@ from typing import Dict, List, Any, Optional
 # Import new Pydantic models
 from src.models import (
     LinkerResult,
-    GSMMetadata,
-    GSEMetadata,
-    PMIDMetadata,
-    LinkedData,
     SeriesSampleMapping,
-    ModelSerializer,
     create_success_result,
     create_error_result,
     CurationDataPackage,
     CleanedSeriesMetadata,
     CleanedSampleMetadata,
-    CleanedAbstractMetadata
+    CleanedAbstractMetadata,
+    GSMMetadata,
+    GSEMetadata,
+    PMIDMetadata,
 )
-
+from src.models.common import KeyValue
 
 
 class LinkerTools:
@@ -61,7 +59,7 @@ class LinkerTools:
                 return create_error_result(
                     LinkerResult,
                     f"Mapping file not found: {self.mapping_file}",
-                    session_id=getattr(self, 'session_id', None)
+                    session_id=getattr(self, "session_id", None),
                 )
 
             with open(self.mapping_file, "r") as f:
@@ -75,14 +73,14 @@ class LinkerTools:
                     LinkerResult,
                     f"Invalid mapping file format: {str(e)}",
                     errors=[f"Validation error: {str(e)}"],
-                    session_id=getattr(self, 'session_id', None)
+                    session_id=getattr(self, "session_id", None),
                 )
 
             return create_success_result(
                 LinkerResult,
                 "Mapping file loaded successfully",
                 data={"mapping": mapping_obj.model_dump()},  # Pass as dict
-                session_id=getattr(self, 'session_id', None)
+                session_id=getattr(self, "session_id", None),
             )
 
         except Exception as e:
@@ -131,20 +129,20 @@ class LinkerTools:
                         "series_id": series_id,
                         "directory": str(series_dir),
                     },
-                    session_id=getattr(self, 'session_id', None)
+                    session_id=getattr(self, "session_id", None),
                 )
 
         return create_error_result(
             LinkerResult,
             f"Sample {sample_id} not found in mapping",
-            session_id=getattr(self, 'session_id', None)
+            session_id=getattr(self, "session_id", None),
         )
 
     def clean_metadata_files(
         self, sample_id: str, fields_to_remove: List[str] = None
     ) -> LinkerResult:
         """
-        Generate cleaned versions of metadata files by removing specified fields.
+        Generate cleaned metadata models and save them to JSON files.
 
         Parameters
         ----------
@@ -156,7 +154,7 @@ class LinkerTools:
         Returns
         -------
         LinkerResult
-            Result containing paths to cleaned files
+            Result containing cleaned metadata models and file paths
         """
         try:
             if fields_to_remove is None or len(fields_to_remove) == 0:
@@ -199,53 +197,60 @@ class LinkerTools:
             cleaned_dir.mkdir(exist_ok=True)
 
             files_created = []
+            cleaned_models = {}
 
             # Clean series metadata file
             series_metadata_file = series_dir / f"{series_id}_metadata.json"
             if series_metadata_file.exists():
-                cleaned_series_file = cleaned_dir / f"{series_id}_metadata_cleaned.json"
-                self._clean_json_file(
-                    series_metadata_file, cleaned_series_file, fields_to_remove
+                cleaned_series = self._create_cleaned_series_metadata(
+                    series_metadata_file, fields_to_remove
                 )
-                files_created.append(str(cleaned_series_file))
+                if cleaned_series:
+                    cleaned_series_file = (
+                        cleaned_dir / f"{series_id}_metadata_cleaned.json"
+                    )
+                    with open(cleaned_series_file, "w") as f:
+                        json.dump(cleaned_series.model_dump(), f, indent=2)
+                    files_created.append(str(cleaned_series_file))
+                    cleaned_models["series"] = cleaned_series.model_dump()
 
             # Clean sample metadata file (GSM file)
             sample_metadata_file = series_dir / f"{sample_id}_metadata.json"
             if sample_metadata_file.exists():
-                cleaned_sample_file = cleaned_dir / f"{sample_id}_metadata_cleaned.json"
-                self._clean_json_file(
-                    sample_metadata_file, cleaned_sample_file, fields_to_remove
+                cleaned_sample = self._create_cleaned_sample_metadata(
+                    sample_metadata_file, fields_to_remove
                 )
-                files_created.append(str(cleaned_sample_file))
+                if cleaned_sample:
+                    cleaned_sample_file = (
+                        cleaned_dir / f"{sample_id}_metadata_cleaned.json"
+                    )
+                    with open(cleaned_sample_file, "w") as f:
+                        json.dump(cleaned_sample.model_dump(), f, indent=2)
+                    files_created.append(str(cleaned_sample_file))
+                    cleaned_models["sample"] = cleaned_sample.model_dump()
 
             # Clean abstract metadata file
             abstract_files = list(series_dir.glob("PMID_*_metadata.json"))
             if abstract_files:
                 abstract_file = abstract_files[0]  # Take the first one
-                cleaned_abstract_file = (
-                    cleaned_dir / f"{abstract_file.stem}_cleaned.json"
+                cleaned_abstract = self._create_cleaned_abstract_metadata(
+                    abstract_file, fields_to_remove
                 )
-                self._clean_json_file(
-                    abstract_file, cleaned_abstract_file, fields_to_remove
-                )
-                files_created.append(str(cleaned_abstract_file))
-
-            # Clean series matrix metadata file
-            series_matrix_file = series_dir / f"{series_id}_series_matrix.json"
-            if series_matrix_file.exists():
-                cleaned_matrix_file = (
-                    cleaned_dir / f"{series_id}_series_matrix_cleaned.json"
-                )
-                self._clean_json_file(
-                    series_matrix_file, cleaned_matrix_file, fields_to_remove
-                )
-                files_created.append(str(cleaned_matrix_file))
+                if cleaned_abstract:
+                    cleaned_abstract_file = (
+                        cleaned_dir / f"{abstract_file.stem}_cleaned.json"
+                    )
+                    with open(cleaned_abstract_file, "w") as f:
+                        json.dump(cleaned_abstract.model_dump(), f, indent=2)
+                    files_created.append(str(cleaned_abstract_file))
+                    cleaned_models["abstract"] = cleaned_abstract.model_dump()
 
             return create_success_result(
                 LinkerResult,
-                f"Cleaned {len(files_created)} metadata files",
+                f"Created {len(cleaned_models)} cleaned metadata models and saved {len(files_created)} files",
+                data={"cleaned_models": cleaned_models},
                 files_created=files_created,
-                session_id=getattr(self, 'session_id', None)
+                session_id=getattr(self, "session_id", None),
             )
         except Exception as e:
             error_msg = f"Error cleaning metadata files: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
@@ -257,39 +262,197 @@ class LinkerTools:
             traceback.print_exc()
             raise
 
-    def _clean_json_file(
-        self, input_file: Path, output_file: Path, fields_to_remove: List[str]
-    ):
+    def _create_cleaned_series_metadata(
+        self, metadata_file: Path, fields_to_remove: List[str]
+    ) -> Optional[CleanedSeriesMetadata]:
         """
-        Clean a JSON file by removing specified fields.
+        Create a CleanedSeriesMetadata model from a GSE metadata file.
 
         Parameters
         ----------
-        input_file : Path
-            Path to input JSON file
-        output_file : Path
-            Path to output cleaned JSON file
+        metadata_file : Path
+            Path to the GSE metadata JSON file
         fields_to_remove : List[str]
-            List of fields to remove
+            List of fields to remove from metadata
+
+        Returns
+        -------
+        Optional[CleanedSeriesMetadata]
+            Cleaned series metadata model or None if failed
         """
         try:
-            with open(input_file, "r") as f:
+            with open(metadata_file, "r") as f:
                 data = json.load(f)
 
-            # Remove specified fields recursively
-            self._remove_fields_recursive(data, fields_to_remove)
+            # Normalize field names before loading
+            data = self._normalize_field_names(data)
 
-            with open(output_file, "w") as f:
-                json.dump(data, f, indent=2)
+            # Load as GSE metadata first
+            gse_metadata = GSEMetadata(**data)
+
+            # Extract series ID
+            series_id = gse_metadata.gse_id
+
+            # Convert attributes to dict and clean
+            attributes_dict = gse_metadata.attributes.model_dump()
+            cleaned_dict = self._remove_fields_from_dict(
+                attributes_dict, fields_to_remove
+            )
+
+            # Convert to KeyValue pairs
+            content = [
+                KeyValue(key=k, value=str(v))
+                for k, v in cleaned_dict.items()
+                if v is not None
+            ]
+
+            return CleanedSeriesMetadata(
+                series_id=series_id,
+                content=content,
+                source_type="series",
+                original_file_path=str(metadata_file),
+            )
         except Exception as e:
-            error_msg = f"Error cleaning JSON file {input_file}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
-            print(f"❌ LINKER ERROR: {error_msg}")
-            # Also print to stderr for better visibility
-            import sys
+            print(f"❌ Error creating cleaned series metadata: {str(e)}")
+            print(f"   File: {metadata_file}")
+            print(f"   Error type: {type(e).__name__}")
+            return None
 
-            print(f"❌ LINKER ERROR: {error_msg}", file=sys.stderr)
-            traceback.print_exc()
-            raise
+    def _create_cleaned_sample_metadata(
+        self, metadata_file: Path, fields_to_remove: List[str]
+    ) -> Optional[CleanedSampleMetadata]:
+        """
+        Create a CleanedSampleMetadata model from a GSM metadata file.
+
+        Parameters
+        ----------
+        metadata_file : Path
+            Path to the GSM metadata JSON file
+        fields_to_remove : List[str]
+            List of fields to remove from metadata
+
+        Returns
+        -------
+        Optional[CleanedSampleMetadata]
+            Cleaned sample metadata model or None if failed
+        """
+        try:
+            with open(metadata_file, "r") as f:
+                data = json.load(f)
+
+            # Normalize field names before loading
+            data = self._normalize_field_names(data)
+
+            # Load as GSM metadata first
+            gsm_metadata = GSMMetadata(**data)
+
+            # Extract sample ID
+            sample_id = gsm_metadata.gsm_id
+
+            # Convert attributes to dict and clean
+            attributes_dict = gsm_metadata.attributes.model_dump()
+            cleaned_dict = self._remove_fields_from_dict(
+                attributes_dict, fields_to_remove
+            )
+
+            # Convert to KeyValue pairs
+            content = [
+                KeyValue(key=k, value=str(v))
+                for k, v in cleaned_dict.items()
+                if v is not None
+            ]
+
+            return CleanedSampleMetadata(
+                sample_id=sample_id,
+                content=content,
+                source_type="sample",
+                original_file_path=str(metadata_file),
+            )
+        except Exception as e:
+            print(f"❌ Error creating cleaned sample metadata: {str(e)}")
+            print(f"   File: {metadata_file}")
+            print(f"   Error type: {type(e).__name__}")
+            return None
+
+    def _create_cleaned_abstract_metadata(
+        self, metadata_file: Path, fields_to_remove: List[str]
+    ) -> Optional[CleanedAbstractMetadata]:
+        """
+        Create a CleanedAbstractMetadata model from a PMID metadata file.
+
+        Parameters
+        ----------
+        metadata_file : Path
+            Path to the PMID metadata JSON file
+        fields_to_remove : List[str]
+            List of fields to remove from metadata
+
+        Returns
+        -------
+        Optional[CleanedAbstractMetadata]
+            Cleaned abstract metadata model or None if failed
+        """
+        try:
+            with open(metadata_file, "r") as f:
+                data = json.load(f)
+
+            # Normalize field names before loading
+            data = self._normalize_field_names(data)
+
+            # Load as PMID metadata first
+            pmid_metadata = PMIDMetadata(**data)
+
+            # Extract PMID and convert to string
+            pmid = str(pmid_metadata.pmid)
+
+            # Convert to dict and clean
+            metadata_dict = pmid_metadata.model_dump()
+            cleaned_dict = self._remove_fields_from_dict(
+                metadata_dict, fields_to_remove
+            )
+
+            # Convert to KeyValue pairs
+            content = [
+                KeyValue(key=k, value=str(v))
+                for k, v in cleaned_dict.items()
+                if v is not None
+            ]
+
+            return CleanedAbstractMetadata(
+                pmid=pmid,
+                content=content,
+                source_type="abstract",
+                original_file_path=str(metadata_file),
+            )
+        except Exception as e:
+            print(f"❌ Error creating cleaned abstract metadata: {str(e)}")
+            print(f"   File: {metadata_file}")
+            print(f"   Error type: {type(e).__name__}")
+            return None
+
+    def _remove_fields_from_dict(
+        self, data_dict: Dict[str, Any], fields_to_remove: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Remove specified fields from a dictionary.
+
+        Parameters
+        ----------
+        data_dict : Dict[str, Any]
+            Dictionary to clean
+        fields_to_remove : List[str]
+            List of fields to remove
+
+        Returns
+        -------
+        Dict[str, Any]
+            Cleaned dictionary
+        """
+        cleaned = data_dict.copy()
+        for field in fields_to_remove:
+            if field in cleaned:
+                cleaned.pop(field)
+        return cleaned
 
     def _remove_fields_recursive(self, data: Any, fields_to_remove: List[str]):
         """
@@ -313,6 +476,30 @@ class LinkerTools:
         elif isinstance(data, list):
             for item in data:
                 self._remove_fields_recursive(item, fields_to_remove)
+
+    def _normalize_field_names(self, data_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize field names to handle variations in data format.
+
+        Parameters
+        ----------
+        data_dict : Dict[str, Any]
+            Dictionary with potentially inconsistent field names
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary with normalized field names
+        """
+        normalized = data_dict.copy()
+
+        # Handle contact_zip/postal_code field name variations
+        if "contact_zip/postal_code" in normalized:
+            normalized["contact_zip_postal_code"] = normalized.pop(
+                "contact_zip/postal_code"
+            )
+
+        return normalized
 
     def create_curation_data_package(
         self, sample_id: str, fields_to_remove: List[str] = None
@@ -372,51 +559,31 @@ class LinkerTools:
                     "mesh_terms",
                 ]
 
-            # Load and clean metadata content in memory
+            # Create cleaned metadata models
             series_metadata = None
             sample_metadata = None
             abstract_metadata = None
 
-            # Load and clean series metadata
+            # Create cleaned series metadata
             series_metadata_file = series_dir / f"{series_id}_metadata.json"
             if series_metadata_file.exists():
-                with open(series_metadata_file, 'r') as f:
-                    series_content = json.load(f)
-                # Clean the content in memory
-                self._remove_fields_recursive(series_content, fields_to_remove)
-                series_metadata = CleanedSeriesMetadata(
-                    series_id=series_id,
-                    content=series_content,
-                    original_file_path=str(series_metadata_file)
+                series_metadata = self._create_cleaned_series_metadata(
+                    series_metadata_file, fields_to_remove
                 )
 
-            # Load and clean sample metadata
+            # Create cleaned sample metadata
             sample_metadata_file = series_dir / f"{sample_id}_metadata.json"
             if sample_metadata_file.exists():
-                with open(sample_metadata_file, 'r') as f:
-                    sample_content = json.load(f)
-                # Clean the content in memory
-                self._remove_fields_recursive(sample_content, fields_to_remove)
-                sample_metadata = CleanedSampleMetadata(
-                    sample_id=sample_id,
-                    content=sample_content,
-                    original_file_path=str(sample_metadata_file)
+                sample_metadata = self._create_cleaned_sample_metadata(
+                    sample_metadata_file, fields_to_remove
                 )
 
-            # Load and clean abstract metadata
+            # Create cleaned abstract metadata
             abstract_files = list(series_dir.glob("PMID_*_metadata.json"))
             if abstract_files:
                 abstract_file = abstract_files[0]  # Take the first one
-                with open(abstract_file, 'r') as f:
-                    abstract_content = json.load(f)
-                # Clean the content in memory
-                self._remove_fields_recursive(abstract_content, fields_to_remove)
-                # Extract PMID from filename
-                pmid = abstract_file.stem.replace("PMID_", "").replace("_metadata", "")
-                abstract_metadata = CleanedAbstractMetadata(
-                    pmid=pmid,
-                    content=abstract_content,
-                    original_file_path=str(abstract_file)
+                abstract_metadata = self._create_cleaned_abstract_metadata(
+                    abstract_file, fields_to_remove
                 )
 
             # Create the curation data package
@@ -424,7 +591,7 @@ class LinkerTools:
                 sample_id=sample_id,
                 series_metadata=series_metadata,
                 sample_metadata=sample_metadata,
-                abstract_metadata=abstract_metadata
+                abstract_metadata=abstract_metadata,
             )
 
             return create_success_result(
@@ -432,7 +599,7 @@ class LinkerTools:
                 f"Created curation data package for {sample_id} with cleaned metadata",
                 data={"curation_package": curation_package.model_dump()},
                 files_created=[],  # No files created since we clean in memory
-                session_id=getattr(self, 'session_id', None)
+                session_id=getattr(self, "session_id", None),
             )
 
         except Exception as e:
@@ -442,10 +609,8 @@ class LinkerTools:
                 LinkerResult,
                 f"Error creating curation data package: {str(e)}",
                 errors=[str(e)],
-                session_id=getattr(self, 'session_id', None)
+                session_id=getattr(self, "session_id", None),
             )
-
-
 
     def process_multiple_samples(
         self, sample_ids: List[str], fields_to_remove: List[str] = None
@@ -475,36 +640,42 @@ class LinkerTools:
 
             for sample_id in sample_ids:
                 print(f"🔧 Processing sample: {sample_id}")
-                
+
                 # Process each sample individually
                 result = self.package_linked_data(sample_id, fields_to_remove)
-                
+
                 if result.success:
                     successful_samples.append(sample_id)
                     if result.files_created:
                         all_files_created.extend(result.files_created)
-                    results.append({
-                        "sample_id": sample_id,
-                        "success": True,
-                        "message": result.message,
-                        "files_created": result.files_created or []
-                    })
+                    results.append(
+                        {
+                            "sample_id": sample_id,
+                            "success": True,
+                            "message": result.message,
+                            "files_created": result.files_created or [],
+                        }
+                    )
                 else:
                     failed_samples.append(sample_id)
-                    results.append({
-                        "sample_id": sample_id,
-                        "success": False,
-                        "message": result.message,
-                        "errors": result.errors or []
-                    })
+                    results.append(
+                        {
+                            "sample_id": sample_id,
+                            "success": False,
+                            "message": result.message,
+                            "errors": result.errors or [],
+                        }
+                    )
 
             # Create summary
             summary = {
                 "total_samples": len(sample_ids),
                 "successful_samples": successful_samples,
                 "failed_samples": failed_samples,
-                "success_rate": len(successful_samples) / len(sample_ids) if sample_ids else 0,
-                "individual_results": results
+                "success_rate": len(successful_samples) / len(sample_ids)
+                if sample_ids
+                else 0,
+                "individual_results": results,
             }
 
             if failed_samples:
@@ -514,7 +685,7 @@ class LinkerTools:
                     errors=[f"Failed to process: {failed_samples}"],
                     data={"summary": summary},
                     files_created=all_files_created,
-                    session_id=getattr(self, 'session_id', None)
+                    session_id=getattr(self, "session_id", None),
                 )
             else:
                 return create_success_result(
@@ -522,7 +693,7 @@ class LinkerTools:
                     f"Successfully processed all {len(sample_ids)} samples",
                     data={"summary": summary},
                     files_created=all_files_created,
-                    session_id=getattr(self, 'session_id', None)
+                    session_id=getattr(self, "session_id", None),
                 )
 
         except Exception as e:
@@ -532,7 +703,7 @@ class LinkerTools:
                 LinkerResult,
                 f"Error processing multiple samples: {str(e)}",
                 errors=[str(e)],
-                session_id=getattr(self, 'session_id', None)
+                session_id=getattr(self, "session_id", None),
             )
 
     def package_linked_data(
@@ -625,7 +796,7 @@ class LinkerTools:
                 f"Successfully packaged linked data for sample {sample_id} with cleaned metadata (series matrix functionality removed)",
                 data={"packaged_data": packaged_data},
                 files_created=[str(packaged_file)],
-                session_id=getattr(self, 'session_id', None)
+                session_id=getattr(self, "session_id", None),
             )
 
         except Exception as e:
@@ -719,9 +890,6 @@ def clean_metadata_files_impl(
         traceback.print_exc()
         # Re-raise the exception to preserve the traceback
         raise
-
-
-
 
 
 def create_curation_data_package_impl(

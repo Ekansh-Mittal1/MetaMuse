@@ -6,159 +6,191 @@ capabilities, allowing agents to produce validated, typed outputs that
 can be seamlessly passed between agents or consumed by workflows.
 """
 
-from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import List, Optional, Dict
 from pydantic import BaseModel, Field, ConfigDict
 
-from .metadata_models import (
-    GSMMetadata,
-    GSEMetadata, 
-    PMIDMetadata,
-    SeriesSampleMapping,
-    LinkedData
-)
-from .result_models import CandidateExtraction
 from .common import KeyValue
+from .metadata_models import (
+    CleanedSeriesMetadata,
+    CleanedSampleMetadata,
+    CleanedAbstractMetadata,
+)
 
 
 class IngestionOutput(BaseModel):
     """Structured output from IngestionAgent."""
-    
+
     model_config = ConfigDict(extra="forbid")
-    
+
     # Execution summary
     success: bool = Field(..., description="Whether ingestion completed successfully")
     message: str = Field(..., description="Summary of ingestion results")
-    execution_time_seconds: float = Field(..., ge=0, description="Time taken for execution")
-    
+    execution_time_seconds: float = Field(
+        ..., ge=0, description="Time taken for execution"
+    )
+
     # Input tracking
-    geo_ids_requested: List[str] = Field(..., description="List of GEO/PMID IDs requested")
+    geo_ids_requested: List[str] = Field(
+        ..., description="List of GEO/PMID IDs requested"
+    )
     extraction_type: str = Field(..., description="Type of extraction performed")
-    
+
     # Output data (strict JSON schema compatible)
     extracted_metadata: Optional[List[KeyValue]] = Field(
-        default=None,
-        description="Raw extracted metadata as key-value pairs"
+        default=None, description="Raw extracted metadata as key-value pairs"
     )
     series_sample_mapping: Optional[List[KeyValue]] = Field(
-        default=None,
-        description="Series to sample mapping as key-value pairs"
+        default=None, description="Series to sample mapping as key-value pairs"
     )
-    
+
     # File management
     session_directory: str = Field(..., description="Path to session directory")
-    files_created: List[str] = Field(default_factory=list, description="Files created during ingestion")
-    
+    files_created: List[str] = Field(
+        default_factory=list, description="Files created during ingestion"
+    )
+
     # Processing summary
-    successful_extractions: List[str] = Field(default_factory=list, description="Successfully processed IDs")
-    failed_extractions: List[str] = Field(default_factory=list, description="Failed extraction IDs")
+    successful_extractions: List[str] = Field(
+        default_factory=list, description="Successfully processed IDs"
+    )
+    failed_extractions: List[str] = Field(
+        default_factory=list, description="Failed extraction IDs"
+    )
     warnings: List[str] = Field(default_factory=list, description="Warnings generated")
-    
+
     # Handoff data for next agent
     sample_ids_for_linking: List[str] = Field(
-        default_factory=list,
-        description="Sample IDs ready for linking process"
+        default_factory=list, description="Sample IDs ready for linking process"
     )
 
 
 class LinkerOutput(BaseModel):
     """Structured output from LinkerAgent."""
-    
+
     model_config = ConfigDict(extra="forbid")
-    
+
     # Execution summary
     success: bool = Field(..., description="Whether linking completed successfully")
     message: str = Field(..., description="Summary of linking results")
-    execution_time_seconds: float = Field(..., ge=0, description="Time taken for execution")
-    
+    execution_time_seconds: float = Field(
+        ..., ge=0, description="Time taken for execution"
+    )
+
     # Input tracking
-    sample_ids_requested: List[str] = Field(..., description="Sample IDs requested for linking")
+    sample_ids_requested: List[str] = Field(
+        ..., description="Sample IDs requested for linking"
+    )
     session_directory: str = Field(..., description="Session directory used")
-    
+
     # Processing configuration
     fields_removed_during_cleaning: List[str] = Field(
         default_factory=list,
-        description="Fields that were removed during metadata cleaning"
+        description="Fields that were removed during metadata cleaning",
     )
-    
+
     # Output data (strict JSON schema compatible)
     linked_data: Optional[List[KeyValue]] = Field(
-        default=None,
-        description="Linked data objects as key-value pairs"
+        default=None, description="Linked data objects as key-value pairs"
     )
     cleaned_metadata_files: Optional[List[KeyValue]] = Field(
-        default=None,
-        description="Paths to cleaned metadata files as key-value pairs"
+        default=None, description="Paths to cleaned metadata files as key-value pairs"
     )
-    
-    # File management  
-    files_created: List[str] = Field(default_factory=list, description="Files created during linking")
-    
+
+    # Cleaned metadata content
+    cleaned_series_metadata: Optional[Dict[str, CleanedSeriesMetadata]] = Field(
+        default=None, description="Cleaned series metadata by series ID"
+    )
+    cleaned_sample_metadata: Optional[Dict[str, CleanedSampleMetadata]] = Field(
+        default=None, description="Cleaned sample metadata by sample ID"
+    )
+    cleaned_abstract_metadata: Optional[Dict[str, CleanedAbstractMetadata]] = Field(
+        default=None, description="Cleaned abstract metadata by PMID"
+    )
+
+    # File management
+    files_created: List[str] = Field(
+        default_factory=list, description="Files created during linking"
+    )
+
     # Processing summary
-    successfully_linked: List[str] = Field(default_factory=list, description="Successfully linked sample IDs")
-    failed_linking: List[str] = Field(default_factory=list, description="Failed linking sample IDs")
+    successfully_linked: List[str] = Field(
+        default_factory=list, description="Successfully linked sample IDs"
+    )
+    failed_linking: List[str] = Field(
+        default_factory=list, description="Failed linking sample IDs"
+    )
     warnings: List[str] = Field(default_factory=list, description="Warnings generated")
-    
+
     # Handoff data for next agent
     sample_ids_for_curation: List[str] = Field(
-        default_factory=list,
-        description="Sample IDs ready for curation process"
+        default_factory=list, description="Sample IDs ready for curation process"
     )
     recommended_curation_fields: List[str] = Field(
-        default_factory=list,
-        description="Suggested metadata fields for curation"
+        default_factory=list, description="Suggested metadata fields for curation"
     )
 
 
 class CuratorOutput(BaseModel):
     """Structured output from CuratorAgent."""
-    
+
     model_config = ConfigDict(extra="forbid")
-    
+
     # Execution summary
     success: bool = Field(..., description="Whether curation completed successfully")
     message: str = Field(..., description="Summary of curation results")
-    execution_time_seconds: float = Field(..., ge=0, description="Time taken for execution")
-    
+    execution_time_seconds: float = Field(
+        ..., ge=0, description="Time taken for execution"
+    )
+
     # Input tracking
-    sample_ids_requested: List[str] = Field(..., description="Sample IDs requested for curation")
+    sample_ids_requested: List[str] = Field(
+        ..., description="Sample IDs requested for curation"
+    )
     target_field: str = Field(..., description="Target metadata field that was curated")
     session_directory: str = Field(..., description="Session directory used")
-    
+
     # Output data (strict JSON schema compatible)
     curation_results: Optional[List[KeyValue]] = Field(
-        default=None,
-        description="Detailed curation results as key-value pairs"
+        default=None, description="Detailed curation results as key-value pairs"
     )
-    
+
     # Summary statistics
-    total_samples_processed: int = Field(..., ge=0, description="Total samples processed")
-    successful_curations: int = Field(..., ge=0, description="Successfully curated samples")
-    samples_needing_review: int = Field(..., ge=0, description="Samples requiring manual review")
-    
+    total_samples_processed: int = Field(
+        ..., ge=0, description="Total samples processed"
+    )
+    successful_curations: int = Field(
+        ..., ge=0, description="Successfully curated samples"
+    )
+    samples_needing_review: int = Field(
+        ..., ge=0, description="Samples requiring manual review"
+    )
+
     # File management
-    files_created: List[str] = Field(default_factory=list, description="Files created during curation")
+    files_created: List[str] = Field(
+        default_factory=list, description="Files created during curation"
+    )
     curation_results_file: Optional[str] = Field(
         None, description="Path to detailed curation results file"
     )
-    
+
     # Quality metrics
     average_confidence: Optional[float] = Field(
         None, ge=0.0, le=1.0, description="Average confidence across all curations"
     )
-    
+
     # Processing summary
     warnings: List[str] = Field(default_factory=list, description="Warnings generated")
 
 
 # Utility functions for creating outputs
 
+
 def create_successful_ingestion_output(
     geo_ids: List[str],
     extraction_type: str,
     session_dir: str,
     execution_time: float,
-    **kwargs
+    **kwargs,
 ) -> IngestionOutput:
     """Create a successful ingestion output."""
     return IngestionOutput(
@@ -168,15 +200,12 @@ def create_successful_ingestion_output(
         geo_ids_requested=geo_ids,
         extraction_type=extraction_type,
         session_directory=session_dir,
-        **kwargs
+        **kwargs,
     )
 
 
 def create_successful_linker_output(
-    sample_ids: List[str],
-    session_dir: str,
-    execution_time: float,
-    **kwargs
+    sample_ids: List[str], session_dir: str, execution_time: float, **kwargs
 ) -> LinkerOutput:
     """Create a successful linker output."""
     return LinkerOutput(
@@ -185,7 +214,7 @@ def create_successful_linker_output(
         execution_time_seconds=execution_time,
         sample_ids_requested=sample_ids,
         session_directory=session_dir,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -194,7 +223,7 @@ def create_successful_curator_output(
     target_field: str,
     session_dir: str,
     execution_time: float,
-    **kwargs
+    **kwargs,
 ) -> CuratorOutput:
     """Create a successful curator output."""
     return CuratorOutput(
@@ -205,5 +234,5 @@ def create_successful_curator_output(
         target_field=target_field,
         session_directory=session_dir,
         total_samples_processed=len(sample_ids),
-        **kwargs
-    ) 
+        **kwargs,
+    )

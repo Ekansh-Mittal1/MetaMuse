@@ -9,25 +9,23 @@ and reconciling conflicts across multiple data sources.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 from uuid import uuid4
 
 from agents import Agent, RunContextWrapper
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from pydantic import Field
-from typing import Optional
 from src.agents.handoff_base import BaseHandoff
 
-from src.agents.tool_utils import get_session_tools
+from src.agents.tool_utils import get_curator_tools
 from src.utils.prompts import load_prompt
 
-# Import Pydantic models for structured data  
-from src.models import (
-    LinkerOutput, 
-    CuratorOutput,
-    CurationDataPackage,
-    CurationResult,
-    ExtractedCandidate
-)
+# Import Pydantic models for structured data
+from src.models import CuratorOutput, CurationDataPackage
+from src.models.agent_outputs import LinkerOutput
+
+# Module-level variable to store data_intake_output for tool access
+_data_intake_output: Optional[LinkerOutput] = None
 
 
 class CuratorHandoff(BaseHandoff):
@@ -45,7 +43,7 @@ class CuratorHandoff(BaseHandoff):
         ...,
         description="Path to the session directory for saving output files.",
     )
-    
+
     # Following DendroForge pattern: no complex nested structures in handoffs
     # linker_output: Optional[LinkerOutput] = Field(
     #     default=None,
@@ -68,7 +66,7 @@ class SimpleCuratorHandoff(BaseHandoff):
         ...,
         description="Path to the session directory for saving output files.",
     )
-    
+
     # Note: We don't include the full CurationDataPackage objects here
     # The CuratorAgent will load the data it needs from the session directory
     # This avoids the Dict[str, Any] content fields that cause schema validation issues
@@ -85,6 +83,7 @@ def create_curator_agent(
     handoffs: list = None,
     existing_session_dir: str = None,
     input_data: str = None,
+    data_intake_output: Optional[LinkerOutput] = None,
 ) -> Agent:
     """
     Factory method to create a metadata curation agent.
@@ -92,7 +91,7 @@ def create_curator_agent(
     This agent is responsible for performing metadata curation tasks on
     GEO samples, including extracting candidate values for specific metadata
     fields and reconciling conflicts across multiple data sources.
-    
+
     The agent is configured with structured output capabilities to produce
     validated CuratorOutput objects directly using the output_type parameter.
 
@@ -108,6 +107,9 @@ def create_curator_agent(
         Path to an existing session directory to use instead of creating a new one
     input_data : str, optional
         Input data string that may contain sample IDs and target field information
+    data_intake_output : LinkerOutput, optional
+        Complete structured output from the data_intake workflow. Only provided when
+        the hybrid pipeline is being invoked. Use get_data_intake_context() tool to access this data.
 
     Returns
     -------
@@ -144,7 +146,15 @@ def create_curator_agent(
             session_dir = (Path(sandbox_dir) / session_id).absolute()
             session_dir.mkdir(parents=True, exist_ok=True)
 
-        tools = get_session_tools(session_dir)
+        # Store data_intake_output for the tool to access
+        if data_intake_output:
+            print(f"📊 CuratorAgent: Data intake output provided for hybrid pipeline")
+            # Store in a module-level variable that the tool can access
+            import src.agents.curator as curator_module
+
+            curator_module._data_intake_output = data_intake_output
+
+        tools = get_curator_tools(session_dir)
         print(f"✅ CuratorAgent: Initialized with {len(tools)} tools")
 
         # Load extraction template based on target field
@@ -156,12 +166,12 @@ def create_curator_agent(
                 # Simple parsing for development
                 parts = input_data.split("target_field=")
                 if len(parts) > 1:
-                    target_field = parts[1].split()[0].strip('"\'')
+                    target_field = parts[1].split()[0].strip("\"'")
             elif "target_field:" in input_data.lower():
                 # Support colon format as well
                 parts = input_data.split("target_field:")
                 if len(parts) > 1:
-                    target_field = parts[1].split()[0].strip('"\'')
+                    target_field = parts[1].split()[0].strip("\"'")
             elif "disease" in input_data.lower():
                 target_field = "Disease"
             elif "tissue" in input_data.lower():
@@ -170,11 +180,16 @@ def create_curator_agent(
                 target_field = "Age"
             elif "organ" in input_data.lower():
                 target_field = "Organ"
-        
+
         try:
-            template_file = Path(__file__).parent.parent / "prompts" / "extraction_templates" / f"{target_field.lower()}.md"
+            template_file = (
+                Path(__file__).parent.parent
+                / "prompts"
+                / "extraction_templates"
+                / f"{target_field.lower()}.md"
+            )
             if template_file.exists():
-                with open(template_file, 'r', encoding='utf-8') as f:
+                with open(template_file, "r", encoding="utf-8") as f:
                     extraction_template = f.read()
             else:
                 extraction_template = "# Generic Extraction Template\nExtract relevant candidates for the target field."
@@ -182,12 +197,31 @@ def create_curator_agent(
             print(f"⚠️  Could not load extraction template for {target_field}: {e}")
             extraction_template = "# Generic Extraction Template\nExtract relevant candidates for the target field."
 
-        # Load the base instructions and inject the template
-        base_instructions = load_prompt("curator_agent_v2.md", session_dir=str(session_dir))
+        # Load the appropriate base instructions based on mode
+        if data_intake_output:
+            # Hybrid mode: data comes from data_intake workflow
+            base_instructions = load_prompt(
+                "curator_agent_hybrid.md", session_dir=str(session_dir)
+            )
+            print(
+                "📋 CuratorAgent: Using hybrid mode prompt (data from data_intake workflow)"
+            )
+        else:
+            # Standalone mode: data comes from previous agents
+            base_instructions = load_prompt(
+                "curator_agent_standalone.md", session_dir=str(session_dir)
+            )
+            print(
+                "📋 CuratorAgent: Using standalone mode prompt (data from previous agents)"
+            )
+
         instructions = (
             RECOMMENDED_PROMPT_PREFIX
             + "\n\n"
             + base_instructions.replace("{EXTRACTION_TEMPLATE}", extraction_template)
+            + f"\n\n## Session Information\n"
+            + f"Session Directory: {session_dir}\n"
+            + f"Session ID: {session_id}\n"
         )
 
         agent = Agent(
@@ -195,7 +229,7 @@ def create_curator_agent(
             instructions=instructions,
             tools=tools,
             handoffs=handoffs or [],
-            output_type=CuratorOutput
+            output_type=CuratorOutput,
         )
 
         return agent
@@ -206,4 +240,4 @@ def create_curator_agent(
 
         print("🔍 CuratorAgent creation traceback:")
         traceback.print_exc()
-        raise 
+        raise

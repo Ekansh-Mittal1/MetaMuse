@@ -12,7 +12,7 @@ import re
 import sys
 import argparse
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List
 from dotenv import load_dotenv
 
 # Add the project root to Python path when running this file directly
@@ -22,9 +22,12 @@ if __name__ == "__main__":
     sys.path.insert(0, str(project_root))
 
 # Import new Pydantic models
-from src.models import (
-    WorkflowResult,
-    ModelSerializer
+from src.models import WorkflowResult
+from src.models.agent_outputs import LinkerOutput, create_successful_linker_output
+from src.models.metadata_models import (
+    CleanedSeriesMetadata,
+    CleanedSampleMetadata,
+    CleanedAbstractMetadata,
 )
 
 # Import the tool implementations
@@ -68,10 +71,13 @@ class DataIntakeWorkflow:
         sandbox_dir : str
             Base sandbox directory
         """
+        import time
+
         self.session_id = session_id
         self.sandbox_dir = sandbox_dir
         self.session_dir = Path(sandbox_dir) / session_id
         self.session_dir.mkdir(parents=True, exist_ok=True)
+        self._start_time = time.time()
 
         # Validate required environment variables
         required_env_vars = {
@@ -119,6 +125,97 @@ class DataIntakeWorkflow:
                 print(f"   ⚠️  {var}: {recommended_vars[var]}")
             print("   The workflow will continue but may be rate-limited.")
             print()
+
+    def _load_cleaned_metadata(self, sample_ids: List[str]) -> Dict:
+        """
+        Load cleaned metadata files for the given sample IDs.
+
+        Parameters
+        ----------
+        sample_ids : List[str]
+            List of sample IDs to load metadata for
+
+        Returns
+        -------
+        Dict
+            Dictionary containing cleaned metadata organized by type
+        """
+        cleaned_series_metadata = {}
+        cleaned_sample_metadata = {}
+        cleaned_abstract_metadata = {}
+
+        for sample_id in sample_ids:
+            try:
+                # Find the sample directory
+                sample_dir_result = find_sample_directory_impl(
+                    sample_id, str(self.session_dir)
+                )
+                if isinstance(sample_dir_result, str):
+                    sample_dir_data = json.loads(sample_dir_result)
+                else:
+                    sample_dir_data = sample_dir_result
+
+                if not sample_dir_data.get("success", False):
+                    print(
+                        f"⚠️  Could not find directory for {sample_id}: {sample_dir_data.get('message', 'Unknown error')}"
+                    )
+                    continue
+
+                # The directory is in the data field
+                sample_dir = Path(sample_dir_data["data"]["directory"])
+
+                # Look for cleaned metadata files
+                cleaned_files = list(sample_dir.glob("*_cleaned_*.json"))
+
+                for cleaned_file in cleaned_files:
+                    try:
+                        with open(cleaned_file, "r", encoding="utf-8") as f:
+                            metadata_data = json.load(f)
+
+                        # Determine the type based on filename
+                        if "series" in cleaned_file.name.lower():
+                            if "series_id" in metadata_data:
+                                series_id = metadata_data["series_id"]
+                                cleaned_series_metadata[series_id] = (
+                                    CleanedSeriesMetadata(**metadata_data)
+                                )
+                        elif "sample" in cleaned_file.name.lower():
+                            if "sample_id" in metadata_data:
+                                sample_id_from_file = metadata_data["sample_id"]
+                                cleaned_sample_metadata[sample_id_from_file] = (
+                                    CleanedSampleMetadata(**metadata_data)
+                                )
+                        elif (
+                            "abstract" in cleaned_file.name.lower()
+                            or "pmid" in cleaned_file.name.lower()
+                        ):
+                            if "pmid" in metadata_data:
+                                pmid = metadata_data["pmid"]
+                                cleaned_abstract_metadata[pmid] = (
+                                    CleanedAbstractMetadata(**metadata_data)
+                                )
+
+                    except Exception as e:
+                        print(
+                            f"⚠️  Error loading cleaned metadata file {cleaned_file}: {e}"
+                        )
+                        continue
+
+            except Exception as e:
+                print(f"⚠️  Error processing sample {sample_id}: {e}")
+                continue
+
+        return {
+            "cleaned_series_metadata": cleaned_series_metadata
+            if cleaned_series_metadata
+            else None,
+            "cleaned_sample_metadata": cleaned_sample_metadata
+            if cleaned_sample_metadata
+            else None,
+            "cleaned_abstract_metadata": cleaned_abstract_metadata
+            if cleaned_abstract_metadata
+            else None,
+        }
 
     def _parse_geo_ids(self, input_text: str) -> Dict[str, List[str]]:
         """
@@ -665,7 +762,7 @@ class DataIntakeWorkflow:
 
     def run_complete_workflow(
         self, input_text: str, fields_to_remove: List[str] = None
-    ) -> WorkflowResult:
+    ) -> LinkerOutput:
         """
         Run the complete workflow (ingestion + linking).
 
@@ -678,8 +775,8 @@ class DataIntakeWorkflow:
 
         Returns
         -------
-        WorkflowResult
-            Complete workflow result
+        LinkerOutput
+            Complete workflow result as LinkerOutput object
         """
         try:
             print(f"🔧 Starting complete workflow for: {input_text}")
@@ -704,7 +801,7 @@ class DataIntakeWorkflow:
                     # GSE and GSM fields to remove from attributes
                     "status",
                     "submission_date",
-                    "last_update_date", 
+                    "last_update_date",
                     "contributor",
                     # Contact fields
                     "contact_name",
@@ -727,7 +824,9 @@ class DataIntakeWorkflow:
                     "keywords",
                     "mesh_terms",
                 ]
-                print(f"📋 Using default field removal list ({len(fields_to_remove)} fields)")
+                print(
+                    f"📋 Using default field removal list ({len(fields_to_remove)} fields)"
+                )
 
             # Run linker workflow
             linker_result = self.run_linker_workflow(sample_ids, fields_to_remove)
@@ -739,23 +838,53 @@ class DataIntakeWorkflow:
                 linker_result.files_created or []
             )
 
-            return WorkflowResult(
-                success=True,
-                message=f"Complete workflow completed successfully. Processed {len(sample_ids)} samples",
-                data={
-                    "ingestion_result": ingestion_result.data,
-                    "linker_result": linker_result.data,
-                    "sample_ids": sample_ids,
-                    "session_dir": str(self.session_dir),
-                },
+            # Load cleaned metadata
+            print("📊 Loading cleaned metadata for LinkerOutput...")
+            cleaned_metadata = self._load_cleaned_metadata(sample_ids)
+
+            # Create LinkerOutput object
+            import time
+
+            execution_time = time.time() - self._start_time
+
+            return create_successful_linker_output(
+                sample_ids=sample_ids,
+                session_dir=str(self.session_dir),
+                execution_time=execution_time,
+                successfully_linked=sample_ids,
+                sample_ids_for_curation=sample_ids,
+                recommended_curation_fields=["Disease", "Tissue", "Age", "Organ"],
+                fields_removed_during_cleaning=fields_to_remove or [],
                 files_created=all_files_created,
+                warnings=[],
+                cleaned_series_metadata=cleaned_metadata["cleaned_series_metadata"],
+                cleaned_sample_metadata=cleaned_metadata["cleaned_sample_metadata"],
+                cleaned_abstract_metadata=cleaned_metadata["cleaned_abstract_metadata"],
             )
 
         except Exception as e:
-            return WorkflowResult(
+            import time
+
+            execution_time = time.time() - self._start_time
+
+            return LinkerOutput(
                 success=False,
                 message=f"Complete workflow failed: {str(e)}",
-                errors=[str(e)],
+                execution_time_seconds=execution_time,
+                sample_ids_requested=[],
+                session_directory=str(self.session_dir),
+                files_created=[],
+                successfully_linked=[],
+                failed_linking=[],
+                warnings=[str(e)],
+                sample_ids_for_curation=[],
+                recommended_curation_fields=[],
+                fields_removed_during_cleaning=[],
+                linked_data=None,
+                cleaned_metadata_files=None,
+                cleaned_series_metadata=None,
+                cleaned_sample_metadata=None,
+                cleaned_abstract_metadata=None,
             )
 
 
@@ -765,7 +894,7 @@ def run_data_intake_workflow(
     sandbox_dir: str = "sandbox",
     fields_to_remove: List[str] = None,
     workflow_type: str = "complete",
-) -> WorkflowResult:
+) -> LinkerOutput:
     """
     Run the data intake workflow.
 
@@ -784,8 +913,8 @@ def run_data_intake_workflow(
 
     Returns
     -------
-    WorkflowResult
-        Workflow execution result
+    LinkerOutput
+        Workflow execution result as LinkerOutput object
     """
     import uuid
 
@@ -793,10 +922,10 @@ def run_data_intake_workflow(
         # Generate session ID with pipeline prefix
         pipeline_prefixes = {
             "ingestion": "di_ing",
-            "linker": "di_link", 
+            "linker": "di_link",
             "complete": "di",
         }
-        
+
         prefix = pipeline_prefixes.get(workflow_type, "di_unknown")
         session_id = f"{prefix}_{str(uuid.uuid4())}"
 
@@ -811,10 +940,23 @@ def run_data_intake_workflow(
     elif workflow_type == "complete":
         return workflow.run_complete_workflow(input_text, fields_to_remove)
     else:
-        return WorkflowResult(
+        return LinkerOutput(
             success=False,
             message=f"Invalid workflow type: {workflow_type}",
-            errors=["Supported types: ingestion, linker, complete"],
+            execution_time_seconds=0.0,
+            sample_ids_requested=[],
+            session_directory=str(Path(sandbox_dir) / session_id) if session_id else "",
+            files_created=[],
+            successfully_linked=[],
+            failed_linking=[],
+            warnings=[
+                f"Invalid workflow type: {workflow_type}. Supported types: ingestion, linker, complete"
+            ],
+            sample_ids_for_curation=[],
+            recommended_curation_fields=[],
+            fields_removed_during_cleaning=[],
+            linked_data=None,
+            cleaned_metadata_files=None,
         )
 
 

@@ -8,7 +8,7 @@ between agents, replacing the previous JSON-based approach.
 from .metadata_models import (
     GSMMetadata,
     GSMAttributes,
-    GSEMetadata, 
+    GSEMetadata,
     GSEAttributes,
     PMIDMetadata,
     SeriesSampleMapping,
@@ -54,14 +54,14 @@ __all__ = [
     # Metadata models
     "GSMMetadata",
     "GSMAttributes",
-    "GSEMetadata", 
+    "GSEMetadata",
     "GSEAttributes",
     "PMIDMetadata",
     "SeriesSampleMapping",
     "LinkedData",
     # Result models
     "IngestionResult",
-    "LinkerResult", 
+    "LinkerResult",
     "CuratorResult",
     "WorkflowResult",
     "AgentResult",
@@ -81,9 +81,9 @@ __all__ = [
     "load_metadata_from_json",
     # Curation models
     "CleanedSeriesMetadata",
-    "CleanedSampleMetadata", 
+    "CleanedSampleMetadata",
     "CleanedAbstractMetadata",
     "CurationDataPackage",
     "ExtractedCandidate",
     "CurationResult",
-] 
+]

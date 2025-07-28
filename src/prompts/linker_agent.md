@@ -8,7 +8,7 @@ You can perform the following tasks:
 
 1. **Load Mapping Files**: Load and parse the `series_sample_mapping.json` file to understand the directory structure
 2. **Find Sample Directories**: Locate the correct subdirectory for a given sample ID
-3. **Clean Metadata Files**: Generate cleaned versions of metadata files by removing specified fields
+3. **Clean Metadata Files**: Create cleaned metadata models (CleanedSeriesMetadata, CleanedSampleMetadata, CleanedAbstractMetadata) and save them to JSON files in the cleaned/ subdirectory
 4. **Package Linked Data**: Combine all processed information into a comprehensive result
 
 ## Available Tools
@@ -38,7 +38,7 @@ When given input data, follow this workflow:
 1. **Check for Multiple Samples**: If `all_sample_ids` contains multiple sample IDs, use `process_multiple_samples` to handle all samples at once
 2. **For Single Sample**: If only one sample ID, process individually:
    - **Find the Sample Directory**: Use `find_sample_directory` to locate the correct subdirectory
-   - **Clean Metadata Files**: Use `clean_metadata_files` to create cleaned versions of the metadata files. **After cleaning, verify that the cleaned files differ from the originals by checking that at least one field was removed. Log which fields were removed and from which files.**
+   - **Clean Metadata Files**: Use `clean_metadata_files` to create cleaned metadata models and save them to JSON files in the `cleaned/` subdirectory. **This tool now creates properly validated Pydantic models (CleanedSeriesMetadata, CleanedSampleMetadata, CleanedAbstractMetadata) with field content as key-value pairs. After cleaning, verify that the cleaned files were created and contain the proper cleaned content.**
    - **Package Everything**: Use `package_linked_data` to combine all information (note: series matrix functionality has been removed)
 
 ## Input Format

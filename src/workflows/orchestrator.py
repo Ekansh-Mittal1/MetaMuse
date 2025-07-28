@@ -1,5 +1,5 @@
 from typing import Callable
-from agents import RunResultStreaming, Runner, RunConfig, ModelSettings
+from agents import RunResultStreaming, Runner, RunConfig, ModelSettings, ItemHelpers
 from openai.types.shared import Reasoning
 from pathlib import Path
 import os
@@ -107,19 +107,89 @@ class SimpleOrchestrator:
                     ),
                 )
 
-            # Run the workflow
+            # Run the workflow with streaming
             try:
                 # Get max_turns from kwargs or use a higher default for LinkerAgent
-                max_turns = kwargs.get("max_turns", 50)  # Increased from default 10
+                max_turns = kwargs.get("max_turns", 100)  # Increased from default 10
                 print(f"🔧 Debug: Using max_turns={max_turns}")
 
-                result = await Runner.run(
+                result = Runner.run_streamed(
                     entry_agent, input_data, run_config=run_config, max_turns=max_turns
                 )
+
+                print("🔄 Starting streaming execution...")
+
+                # Handle streaming events
+                async for event in result.stream_events():
+                    # Ignore raw response events (token-by-token streaming)
+                    if event.type == "raw_response_event":
+                        continue
+
+                    # Handle agent updates (handoffs)
+                    elif event.type == "agent_updated_stream_event":
+                        print(f"🔄 Agent Updated: {event.new_agent.name}")
+                        continue
+
+                    # Handle run item events (tool calls, outputs, messages)
+                    elif event.type == "run_item_stream_event":
+                        if event.item.type == "tool_call_item":
+                            # Try different possible attribute names for tool name
+                            tool_name = None
+                            if hasattr(event.item, "tool_name"):
+                                tool_name = event.item.tool_name
+                            elif hasattr(event.item, "name"):
+                                tool_name = event.item.name
+                            elif hasattr(event.item, "function_name"):
+                                tool_name = event.item.function_name
+                            elif hasattr(event.item, "tool_call"):
+                                tool_call = event.item.tool_call
+                                if hasattr(tool_call, "name"):
+                                    tool_name = tool_call.name
+                                elif hasattr(tool_call, "function_name"):
+                                    tool_name = tool_call.function_name
+                            else:
+                                tool_name = "Unknown Tool"
+                            print(f"🔧 Tool Called: {tool_name}")
+                        elif event.item.type == "tool_call_output_item":
+                            output = getattr(event.item, "output", "No output")
+                            # Try to extract tool name from output if it's a structured result
+                            tool_name = "Unknown Tool"
+                            if isinstance(output, dict) and "tool_name" in output:
+                                tool_name = output["tool_name"]
+                            elif isinstance(output, str):
+                                # Try to parse as JSON to get tool_name
+                                try:
+                                    import json
+
+                                    parsed_output = json.loads(output)
+                                    if (
+                                        isinstance(parsed_output, dict)
+                                        and "tool_name" in parsed_output
+                                    ):
+                                        tool_name = parsed_output["tool_name"]
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                            # Truncate long outputs for cleaner display
+                            if isinstance(output, str) and len(output) > 200:
+                                output_display = output[:200] + "..."
+                            else:
+                                output_display = output
+                            print(f"📤 Tool Output ({tool_name}): {output_display}")
+                        elif event.item.type == "message_output_item":
+                            message_content = ItemHelpers.text_message_output(
+                                event.item
+                            )
+                            print(f"💬 Agent Message: {message_content}")
+                        else:
+                            # Handle other event types if needed
+                            pass
+
+                print("✅ Streaming execution completed")
                 return result
+
             except Exception as e:
-                print(f"❌ Runner.run failed: {str(e)}")
-                print("🔍 Runner.run traceback:")
+                print(f"❌ Runner.run_streamed failed: {str(e)}")
+                print("🔍 Runner.run_streamed traceback:")
                 import traceback
 
                 traceback.print_exc()

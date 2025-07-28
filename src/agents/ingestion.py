@@ -31,7 +31,7 @@ class IngestionHandoff(BaseHandoff):
         default="Disease",
         description="Target metadata field for curation (e.g., 'Disease', 'Tissue', 'Age').",
     )
-    
+
     # Optional structured output from previous agent (for workflow continuity)
     upstream_data: Optional[dict] = Field(
         default=None,
@@ -45,14 +45,17 @@ def on_handoff_callback(ctx: RunContextWrapper[None], input_data: BaseHandoff):
 
 
 def create_ingestion_agent(
-    session_id: str, sandbox_dir: str = None, handoffs: list = None, input_data: str = None
+    session_id: str,
+    sandbox_dir: str = None,
+    handoffs: list = None,
+    input_data: str = None,
 ) -> Agent:
     """
     Factory method to create a metadata ingestion agent.
 
     This agent is responsible for extracting metadata from Gene Expression
     Omnibus (GEO) and PubMed databases given GSM/GSE/PMID identifiers.
-    
+
     The agent is configured with structured output capabilities to produce
     validated IngestionOutput objects directly using the output_type parameter.
 
@@ -81,7 +84,7 @@ def create_ingestion_agent(
 
     tools = get_session_tools(session_dir)
     print(f"✅ IngestionAgent: Initialized with {len(tools)} tools")
-    
+
     # Parse target field from input_data if provided
     target_field = "Disease"  # Default
     if input_data:
@@ -106,5 +109,5 @@ def create_ingestion_agent(
         instructions=instructions,
         tools=tools,
         handoffs=handoffs or [],
-        output_type=IngestionOutput
+        output_type=IngestionOutput,
     )

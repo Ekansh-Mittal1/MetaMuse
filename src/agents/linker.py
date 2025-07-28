@@ -6,21 +6,13 @@ from uuid import uuid4
 from agents import Agent, RunContextWrapper
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from pydantic import Field
-from typing import Optional
 from src.agents.handoff_base import BaseHandoff
 
 from src.agents.tool_utils import get_session_tools
 from src.utils.prompts import load_prompt
 
 # Import Pydantic models for structured data
-from src.models import (
-    IngestionOutput, 
-    LinkerOutput,
-    CurationDataPackage,
-    CleanedSeriesMetadata,
-    CleanedSampleMetadata, 
-    CleanedAbstractMetadata
-)
+from src.models import LinkerOutput
 
 
 class LinkerHandoff(BaseHandoff):
@@ -46,7 +38,7 @@ class LinkerHandoff(BaseHandoff):
         default="Disease",
         description="Target metadata field for curation (e.g., 'Disease', 'Tissue', 'Age').",
     )
-    
+
     # Following DendroForge pattern: no complex nested structures in handoffs
     # ingestion_output: Optional[IngestionOutput] = Field(
     #     default=None,
@@ -72,7 +64,7 @@ def create_linker_agent(
     This agent is responsible for processing and linking metadata files
     created by the IngestionAgent, including cleaning files, downloading
     series matrix data, and extracting sample-specific information.
-    
+
     The agent is configured with structured output capabilities to produce
     validated LinkerOutput objects directly using the output_type parameter.
 
@@ -124,7 +116,7 @@ def create_linker_agent(
 
         tools = get_session_tools(session_dir)
         print(f"✅ LinkerAgent: Initialized with {len(tools)} tools")
-        
+
         # Parse target field from input_data if provided
         target_field = "Disease"  # Default
         if input_data:
@@ -149,7 +141,7 @@ def create_linker_agent(
             instructions=instructions,
             tools=tools,
             handoffs=handoffs or [],
-            output_type=LinkerOutput
+            output_type=LinkerOutput,
         )
 
         return agent

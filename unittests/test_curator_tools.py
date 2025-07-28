@@ -9,11 +9,9 @@ import json
 import tempfile
 import shutil
 from pathlib import Path
-import pytest
 
 from src.tools.curator_tools import (
     CuratorTools,
-    CuratorResult,
     load_sample_data_impl,
     extract_metadata_candidates_impl,
     reconcile_candidates_impl,
@@ -36,15 +34,12 @@ class TestCuratorTools:
                 "GSE29282": {
                     "sample_ids": ["GSM1000981", "GSM1000984"],
                     "sample_count": 2,
-                    "series_directory": "GSE29282"
+                    "series_directory": "GSE29282",
                 }
             },
-            "reverse_mapping": {
-                "GSM1000981": "GSE29282",
-                "GSM1000984": "GSE29282"
-            },
+            "reverse_mapping": {"GSM1000981": "GSE29282", "GSM1000984": "GSE29282"},
             "total_series": 1,
-            "total_samples": 2
+            "total_samples": 2,
         }
 
         with open(self.session_dir / "series_sample_mapping.json", "w") as f:
@@ -61,7 +56,9 @@ class TestCuratorTools:
             "directory": str(self.series_dir),
             "cleaned_files": [
                 str(self.series_dir / "cleaned" / "GSE29282_metadata_cleaned.json"),
-                str(self.series_dir / "cleaned" / "PMID_23911289_metadata_cleaned.json")
+                str(
+                    self.series_dir / "cleaned" / "PMID_23911289_metadata_cleaned.json"
+                ),
             ],
             "sample_metadata": {
                 "gsm_id": "GSM1000981",
@@ -70,9 +67,9 @@ class TestCuratorTools:
                     "source_name_ch1": "Human DLBCL cell line",
                     "organism_ch1": "Homo sapiens",
                     "characteristics_ch1": "treatment: siNT, cell line: OCI-LY1",
-                    "description": "mRNA sequencing of diffuse large B cell lymphoma cells"
-                }
-            }
+                    "description": "mRNA sequencing of diffuse large B cell lymphoma cells",
+                },
+            },
         }
 
         with open(self.series_dir / "GSM1000981_linked_data.json", "w") as f:
@@ -88,8 +85,8 @@ class TestCuratorTools:
             "attributes": {
                 "title": "BCL6 mechanism in B cells and DLBCL",
                 "summary": "Study of BCL6 in normal and malignant B-cells including diffuse large B cell lymphoma",
-                "overall_design": "Investigation of lymphoma cell lines"
-            }
+                "overall_design": "Investigation of lymphoma cell lines",
+            },
         }
 
         with open(cleaned_dir / "GSE29282_metadata_cleaned.json", "w") as f:
@@ -99,7 +96,7 @@ class TestCuratorTools:
         abstract_metadata = {
             "pmid": 23911289,
             "title": "BCL6 mechanism in B cells for lymphoma development",
-            "abstract": "The BCL6 transcriptional repressor is required for diffuse large B cell lymphomas (DLBCLs). This study investigates lymphoma formation mechanisms."
+            "abstract": "The BCL6 transcriptional repressor is required for diffuse large B cell lymphomas (DLBCLs). This study investigates lymphoma formation mechanisms.",
         }
 
         with open(cleaned_dir / "PMID_23911289_metadata_cleaned.json", "w") as f:
@@ -148,7 +145,7 @@ class TestCuratorTools:
 
         assert result.success is True
         assert result.candidates is not None
-        
+
         # Check format of candidates (should be dictionaries with value, confidence, context)
         if len(result.candidates) > 0:
             for file_candidates in result.candidates.values():
@@ -183,18 +180,18 @@ class TestCuratorTools:
         mock_data = {
             "attributes": {
                 "title": "Test sample with DLBCL cell line",
-                "description": "Study of diffuse large B cell lymphoma"
+                "description": "Study of diffuse large B cell lymphoma",
             }
         }
-        
+
         # Test the flattening function still works
         flattened = self.tools._flatten_to_text(mock_data)
         assert "dlbcl" in flattened.lower() or "lymphoma" in flattened.lower()
-        
+
     def test_template_loading(self):
         """Test that extraction templates can be loaded."""
         from src.tools.curator_tools import load_extraction_template
-        
+
         # Test that Disease template exists and loads
         template = load_extraction_template("Disease")
         assert template is not None
@@ -206,12 +203,16 @@ class TestCuratorTools:
         candidates_by_file = {
             "file1.json": [
                 {"value": "dlbcl", "confidence": 0.9, "context": "cell line study"},
-                {"value": "lymphoma", "confidence": 0.8, "context": "cancer type"}
+                {"value": "lymphoma", "confidence": 0.8, "context": "cancer type"},
             ],
             "file2.json": [
                 {"value": "DLBCL", "confidence": 0.95, "context": "disease name"},
-                {"value": "diffuse large B cell lymphoma", "confidence": 0.9, "context": "full name"}
-            ]
+                {
+                    "value": "diffuse large B cell lymphoma",
+                    "confidence": 0.9,
+                    "context": "full name",
+                },
+            ],
         }
 
         result = self.tools.reconcile_candidates(candidates_by_file, "Disease")
@@ -237,7 +238,7 @@ class TestCuratorTools:
     def test_reconcile_candidates_placeholder(self):
         """Test placeholder reconciliation function."""
         conflicting_data = {"conflict": "test"}
-        
+
         result = self.tools.reconcile_candidates_placeholder(
             "GSM1000981", "Disease", conflicting_data
         )
@@ -251,7 +252,7 @@ class TestCuratorTools:
         results_data = {
             "target_field": "Disease",
             "final_candidate": "dlbcl",
-            "confidence": "high"
+            "confidence": "high",
         }
 
         result = self.tools.save_curator_results("GSM1000981", results_data)
@@ -264,7 +265,7 @@ class TestCuratorTools:
         output_file = Path(result.files_created[0])
         assert output_file.exists()
 
-        with open(output_file, 'r') as f:
+        with open(output_file, "r") as f:
             saved_data = json.load(f)
 
         assert saved_data["sample_id"] == "GSM1000981"
@@ -274,13 +275,8 @@ class TestCuratorTools:
         """Test flattening nested data to text."""
         test_data = {
             "level1": "value1",
-            "nested": {
-                "level2": "value2",
-                "deep": {
-                    "level3": "value3"
-                }
-            },
-            "list_field": ["item1", "item2"]
+            "nested": {"level2": "value2", "deep": {"level3": "value3"}},
+            "list_field": ["item1", "item2"],
         }
 
         flattened = self.tools._flatten_to_text(test_data)
@@ -302,7 +298,7 @@ class TestCuratorToolsImplementations:
 
         # Create minimal test structure
         session_path = Path(self.temp_dir)
-        
+
         mapping_data = {"reverse_mapping": {"GSM1000981": "GSE29282"}}
         with open(session_path / "series_sample_mapping.json", "w") as f:
             json.dump(mapping_data, f)
@@ -314,7 +310,7 @@ class TestCuratorToolsImplementations:
             "sample_id": "GSM1000981",
             "series_id": "GSE29282",
             "cleaned_files": [],
-            "sample_metadata": {"gsm_id": "GSM1000981"}
+            "sample_metadata": {"gsm_id": "GSM1000981"},
         }
 
         with open(series_dir / "GSM1000981_linked_data.json", "w") as f:
@@ -349,7 +345,7 @@ class TestCuratorToolsImplementations:
         """Test reconcile_candidates_impl function."""
         candidates_by_file = {
             "file1.json": ["candidate1"],
-            "file2.json": ["candidate1"]
+            "file2.json": ["candidate1"],
         }
 
         result = reconcile_candidates_impl(
@@ -363,9 +359,7 @@ class TestCuratorToolsImplementations:
         """Test save_curator_results_impl function."""
         results_data = {"target_field": "Disease", "final_candidate": "test"}
 
-        result = save_curator_results_impl(
-            "GSM1000981", results_data, self.session_dir
-        )
+        result = save_curator_results_impl("GSM1000981", results_data, self.session_dir)
 
         assert result["success"] is True
         assert "files_created" in result
@@ -397,8 +391,8 @@ def test_integration_workflow():
                 "gsm_id": "GSM1000981",
                 "attributes": {
                     "description": "Study of diffuse large B cell lymphoma progression"
-                }
-            }
+                },
+            },
         }
 
         with open(series_dir / "GSM1000981_linked_data.json", "w") as f:
@@ -406,7 +400,7 @@ def test_integration_workflow():
 
         cleaned_metadata = {
             "title": "DLBCL research study",
-            "abstract": "Investigation of lymphoma mechanisms"
+            "abstract": "Investigation of lymphoma mechanisms",
         }
 
         with open(cleaned_dir / "test_metadata.json", "w") as f:
@@ -435,7 +429,7 @@ def test_integration_workflow():
         output_file = Path(save_result.files_created[0])
         assert output_file.exists()
 
-        with open(output_file, 'r') as f:
+        with open(output_file, "r") as f:
             final_results = json.load(f)
 
         assert final_results["sample_id"] == "GSM1000981"
@@ -445,4 +439,4 @@ def test_integration_workflow():
 if __name__ == "__main__":
     # Run basic integration test
     test_integration_workflow()
-    print("✅ Basic integration test passed!") 
+    print("✅ Basic integration test passed!")
