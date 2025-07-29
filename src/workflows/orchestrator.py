@@ -3,6 +3,7 @@ from agents import RunResultStreaming, Runner, RunConfig, ModelSettings, ItemHel
 from openai.types.shared import Reasoning
 from pathlib import Path
 import os
+import time
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -117,17 +118,33 @@ class SimpleOrchestrator:
                     entry_agent, input_data, run_config=run_config, max_turns=max_turns
                 )
 
-                print("🔄 Starting streaming execution...")
+                # Starting streaming execution (suppressed for natural streaming)
+
+                # Track streaming progress
+                tool_calls_made = []
+                tool_call_times = []
+                successful_saves = 0
+                messages_received = 0
+                start_time = time.time()
 
                 # Handle streaming events
                 async for event in result.stream_events():
-                    # Ignore raw response events (token-by-token streaming)
+                    # Handle raw response events (token-by-token streaming)
                     if event.type == "raw_response_event":
+                        # Check if this is a text delta event with actual content
+                        if (
+                            hasattr(event, "data")
+                            and hasattr(event.data, "delta")
+                            and event.data.delta is not None
+                            and event.data.delta.strip()
+                        ):
+                            # Stream tokens naturally like ChatGPT
+                            print(event.data.delta, end="", flush=True)
                         continue
 
                     # Handle agent updates (handoffs)
                     elif event.type == "agent_updated_stream_event":
-                        print(f"🔄 Agent Updated: {event.new_agent.name}")
+                        # Agent updated (suppressed for natural streaming)
                         continue
 
                     # Handle run item events (tool calls, outputs, messages)
@@ -149,7 +166,60 @@ class SimpleOrchestrator:
                                     tool_name = tool_call.function_name
                             else:
                                 tool_name = "Unknown Tool"
-                            print(f"🔧 Tool Called: {tool_name}")
+                            current_time = time.time()
+                            tool_calls_made.append(tool_name)
+                            tool_call_times.append(current_time)
+                            print(
+                                f"🔧 Tool Called: {tool_name} (#{len(tool_calls_made)})"
+                            )
+
+                            # DEBUG: Print detailed tool call information for workflow violation analysis
+                            print("🔍 TOOL CALL DEBUG:")
+                            print(f"   📋 Tool Name: {tool_name}")
+                            print(f"   📋 Event Item Type: {type(event.item)}")
+
+                            # Try to extract tool arguments
+                            tool_args = "No arguments found"
+                            if hasattr(event.item, "tool_call"):
+                                tool_call = event.item.tool_call
+                                print(f"   📋 Has tool_call attribute: {tool_call}")
+                                if hasattr(tool_call, "function"):
+                                    function = tool_call.function
+                                    print(f"   📋 Function: {function}")
+                                    if hasattr(function, "arguments"):
+                                        tool_args = function.arguments
+                                        print(f"   📋 Arguments: {tool_args}")
+
+                            if hasattr(event.item, "arguments"):
+                                tool_args = event.item.arguments
+                                print(f"   📋 Direct Arguments: {tool_args}")
+
+                            print(f"   📋 Full Item: {event.item}")
+                            print(f"   📋 Item Attributes: {dir(event.item)}")
+
+                            # DEBUG: Track rapid successive calls
+                            if len(tool_calls_made) > 1:
+                                time_since_last = current_time - tool_call_times[-2]
+                                print(
+                                    f"⚠️ DEBUG: Multiple tool calls detected! Previous calls: {tool_calls_made[:-1]}"
+                                )
+                                print(
+                                    f"⚠️ DEBUG: Time since last call: {time_since_last:.2f} seconds"
+                                )
+                                if (
+                                    tool_name == "get_data_intake_context"
+                                    and len(tool_calls_made) > 1
+                                ):
+                                    print(
+                                        "🚨 STOCHASTIC BEHAVIOR: Agent making repeated get_data_intake_context calls!"
+                                    )
+                                    print(
+                                        f"🚨 VIOLATION CAUSE: Agent called get_data_intake_context with args: {tool_args}"
+                                    )
+                                if time_since_last < 1.0:
+                                    print(
+                                        f"🚨 RAPID SUCCESSIVE CALLS: Agent making calls within {time_since_last:.2f}s - this indicates stochastic behavior!"
+                                    )
                         elif event.item.type == "tool_call_output_item":
                             output = getattr(event.item, "output", "No output")
                             # Try to extract tool name from output if it's a structured result
@@ -179,12 +249,14 @@ class SimpleOrchestrator:
                             message_content = ItemHelpers.text_message_output(
                                 event.item
                             )
-                            print(f"💬 Agent Message: {message_content}")
+                            # Only show non-empty messages naturally
+                            if message_content and message_content.strip():
+                                print(f"\n{message_content}")
                         else:
                             # Handle other event types if needed
                             pass
 
-                print("✅ Streaming execution completed")
+                # Streaming execution completed (suppressed for natural streaming)
                 return result
 
             except Exception as e:

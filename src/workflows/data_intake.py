@@ -29,6 +29,7 @@ from src.models.metadata_models import (
     CleanedSampleMetadata,
     CleanedAbstractMetadata,
 )
+from src.models.curation_models import CurationDataPackage
 
 # Import the tool implementations
 from src.tools.ingestion_tools import (
@@ -46,6 +47,7 @@ from src.tools.linker_tools import (
     find_sample_directory_impl,
     clean_metadata_files_impl,
     package_linked_data_impl,
+    create_curation_data_package_impl,
 )
 
 # Load environment variables
@@ -216,6 +218,65 @@ class DataIntakeWorkflow:
             if cleaned_abstract_metadata
             else None,
         }
+
+    def _create_curation_packages(
+        self,
+        sample_ids: List[str],
+        cleaned_metadata: Dict,
+        fields_to_remove: List[str] = None,
+    ) -> List[CurationDataPackage]:
+        """
+        Create CurationDataPackage objects for the given sample IDs.
+
+        Parameters
+        ----------
+        sample_ids : List[str]
+            List of sample IDs to create packages for
+        cleaned_metadata : Dict
+            Dictionary containing cleaned metadata organized by type
+        fields_to_remove : List[str], optional
+            Fields that were removed during cleaning
+
+        Returns
+        -------
+        List[CurationDataPackage]
+            List of CurationDataPackage objects
+        """
+        curation_packages = []
+
+        for sample_id in sample_ids:
+            try:
+                # Use the implementation from the tool
+                result = create_curation_data_package_impl(
+                    sample_id, str(self.session_dir), fields_to_remove
+                )
+
+                if isinstance(result, str):
+                    result_data = json.loads(result)
+                else:
+                    result_data = result
+
+                if result_data.get("success", False) and "data" in result_data:
+                    data_field = result_data["data"]
+                    if "curation_package" in data_field:
+                        package_data = data_field["curation_package"]
+                        curation_package = CurationDataPackage(**package_data)
+                        curation_packages.append(curation_package)
+                        print(f"✅ Created CurationDataPackage for {sample_id}")
+                    else:
+                        print(
+                            f"⚠️  Failed to create CurationDataPackage for {sample_id}: No curation_package in data field"
+                        )
+                else:
+                    print(
+                        f"⚠️  Failed to create CurationDataPackage for {sample_id}: {result_data.get('message', 'Unknown error')}"
+                    )
+
+            except Exception as e:
+                print(f"⚠️  Error creating CurationDataPackage for {sample_id}: {e}")
+                continue
+
+        return curation_packages
 
     def _parse_geo_ids(self, input_text: str) -> Dict[str, List[str]]:
         """
@@ -781,19 +842,62 @@ class DataIntakeWorkflow:
         try:
             print(f"🔧 Starting complete workflow for: {input_text}")
 
-            # Run ingestion workflow
-            ingestion_result = self.run_ingestion_workflow(input_text)
-            if not ingestion_result.success:
-                return ingestion_result
+            # Parse GEO IDs
+            geo_ids = self._parse_geo_ids(input_text)
 
-            # Extract sample IDs from ingestion result
-            sample_ids = ingestion_result.data.get("sample_ids", [])
-            if not sample_ids:
-                return WorkflowResult(
-                    success=False,
-                    message="No sample IDs found after ingestion workflow",
-                    errors=["No sample IDs extracted from ingestion workflow"],
-                )
+            # Validate inputs
+            validation_result = self._validate_inputs(geo_ids)
+            if not validation_result.success:
+                return validation_result
+
+            all_files_created = []
+            all_workflow_data = []
+            all_sample_ids = []
+
+            # Process GSM IDs
+            for gsm_id in geo_ids["gsm_ids"]:
+                result = self._extract_gsm_workflow(gsm_id)
+                if not result.success:
+                    return result
+                all_files_created.extend(result.files_created or [])
+                all_workflow_data.append(result.data)
+                all_sample_ids.append(gsm_id)
+
+            # Process GSE IDs
+            for gse_id in geo_ids["gse_ids"]:
+                result = self._extract_gse_workflow(gse_id)
+                if not result.success:
+                    return result
+                all_files_created.extend(result.files_created or [])
+                all_workflow_data.append(result.data)
+                # Extract sample IDs from GSE if available
+                if result.data and "series_id" in result.data:
+                    # Try to get sample IDs from the mapping file
+                    try:
+                        mapping_result = load_mapping_file_impl(str(self.session_dir))
+                        if mapping_result["success"] and "data" in mapping_result:
+                            mapping_data = mapping_result["data"]
+                            series_id = result.data["series_id"]
+                            if (
+                                "mapping" in mapping_data
+                                and series_id in mapping_data["mapping"]
+                            ):
+                                series_sample_ids = mapping_data["mapping"][series_id][
+                                    "sample_ids"
+                                ]
+                                all_sample_ids.extend(series_sample_ids)
+                    except Exception as e:
+                        print(
+                            f"Warning: Could not extract sample IDs from {gse_id}: {e}"
+                        )
+
+            # Process PMID IDs
+            for pmid in geo_ids["pmid_ids"]:
+                result = self._extract_pmid_workflow(pmid)
+                if not result.success:
+                    return result
+                all_files_created.extend(result.files_created or [])
+                all_workflow_data.append(result.data)
 
             # Ensure we use the same field removal list as the full_pipeline
             if fields_to_remove is None:
@@ -829,18 +933,24 @@ class DataIntakeWorkflow:
                 )
 
             # Run linker workflow
-            linker_result = self.run_linker_workflow(sample_ids, fields_to_remove)
+            linker_result = self.run_linker_workflow(all_sample_ids, fields_to_remove)
             if not linker_result.success:
                 return linker_result
 
             # Combine results
-            all_files_created = (ingestion_result.files_created or []) + (
+            all_files_created = (all_files_created) + (
                 linker_result.files_created or []
             )
 
             # Load cleaned metadata
             print("📊 Loading cleaned metadata for LinkerOutput...")
-            cleaned_metadata = self._load_cleaned_metadata(sample_ids)
+            cleaned_metadata = self._load_cleaned_metadata(all_sample_ids)
+
+            # Create CurationDataPackages for CuratorAgent handoff
+            print("📦 Creating CurationDataPackages for CuratorAgent handoff...")
+            curation_packages = self._create_curation_packages(
+                all_sample_ids, cleaned_metadata, fields_to_remove
+            )
 
             # Create LinkerOutput object
             import time
@@ -848,11 +958,11 @@ class DataIntakeWorkflow:
             execution_time = time.time() - self._start_time
 
             return create_successful_linker_output(
-                sample_ids=sample_ids,
+                sample_ids=all_sample_ids,
                 session_dir=str(self.session_dir),
                 execution_time=execution_time,
-                successfully_linked=sample_ids,
-                sample_ids_for_curation=sample_ids,
+                successfully_linked=all_sample_ids,
+                sample_ids_for_curation=all_sample_ids,
                 recommended_curation_fields=["Disease", "Tissue", "Age", "Organ"],
                 fields_removed_during_cleaning=fields_to_remove or [],
                 files_created=all_files_created,
@@ -860,6 +970,7 @@ class DataIntakeWorkflow:
                 cleaned_series_metadata=cleaned_metadata["cleaned_series_metadata"],
                 cleaned_sample_metadata=cleaned_metadata["cleaned_sample_metadata"],
                 cleaned_abstract_metadata=cleaned_metadata["cleaned_abstract_metadata"],
+                curation_packages=curation_packages,
             )
 
         except Exception as e:

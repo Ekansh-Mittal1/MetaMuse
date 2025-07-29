@@ -28,6 +28,7 @@ class ExtractionCandidate(BaseModel):
         ..., ge=0.0, le=1.0, description="Confidence score between 0.0 and 1.0"
     )
     context: str = Field(..., description="Brief context where the candidate was found")
+    prenormalized: str = Field(..., description="Ontology-normalized term with ID")
 
 
 class ExtractionResponse(BaseModel):
@@ -52,11 +53,26 @@ def load_extraction_template(target_field: str) -> str:
     str
         The loaded template content
     """
+    # Map target field to template filename
+    template_mapping = {
+        "Disease": "disease.md",
+        "Tissue": "tissue.md",
+        "Age": "age.md",
+        "Organ": "organ.md",
+        "Drug": "drug.md",
+        "Treatment": "treatment.md",
+        "Organism": "organism.md",
+        "Ethnicity": "ethnicity.md",
+        "Gender": "gender.md",
+        "Cell_Line": "cell_line.md",
+    }
+
+    template_filename = template_mapping.get(target_field, f"{target_field.lower()}.md")
     template_file = (
         Path(__file__).parent.parent
         / "prompts"
         / "extraction_templates"
-        / f"{target_field.lower()}.md"
+        / template_filename
     )
 
     if not template_file.exists():
@@ -248,7 +264,7 @@ class CuratorTools:
         Returns
         -------
         List[Dict[str, Any]]
-            List of candidate dictionaries with value, confidence, and context
+            List of candidate dictionaries with value, confidence, context, and prenormalized
         """
         try:
             # Convert data to searchable text
@@ -303,6 +319,7 @@ class CuratorTools:
                         "value": candidate.value,
                         "confidence": candidate.confidence,
                         "context": candidate.context,
+                        "prenormalized": candidate.prenormalized,
                     }
                 )
 
@@ -567,50 +584,6 @@ def reconcile_candidates_impl(
     tools = CuratorTools(session_dir)
     result = tools.reconcile_candidates(candidates_by_file, target_field)
     return {"success": result.success, "message": result.message, "data": result.data}
-
-
-def dummy_reconciliation_impl(
-    curation_result: CurationResult, session_dir: str
-) -> dict:
-    """
-    Dummy reconciliation tool that flags samples with conflicting candidates.
-
-    Parameters
-    ----------
-    curation_result : CurationResult
-        The curation result to check for conflicts
-    session_dir : str
-        Path to the session directory
-
-    Returns
-    -------
-    dict
-        Result dictionary with conflict status
-    """
-    try:
-        if curation_result.has_conflicting_candidates():
-            all_candidates = curation_result.get_all_candidates()
-            unique_values = set(c.value.lower().strip() for c in all_candidates)
-
-            return {
-                "success": False,
-                "message": f"Manual reconciliation needed for sample {curation_result.sample_id}",
-                "conflict_detected": True,
-                "conflicting_values": list(unique_values),
-                "reason": f"Found {len(unique_values)} different candidate values across sources",
-            }
-        else:
-            return {
-                "success": True,
-                "message": f"No conflicts detected for sample {curation_result.sample_id}",
-                "conflict_detected": False,
-            }
-    except Exception as e:
-        return {
-            "success": False,
-            "message": f"Error checking for conflicts: {str(e)}",
-            "error": str(e),
-        }
 
 
 def load_curation_data_for_samples_impl(sample_ids_json: str, session_dir: str) -> dict:

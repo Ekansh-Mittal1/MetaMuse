@@ -148,7 +148,7 @@ def create_curator_agent(
 
         # Store data_intake_output for the tool to access
         if data_intake_output:
-            print(f"📊 CuratorAgent: Data intake output provided for hybrid pipeline")
+            print("📊 CuratorAgent: Data intake output provided for hybrid pipeline")
             # Store in a module-level variable that the tool can access
             import src.agents.curator as curator_module
 
@@ -172,26 +172,90 @@ def create_curator_agent(
                 parts = input_data.split("target_field:")
                 if len(parts) > 1:
                     target_field = parts[1].split()[0].strip("\"'")
-            elif "disease" in input_data.lower():
-                target_field = "Disease"
-            elif "tissue" in input_data.lower():
-                target_field = "Tissue"
-            elif "age" in input_data.lower():
-                target_field = "Age"
-            elif "organ" in input_data.lower():
-                target_field = "Organ"
+            else:
+                # Check for specific field keywords in input_data
+                input_lower = input_data.lower()
+                if "disease" in input_lower:
+                    target_field = "Disease"
+                elif "tissue" in input_lower:
+                    target_field = "Tissue"
+                elif "age" in input_lower or "developmental" in input_lower:
+                    target_field = "Age"
+                elif "organ" in input_lower:
+                    target_field = "Organ"
+                elif (
+                    "drug" in input_lower
+                    or "medication" in input_lower
+                    or "pharmaceutical" in input_lower
+                ):
+                    target_field = "Drug"
+                elif (
+                    "treatment" in input_lower
+                    or "therapy" in input_lower
+                    or "intervention" in input_lower
+                ):
+                    target_field = "Treatment"
+                elif (
+                    "organism" in input_lower
+                    or "species" in input_lower
+                    or "human" in input_lower
+                    or "mouse" in input_lower
+                ):
+                    target_field = "Organism"
+                elif (
+                    "ethnicity" in input_lower
+                    or "ethnic" in input_lower
+                    or "race" in input_lower
+                ):
+                    target_field = "Ethnicity"
+                elif (
+                    "gender" in input_lower
+                    or "sex" in input_lower
+                    or "male" in input_lower
+                    or "female" in input_lower
+                ):
+                    target_field = "Gender"
+                elif (
+                    "cell line" in input_lower
+                    or "cellline" in input_lower
+                    or "hela" in input_lower
+                    or "hek" in input_lower
+                ):
+                    target_field = "Cell_Line"
 
         try:
+            # Map target field to template filename
+            template_mapping = {
+                "Disease": "disease.md",
+                "Tissue": "tissue.md",
+                "Age": "age.md",
+                "Organ": "organ.md",
+                "Drug": "drug.md",
+                "Treatment": "treatment.md",
+                "Organism": "organism.md",
+                "Ethnicity": "ethnicity.md",
+                "Gender": "gender.md",
+                "Cell_Line": "cell_line.md",
+            }
+
+            template_filename = template_mapping.get(
+                target_field, f"{target_field.lower()}.md"
+            )
             template_file = (
                 Path(__file__).parent.parent
                 / "prompts"
                 / "extraction_templates"
-                / f"{target_field.lower()}.md"
+                / template_filename
             )
+
             if template_file.exists():
                 with open(template_file, "r", encoding="utf-8") as f:
                     extraction_template = f.read()
+                print(f"📋 CuratorAgent: Loaded extraction template for {target_field}")
             else:
+                print(
+                    f"⚠️  No extraction template found for {target_field}, using generic template"
+                )
                 extraction_template = "# Generic Extraction Template\nExtract relevant candidates for the target field."
         except Exception as e:
             print(f"⚠️  Could not load extraction template for {target_field}: {e}")
@@ -219,7 +283,7 @@ def create_curator_agent(
             RECOMMENDED_PROMPT_PREFIX
             + "\n\n"
             + base_instructions.replace("{EXTRACTION_TEMPLATE}", extraction_template)
-            + f"\n\n## Session Information\n"
+            + "\n\n## Session Information\n"
             + f"Session Directory: {session_dir}\n"
             + f"Session ID: {session_id}\n"
         )
@@ -229,7 +293,7 @@ def create_curator_agent(
             instructions=instructions,
             tools=tools,
             handoffs=handoffs or [],
-            output_type=CuratorOutput,
+            output_type=CuratorOutput,  # Restored strict output type
         )
 
         return agent

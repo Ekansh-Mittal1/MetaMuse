@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from uuid import uuid4
 
 from agents import Agent, handoff
@@ -10,7 +9,6 @@ from src.agents.linker import create_linker_agent, LinkerHandoff
 from src.agents.curator import (
     create_curator_agent,
     CuratorHandoff,
-    SimpleCuratorHandoff,
 )
 from src.workflows.data_intake import run_data_intake_workflow
 
@@ -572,7 +570,7 @@ def create_full_pipeline(
         input_data=f"target_field:{target_field} {' '.join(sample_ids)}",
     )
 
-    # Create LinkerAgent with handoff to CuratorAgent using SimpleCuratorHandoff
+    # Create LinkerAgent with handoff to CuratorAgent using CuratorHandoff
     # Pass the target field information to the LinkerAgent
     linker_input_data = (
         f"target_field:{target_field} {input_data}"
@@ -585,7 +583,7 @@ def create_full_pipeline(
         handoffs=[
             handoff(
                 agent=curator_agent,
-                input_type=SimpleCuratorHandoff,
+                input_type=CuratorHandoff,
                 on_handoff=on_handoff_callback,
             )
         ],
@@ -593,7 +591,7 @@ def create_full_pipeline(
     )
 
     print("🔗 LinkerAgent configured with handoff to CuratorAgent")
-    print("📋 Handoff type: SimpleCuratorHandoff")
+    print("📋 Handoff type: CuratorHandoff")
     print(f"🎯 Target field: {target_field}")
     print(f"📁 Sample IDs: {sample_ids}")
 

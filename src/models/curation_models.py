@@ -8,7 +8,6 @@ for efficient handoff to the CuratorAgent without requiring file I/O operations.
 from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
-from .common import KeyValue
 from .metadata_models import (
     CleanedSeriesMetadata,
     CleanedSampleMetadata,
@@ -45,6 +44,7 @@ class ExtractedCandidate(BaseModel):
     rationale: str = Field(
         ..., description="Explicit reasoning for why this candidate was extracted"
     )
+    prenormalized: str = Field(..., description="Ontology-normalized term with ID")
 
 
 class CurationResult(BaseModel):

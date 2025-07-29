@@ -15,7 +15,7 @@ from src.tools.curator_tools import (
     load_sample_data_impl,
     extract_metadata_candidates_impl,
     reconcile_candidates_impl,
-    save_curator_results_impl,
+    save_curation_results_impl,
 )
 
 
@@ -146,7 +146,7 @@ class TestCuratorTools:
         assert result.success is True
         assert result.candidates is not None
 
-        # Check format of candidates (should be dictionaries with value, confidence, context)
+        # Check format of candidates (should be dictionaries with value, confidence, context, prenormalized)
         if len(result.candidates) > 0:
             for file_candidates in result.candidates.values():
                 for candidate in file_candidates:
@@ -202,15 +202,31 @@ class TestCuratorTools:
         """Test dummy reconciliation function."""
         candidates_by_file = {
             "file1.json": [
-                {"value": "dlbcl", "confidence": 0.9, "context": "cell line study"},
-                {"value": "lymphoma", "confidence": 0.8, "context": "cancer type"},
+                {
+                    "value": "dlbcl",
+                    "confidence": 0.9,
+                    "context": "cell line study",
+                    "prenormalized": "diffuse large B-cell lymphoma (MONDO:0018906)",
+                },
+                {
+                    "value": "lymphoma",
+                    "confidence": 0.8,
+                    "context": "cancer type",
+                    "prenormalized": "lymphoma (MONDO:0005062)",
+                },
             ],
             "file2.json": [
-                {"value": "DLBCL", "confidence": 0.95, "context": "disease name"},
+                {
+                    "value": "DLBCL",
+                    "confidence": 0.95,
+                    "context": "disease name",
+                    "prenormalized": "diffuse large B-cell lymphoma (MONDO:0018906)",
+                },
                 {
                     "value": "diffuse large B cell lymphoma",
                     "confidence": 0.9,
                     "context": "full name",
+                    "prenormalized": "diffuse large B-cell lymphoma (MONDO:0018906)",
                 },
             ],
         }
@@ -269,7 +285,7 @@ class TestCuratorTools:
             saved_data = json.load(f)
 
         assert saved_data["sample_id"] == "GSM1000981"
-        assert saved_data["curation_results"]["target_field"] == "Disease"
+        assert saved_data["target_field"] == "Disease"
 
     def test_flatten_to_text(self):
         """Test flattening nested data to text."""
@@ -355,11 +371,19 @@ class TestCuratorToolsImplementations:
         assert result["success"] is True
         assert "data" in result
 
-    def test_save_curator_results_impl(self):
-        """Test save_curator_results_impl function."""
-        results_data = {"target_field": "Disease", "final_candidate": "test"}
+    def test_save_curation_results_impl(self):
+        """Test save_curation_results_impl function."""
+        from src.models.curation_models import CurationResult
 
-        result = save_curator_results_impl("GSM1000981", results_data, self.session_dir)
+        # Create a test CurationResult
+        curation_result = CurationResult(
+            sample_id="GSM1000981",
+            target_field="Disease",
+            final_candidate="test",
+            final_confidence=0.8,
+        )
+
+        result = save_curation_results_impl([curation_result], self.session_dir)
 
         assert result["success"] is True
         assert "files_created" in result

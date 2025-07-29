@@ -16,6 +16,9 @@ from .metadata_models import (
     CleanedAbstractMetadata,
 )
 
+# Import CurationDataPackage for LinkerOutput
+from .curation_models import CurationDataPackage, CurationResult
+
 
 class IngestionOutput(BaseModel):
     """Structured output from IngestionAgent."""
@@ -107,6 +110,12 @@ class LinkerOutput(BaseModel):
         default=None, description="Cleaned abstract metadata by PMID"
     )
 
+    # Curation data packages for handoff to CuratorAgent
+    curation_packages: Optional[List[CurationDataPackage]] = Field(
+        default=None,
+        description="Structured curation data packages for CuratorAgent handoff",
+    )
+
     # File management
     files_created: List[str] = Field(
         default_factory=list, description="Files created during linking"
@@ -149,9 +158,10 @@ class CuratorOutput(BaseModel):
     target_field: str = Field(..., description="Target metadata field that was curated")
     session_directory: str = Field(..., description="Session directory used")
 
-    # Output data (strict JSON schema compatible)
-    curation_results: Optional[List[KeyValue]] = Field(
-        default=None, description="Detailed curation results as key-value pairs"
+    # Output data - full CurationResult objects with complete information
+    curation_results: Optional[List[CurationResult]] = Field(
+        default=None,
+        description="Detailed curation results with full CurationResult objects including candidates, confidence scores, and reconciliation details",
     )
 
     # Summary statistics

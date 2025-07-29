@@ -159,6 +159,7 @@ class TestCuratorIntegration:
                         assert "value" in candidate
                         assert "confidence" in candidate
                         assert "context" in candidate
+                        assert "prenormalized" in candidate
 
             # Reconcile candidates (dummy function)
             reconcile_result = tools.reconcile_candidates(
@@ -201,6 +202,7 @@ class TestCuratorIntegration:
                     assert "value" in candidate
                     assert "confidence" in candidate
                     assert "context" in candidate
+                    assert "prenormalized" in candidate
                     assert isinstance(candidate["confidence"], (int, float))
                     assert 0.0 <= candidate["confidence"] <= 1.0
 

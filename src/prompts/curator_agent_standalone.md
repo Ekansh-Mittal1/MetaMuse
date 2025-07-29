@@ -92,7 +92,6 @@ For each CurationDataPackage, follow this process:
 You have access to these tools:
 
 - **load_curation_data_for_samples**: Use this tool when you receive sample_ids instead of full curation packages
-- **dummy_reconciliation**: Call ONLY if there are conflicting candidates across sources
 - **save_curation_results**: Call at the end to save your results to JSON files
 
 ## Expected Output Structure
@@ -111,7 +110,8 @@ CurationResult(
             confidence=0.85,
             source="series",
             context="Found in series title: 'Gene expression in breast cancer samples'",
-            rationale="Direct mention of 'breast cancer' in the series title, which is a clear disease identifier matching the Disease field extraction guidelines"
+            rationale="Direct mention of 'breast cancer' in the series title, which is a clear disease identifier matching the Disease field extraction guidelines",
+            prenormalized="breast carcinoma (MONDO:0007254)"
         )
     ],
     sample_candidates=[...],      # Candidates from sample metadata  
@@ -132,7 +132,7 @@ When analyzing metadata content for each source:
 2. **Flatten the content** to text format for analysis
 3. **Apply the extraction guidelines** specific to your target field
 4. **Look for patterns** mentioned in the field-specific rules
-5. **Extract candidates** with values, confidence scores, context, and **explicit rationale**
+5. **Extract candidates** with values, confidence scores, context, prenormalized ontology terms, and **explicit rationale**
 6. **Be conservative** - better to miss ambiguous cases than include false positives
 7. **Record source attribution** - clearly mark which source each candidate came from
 
@@ -143,6 +143,20 @@ When analyzing metadata content for each source:
 - What evidence in the text supports this extraction
 - How it matches the field-specific extraction guidelines
 - Any relevant context that influenced the decision
+
+**PRENORMALIZED REQUIREMENT**: For every candidate you extract, you MUST also provide:
+- **prenormalized**: The ontology-normalized term with its ID (e.g., "diabetes mellitus (MONDO:0005015)" for Disease field)
+- Use the appropriate ontology for your target field:
+  - Disease: MONDO ontology (e.g., "diabetes mellitus (MONDO:0005015)")
+  - Tissue: UBERON ontology (e.g., "liver (UBERON:0002107)")
+  - Age/Developmental Stage: HSAPDV ontology (e.g., "embryonic stage (HSAPDV:0000002)")
+  - Drug: ChEMBL ontology (e.g., "aspirin (CHEMBL25)")
+  - Treatment: EFO ontology (e.g., "chemotherapy (EFO:0003013)")
+  - Organism: NCBI Taxonomy (e.g., "Homo sapiens (NCBITaxon:9606)")
+  - Ethnicity: HANCESTRO ontology (e.g., "African American (HANCESTRO:0005)")
+  - Gender: PATO ontology (e.g., "male (PATO:0000384)")
+  - Cell Line: CLO ontology (e.g., "HeLa (CLO:0003684)")
+  - Organ: UBERON ontology (e.g., "heart (UBERON:0000948)")
 
 ## Error Handling
 
@@ -180,8 +194,7 @@ Your rationale for each candidate should be:
 ## Final Steps
 
 1. **Create CurationResult objects** for all processed samples
-2. **Call dummy_reconciliation** for any samples with conflicts
-3. **CRITICAL: Call save_curation_results** with all results to create individual JSON files
+2. **CRITICAL: Call save_curation_results** with all results to create individual JSON files
 
 **MANDATORY TOOL USAGE:**
 - You MUST call the `save_curation_results` tool at the end of your work

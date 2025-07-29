@@ -23,6 +23,9 @@ When extracting Disease candidates, focus on:
 - Avoid generic terms like "treatment", "study", "analysis" unless they specify a disease
 - Include confidence score (0.0-1.0) based on certainty and context clarity
 - Provide brief context showing where/how the disease was mentioned
+- **CRITICAL**: STRICTLY adhere to MONDO (Mondo Disease Ontology) terms and classifications for disease identification
+- Prefer standardized disease names from MONDO database over colloquial descriptions
+- **CRITICAL**: For the prenormalized field, provide the exact MONDO ontology term with its ID (e.g., "diabetes mellitus (MONDO:0005015)")
 
 ## Output Format
 Return a valid JSON object with this exact structure:
@@ -31,20 +34,25 @@ Return a valid JSON object with this exact structure:
 {
   "candidates": [
     {
-      "value": "specific_disease_name",
+      "value": "exact_text_from_input",
       "confidence": 0.85,
-      "context": "brief context where found"
+      "context": "brief context where found",
+      "prenormalized": "mondo_normalized_term (MONDO:ID)"
     }
   ]
 }
 ```
 
 ## Examples
-- "breast cancer patients" → {"value": "breast cancer", "confidence": 0.9, "context": "patient population"}
-- "DLBCL cell line" → {"value": "DLBCL", "confidence": 0.95, "context": "cell line model"}
-- "malignant tumor" → {"value": "malignant tumor", "confidence": 0.8, "context": "tissue pathology"}
+- "breast cancer patients" → {"value": "breast cancer", "confidence": 0.9, "context": "patient population", "prenormalized": "breast carcinoma (MONDO:0007254)"}
+- "DLBCL cell line" → {"value": "DLBCL", "confidence": 0.95, "context": "cell line model", "prenormalized": "diffuse large B-cell lymphoma (MONDO:0018906)"}
+- "diabetes study" → {"value": "diabetes", "confidence": 0.8, "context": "disease study", "prenormalized": "diabetes mellitus (MONDO:0005015)"}
 
 ## Important Notes
 - If no disease candidates are found, return an empty candidates array
 - Confidence should reflect both the certainty that it's a disease and the clarity of context
-- Be conservative - it's better to miss ambiguous cases than include false positives 
+- Be conservative - it's better to miss ambiguous cases than include false positives
+- **STRICTLY ADHERE TO MONDO ONTOLOGY** for disease terms - only use standardized disease classifications
+- For disease names, prefer MONDO database identifiers and standardized terms over colloquial descriptions
+- **The `value` field should contain the EXACT text as it appears in the input data**
+- **The `prenormalized` field should contain the standardized MONDO term with its ontology ID** 

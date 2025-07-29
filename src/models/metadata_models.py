@@ -5,7 +5,7 @@ These models represent the core data structures for GEO and PubMed metadata,
 replacing the previous JSON-based approach with validated, typed objects.
 """
 
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, validator, ConfigDict
 
 from .common import KeyValue
