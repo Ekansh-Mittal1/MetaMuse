@@ -115,7 +115,6 @@ def create_linker_agent(
             session_dir.mkdir(parents=True, exist_ok=True)
 
         tools = get_session_tools(session_dir)
-        print(f"✅ LinkerAgent: Initialized with {len(tools)} tools")
 
         # Parse target field from input_data if provided
         target_field = "Disease"  # Default
@@ -128,7 +127,7 @@ def create_linker_agent(
                 parts = input_data.split("target_field=")
                 if len(parts) > 1:
                     target_field = parts[1].split()[0].strip()
-            print(f"🎯 LinkerAgent: Target field parsed: {target_field}")
+            # Target field parsed
 
         instructions = (
             RECOMMENDED_PROMPT_PREFIX

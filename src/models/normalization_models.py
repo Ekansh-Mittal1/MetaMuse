@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 
 from .curation_models import CurationResult, ExtractedCandidate
-
+from .common import KeyValue
 
 class OntologyMatch(BaseModel):
     """A single ontology match result from semantic search."""
@@ -108,13 +108,18 @@ class NormalizationRequest(BaseModel):
         default=0.5, ge=0.0, le=1.0, description="Minimum similarity score threshold"
     )
 
+class SampleResultEntry(BaseModel):
+    sample_id: str
+    result: NormalizationResult
+
+    model_config = ConfigDict(extra="forbid")
 
 class BatchNormalizationResult(BaseModel):
     """Result of batch normalization across multiple samples."""
 
     model_config = ConfigDict(extra="forbid")
 
-    sample_results: Dict[str, NormalizationResult] = Field(
+    sample_results: List[SampleResultEntry] = Field(
         ..., description="Normalization results keyed by sample_id"
     )
     session_directory: str = Field(..., description="Path to session directory")
@@ -125,6 +130,6 @@ class BatchNormalizationResult(BaseModel):
     successful_normalizations: int = Field(
         ..., description="Number of candidates successfully normalized"
     )
-    processing_summary: Dict[str, Any] = Field(
-        default_factory=dict, description="Summary statistics and metadata"
+    processing_summary: List[KeyValue] = Field(
+        default_factory=list, description="Summary statistics and metadata"
     ) 

@@ -14,7 +14,7 @@ from .common import KeyValue
 class GSMAttributes(BaseModel):
     """Attributes section of GSM metadata."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     # Core required fields
     title: str = Field(..., description="Sample title")
@@ -73,6 +73,9 @@ class GSMAttributes(BaseModel):
     contact_zip_postal_code: Optional[str] = Field(
         None, description="Contact zip/postal code"
     )
+    contact_zip_postal_code: Optional[str] = Field(
+        None, alias="contact_zip/postal_code", description="Contact zip/postal code (with slash)"
+    )
 
     # Additional fields for multi-series samples
     all_series_ids: Optional[str] = Field(
@@ -91,7 +94,7 @@ class GSMAttributes(BaseModel):
 class GSMMetadata(BaseModel):
     """Complete GSM (Gene Expression Omnibus Sample) metadata."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     gsm_id: str = Field(..., pattern=r"^GSM\d+$", description="GSM identifier")
     status: str = Field(default="retrieved", description="Retrieval status")
@@ -107,7 +110,7 @@ class GSMMetadata(BaseModel):
 class GSEAttributes(BaseModel):
     """Attributes section of GSE metadata."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     # Core required fields
     title: str = Field(..., description="Series title")
@@ -149,6 +152,9 @@ class GSEAttributes(BaseModel):
     contact_zip_postal_code: Optional[str] = Field(
         None, description="Contact zip/postal code"
     )
+    contact_zip_postal_code: Optional[str] = Field(
+        None, alias="contact_zip/postal_code", description="Contact zip/postal code (with slash)"
+    )
 
     # Additional fields that may appear in GSE data
     supplementary_file: Optional[str] = Field(None, description="Supplementary file")
@@ -163,7 +169,7 @@ class GSEAttributes(BaseModel):
 class GSEMetadata(BaseModel):
     """Complete GSE (Gene Expression Omnibus Series) metadata."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     gse_id: str = Field(..., pattern=r"^GSE\d+$", description="GSE identifier")
     status: str = Field(default="retrieved", description="Retrieval status")
@@ -180,7 +186,7 @@ class GSEMetadata(BaseModel):
 class PMIDMetadata(BaseModel):
     """PubMed article metadata."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     pmid: int = Field(..., gt=0, description="PubMed ID")
     title: str = Field(..., description="Article title")

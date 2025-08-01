@@ -39,11 +39,9 @@ class OntologySemanticSearch:
         
         # Check for GPU availability
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {self.device}")
         
         # Check for FAISS GPU support
         self.use_gpu_faiss = torch.cuda.is_available() and hasattr(faiss, 'GpuIndexFlatIP')
-        print(f"FAISS GPU support: {self.use_gpu_faiss}")
         
         # Load the dictionary
         self._load_dictionary()
@@ -53,8 +51,6 @@ class OntologySemanticSearch:
         
     def _load_dictionary(self):
         """Load the ontology dictionary from JSON file."""
-        print(f"Loading dictionary from {self.dictionary_path}")
-        
         with open(self.dictionary_path, 'r') as f:
             term_to_id = json.load(f)
         
@@ -62,15 +58,11 @@ class OntologySemanticSearch:
         self.terms = list(term_to_id.keys())
         self.ids = list(term_to_id.values())
         
-        print(f"Loaded {len(self.terms)} terms from dictionary")
-        
         # Create ID mapping for FAISS index
         self.id_map = {i: (self.terms[i], self.ids[i]) for i in range(len(self.terms))}
         
     def _initialize_model(self):
         """Initialize the sentence transformer model on GPU."""
-        print(f"Loading model: {self.model_name}")
-        print(f"Moving model to {self.device}")
         
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModel.from_pretrained(self.model_name)
@@ -81,7 +73,7 @@ class OntologySemanticSearch:
         # Set model to evaluation mode
         self.model.eval()
         
-        print(f"Model loaded successfully on {self.device}")
+
         
     def encode(self, text):
         """
@@ -106,7 +98,7 @@ class OntologySemanticSearch:
     
     def build_index(self):
         """Build FAISS-GPU index for all dictionary terms using GPU encoding."""
-        print("Encoding all dictionary terms using GPU...")
+
         
         # Encode all terms
         term_vectors = []
@@ -116,15 +108,13 @@ class OntologySemanticSearch:
         
         # Stack vectors
         self.term_vectors = np.stack(term_vectors)
-        print(f"Encoded {len(self.term_vectors)} terms with {self.term_vectors.shape[1]} dimensions")
+
         
         # Build FAISS index with GPU support
-        print("Building FAISS index with GPU support...")
         dim = self.term_vectors.shape[1]
         
         if self.use_gpu_faiss:
             # Use GPU FAISS for building and searching
-            print("Using FAISS-GPU for index building and search...")
             
             # Create CPU index first
             cpu_index = faiss.IndexFlatIP(dim)
@@ -139,10 +129,8 @@ class OntologySemanticSearch:
             res = faiss.StandardGpuResources()
             self.index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
             
-            print(f"FAISS-GPU index built with {self.index.ntotal} vectors")
         else:
             # Fallback to CPU FAISS
-            print("Using FAISS-CPU (GPU not available or FAISS-GPU not installed)...")
             
             # Use IndexFlatIP for inner product (cosine similarity when normalized)
             self.index = faiss.IndexFlatIP(dim)
@@ -151,7 +139,6 @@ class OntologySemanticSearch:
             faiss.normalize_L2(self.term_vectors)
             self.index.add(self.term_vectors)
             
-            print(f"FAISS-CPU index built with {self.index.ntotal} vectors")
             
             # Set number of threads for CPU operations
             faiss.omp_set_num_threads(4)  # Adjust based on your CPU cores
@@ -167,6 +154,8 @@ class OntologySemanticSearch:
         Returns:
             list: List of tuples (term, ontology_id, score)
         """
+        print(f"🔍 [SEMANTIC_SEARCH] Performing semantic search for: '{query}' (k={k})")
+        
         if self.index is None:
             raise ValueError("Index not built. Call build_index() first.")
         
@@ -215,8 +204,6 @@ class OntologySemanticSearch:
         with open(metadata_path, 'wb') as f:
             pickle.dump(metadata, f)
         
-        print(f"Saved FAISS index to {index_path}")
-        print(f"Saved metadata to {metadata_path}")
     
     def load_index(self, output_dir="src/normalization/semantic_indexes"):
         """Load a previously saved FAISS index and metadata."""
@@ -226,7 +213,6 @@ class OntologySemanticSearch:
         metadata_path = Path(output_dir) / f"{Path(self.dictionary_path).stem}_metadata.pkl"
         
         if not metadata_path.exists():
-            print("Index files not found. Building new index...")
             self.build_index()
             return
         
@@ -236,15 +222,12 @@ class OntologySemanticSearch:
         
         # Load index based on availability
         if self.use_gpu_faiss and gpu_index_path.exists():
-            print("Loading FAISS-GPU index...")
             cpu_index = faiss.read_index(str(gpu_index_path))
             res = faiss.StandardGpuResources()
             self.index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
         elif cpu_index_path.exists():
-            print("Loading FAISS-CPU index...")
             self.index = faiss.read_index(str(cpu_index_path))
         else:
-            print("Index files not found. Building new index...")
             self.build_index()
             return
         
@@ -252,14 +235,10 @@ class OntologySemanticSearch:
         self.terms = metadata['terms']
         self.ids = metadata['ids']
         
-        print(f"Loaded FAISS index with {self.index.ntotal} vectors")
 
 def main():
     """Main function to demonstrate semantic search for MONDO ontology using GPU encoding and FAISS-GPU."""
     
-    print("="*60)
-    print("SEMANTIC SEARCH FOR MONDO ONTOLOGY (GPU + FAISS-GPU)")
-    print("="*60)
     
     # Initialize semantic search for MONDO
     mondo_search = OntologySemanticSearch("src/normalization/dictionaries/mondo_terms.json")
@@ -279,18 +258,11 @@ def main():
         "neurological disorder"
     ]
     
-    print("\n" + "="*60)
-    print("SEARCH RESULTS")
-    print("="*60)
-    
     for query in test_queries:
-        print(f"\nQuery: '{query}'")
-        print("-" * 40)
-        
         results = mondo_search.search(query, k=5)
         
         for i, (term, ont_id, score) in enumerate(results, 1):
-            print(f"{i}. {term} → {ont_id} (score: {score:.4f})")
+            pass  # Results processed in search method
     
     # Save the index for future use
     mondo_search.save_index()

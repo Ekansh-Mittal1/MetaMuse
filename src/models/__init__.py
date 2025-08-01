@@ -50,6 +50,16 @@ from .curation_models import (
     CurationResult,
 )
 
+from .normalization_models import (
+    OntologyMatch,
+    NormalizedCandidate,
+    NormalizationResult,
+    NormalizationRequest,
+    BatchNormalizationResult,
+    SampleResultEntry,
+    KeyValue,
+)
+
 __all__ = [
     # Metadata models
     "GSMMetadata",
@@ -86,4 +96,12 @@ __all__ = [
     "CurationDataPackage",
     "ExtractedCandidate",
     "CurationResult",
+    # Normalization models
+    "OntologyMatch",
+    "NormalizedCandidate",
+    "NormalizationResult",
+    "NormalizationRequest",
+    "BatchNormalizationResult",
+    "SampleResultEntry",
+    "KeyValue",
 ]

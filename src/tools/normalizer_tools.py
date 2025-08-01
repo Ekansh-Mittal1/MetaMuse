@@ -26,12 +26,30 @@ from src.models import (
     ExtractedCandidate,
     CurationResult,
     BatchNormalizationResult,
+    SampleResultEntry,
+    KeyValue,
 )
 
 
 class NormalizationError(Exception):
     """Custom exception for normalization errors."""
     pass
+
+
+def get_default_ontologies_for_field(target_field: str) -> List[str]:
+    """Get default ontologies for a target field."""
+    ontology_mapping = get_ontology_mapping()
+    ontologies = ontology_mapping.get(target_field.lower(), ["mondo"])
+    
+    # If no exact match, try case-insensitive partial matching
+    if not ontologies or ontologies == ["mondo"]:
+        target_lower = target_field.lower()
+        for field_key, field_ontologies in ontology_mapping.items():
+            if target_lower in field_key or field_key in target_lower:
+                ontologies = field_ontologies
+                break
+    
+    return ontologies
 
 
 def find_candidates_files_impl(session_dir: str) -> Dict[str, Any]:
@@ -273,21 +291,23 @@ def get_ontology_mapping() -> Dict[str, List[str]]:
         Dict[str, List[str]]: Mapping of field names to prioritized list of ontologies
     """
     return {
-        "disease": ["mondo", "efo"],
-        "tissue": ["uberon", "efo"],
-        "organ": ["uberon"],
-        "cell_type": ["clo", "efo"],
-        "phenotype": ["pato", "efo"],
-        "age": ["pato", "hsapdv"],
-        "development_stage": ["hsapdv", "efo"],
-        "ancestry": ["hancestro"],
-        "drug": ["dron"],
-        "treatment": ["dron", "efo"],
-        "compound": ["dron"],
-        "anatomy": ["uberon"],
-        "pathology": ["mondo", "pato"],
-        "organism_part": ["uberon"],
+        "disease": ["mondo"],
+        "tissue": ["uberon"],
+        "cell_line": ["clo"],
+        "cell line": ["clo"],
+        "ethnicity": ["hancestro"],
         "developmental_stage": ["hsapdv"],
+        "development_stage": ["hsapdv"],
+        "gender": ["pato"],
+        # Legacy mappings for backwards compatibility
+        "organ": ["uberon"],
+        "cell_type": ["clo"],
+        "phenotype": ["pato"],
+        "age": ["pato"],
+        "ancestry": ["hancestro"],
+        "anatomy": ["uberon"],
+        "pathology": ["mondo"],
+        "organism_part": ["uberon"],
         "sex": ["pato"],
         "strain": ["efo"],
     }
@@ -390,6 +410,124 @@ def semantic_search_ontology(
         
     except Exception as e:
         raise NormalizationError(f"Error searching ontology '{ontology}': {str(e)}")
+
+
+def semantic_search_candidates_impl(
+    curation_results_file: str,
+    target_field: str = "Disease",
+    ontologies: Optional[List[str]] = None,
+    top_k: int = 5,
+    min_score: float = 0.5,
+) -> BatchNormalizationResult:
+    """
+    Perform semantic search on extracted candidates from a curation results file
+    and return a complete BatchNormalizationResult object.
+    """
+    print(f"🔧 semantic_search_candidates_impl called for target_field: {target_field}")
+    print(f"📄 Reading curation results from: {curation_results_file}")
+
+    try:
+        # 1. Load CurationResult objects from the specified file
+        with open(curation_results_file, "r") as f:
+            curation_data = json.load(f)
+        
+        curation_results = [CurationResult(**data) for data in curation_data]
+        print(f"📊 Loaded {len(curation_results)} curation results")
+
+        # 2. Extract all ExtractedCandidate objects
+        all_candidates = []
+        for res in curation_results:
+            all_candidates.extend(res.series_candidates)
+            all_candidates.extend(res.sample_candidates)
+            all_candidates.extend(res.abstract_candidates)
+        print(f"🔎 Extracted {len(all_candidates)} total candidates for normalization.")
+
+        # Determine ontologies to use if not specified
+        if ontologies is None:
+            ontologies = get_default_ontologies_for_field(target_field)
+        print(f"🔍 Using ontologies: {ontologies}")
+
+        # 3. Perform semantic search for all candidates
+        normalized_candidates_map = {}
+        for candidate in all_candidates:
+            # This is a simplified search logic, can be batched for performance
+            best_match = None
+            highest_score = 0.0
+            for ontology in ontologies:
+                searcher = OntologySemanticSearch(f"src/normalization/dictionaries/{ontology}_terms.json")
+                searcher.load_index()
+                matches = searcher.search(candidate.value, k=top_k)
+                for term, term_id, score in matches:
+                    if score >= min_score and score > highest_score:
+                        highest_score = score
+                        best_match = OntologyMatch(
+                            term=term,
+                            term_id=term_id,
+                            score=score,
+                            ontology=ontology
+                        )
+            
+            normalized_candidates_map[candidate.value] = NormalizedCandidate(
+                **candidate.model_dump(),
+                ontology_matches=[best_match] if best_match else [],
+                best_match=best_match,
+                normalization_confidence=highest_score if best_match else None,
+                normalization_notes=[]
+            )
+
+        # 4. Construct the final BatchNormalizationResult object
+        sample_results = []
+        successful_normalizations = 0
+        for res in curation_results:
+            norm_series = [normalized_candidates_map[c.value] for c in res.series_candidates if c.value in normalized_candidates_map and normalized_candidates_map[c.value].best_match]
+            norm_sample = [normalized_candidates_map[c.value] for c in res.sample_candidates if c.value in normalized_candidates_map and normalized_candidates_map[c.value].best_match]
+            norm_abstract = [normalized_candidates_map[c.value] for c in res.abstract_candidates if c.value in normalized_candidates_map and normalized_candidates_map[c.value].best_match]
+            
+            all_norm_candidates = norm_series + norm_sample + norm_abstract
+            if all_norm_candidates:
+                successful_normalizations += len(all_norm_candidates)
+                best_overall_match = max(all_norm_candidates, key=lambda c: c.normalization_confidence or 0.0)
+            else:
+                best_overall_match = None
+
+            norm_result = NormalizationResult(
+                **res.model_dump(),
+                normalized_series_candidates=norm_series,
+                normalized_sample_candidates=norm_sample,
+                normalized_abstract_candidates=norm_abstract,
+                final_normalized_term=best_overall_match.best_match.term if best_overall_match and best_overall_match.best_match else None,
+                final_normalized_id=best_overall_match.best_match.term_id if best_overall_match and best_overall_match.best_match else None,
+                final_ontology=best_overall_match.best_match.ontology if best_overall_match and best_overall_match.best_match else None,
+                normalization_method="semantic_search"
+            )
+            
+            # Wrap in SampleResultEntry as expected by BatchNormalizationResult
+            sample_entry = SampleResultEntry(
+                sample_id=res.sample_id,
+                result=norm_result
+            )
+            sample_results.append(sample_entry)
+
+        session_dir = str(Path(curation_results_file).parent)
+        
+        return BatchNormalizationResult(
+            sample_results=sample_results,
+            session_directory=session_dir,
+            target_field=target_field,
+            total_candidates_normalized=len(all_candidates),
+            successful_normalizations=successful_normalizations,
+            processing_summary=[
+                KeyValue(key="ontologies_used", value=", ".join(ontologies)),
+                KeyValue(key="min_score_threshold", value=str(min_score))
+            ]
+        )
+
+    except Exception as e:
+        print(f"❌ semantic_search_candidates_impl error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Re-raise to be caught by the tool wrapper
+        raise
 
 
 def normalize_candidate_value(

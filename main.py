@@ -26,8 +26,11 @@ from src.workflows.MetaMuse import (
     create_linking_pipeline,
     create_full_pipeline,
     create_hybrid_pipeline,
+    create_enhanced_hybrid_pipeline,
+    create_enhanced_full_pipeline,
     create_curation_pipeline,
     create_structured_pipeline,
+    create_deterministic_pipeline,  # New deterministic workflow
 )
 
 load_dotenv(override=True)
@@ -64,11 +67,11 @@ MODEL_CONTEXT_LIMITS: dict[str, int] = {
     "openai/gpt-4o-mini": 128_000,
 }
 
-# Maximum response tokens for each model (much smaller than context window)
+# Maximum response tokens for each model (increased for complex JSON outputs)
 MODEL_RESPONSE_LIMITS: dict[str, int] = {
-    "google/gemini-2.5-flash": 2_048,
-    "openai/gpt-4o": 50_000,
-    "openai/gpt-4o-mini": 50_000,
+    "google/gemini-2.5-flash": 8_192,  # Increased for curator JSON output
+    "openai/gpt-4o": 32_768,           # Increased for normalizer verbose output
+    "openai/gpt-4o-mini": 32_768,      # Increased for normalizer verbose output
 }
 
 # Disable tracing for OpenRouter
@@ -98,7 +101,7 @@ class CustomModelProvider(ModelProvider):
         return OpenAIChatCompletionsModel(model=model, openai_client=client)
 
 
-async def run_workflow(workflow_name: str, input_data: str, model_name: str, **kwargs):
+async def run_workflow(workflow_name: str, input_data: str, model_name: str, max_turns: int = 100, **kwargs):
     """
     Run a specific workflow with the given input data.
 
@@ -123,6 +126,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         "curation": "c",
     }
 
+    # For other workflows, use the standard prefix system
     prefix = pipeline_prefixes.get(workflow_name, "unknown")
     session_id = f"{prefix}_{str(uuid4())}"
     existing_session_dir = None
@@ -142,7 +146,104 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
 
     # Create model provider
     model_provider = CustomModelProvider(model_name)
-    max_response_tokens = MODEL_RESPONSE_LIMITS.get(model_name, 4_096)
+    max_response_tokens = MODEL_RESPONSE_LIMITS.get(model_name, 16_384)  # High default for complex JSON output
+
+    # Handle deterministic workflow specially (bypasses orchestrator)
+    if workflow_name == "deterministic":
+        from src.workflows.deterministic_workflow import run_deterministic_workflow_sync
+        
+        # Create session ID for deterministic workflow
+        session_id = f"det_{str(uuid4())}"
+        
+        # Extract target field from input if specified
+        target_field = "Disease"  # Default
+        input_lower = input_data.lower()
+        
+        # Support multiple formats: "target_field:" and "target_field ="
+        if "target_field:" in input_lower:
+            # Find the position in the original string (case insensitive)
+            pos = input_lower.find("target_field:")
+            before = input_data[:pos].strip()
+            after = input_data[pos + len("target_field:"):].strip()
+            if after:
+                target_field = after.split()[0].strip()
+                input_data = before
+        elif "target_field =" in input_lower:
+            # Find the position in the original string (case insensitive)
+            pos = input_lower.find("target_field =")
+            before = input_data[:pos].strip()
+            after = input_data[pos + len("target_field ="):].strip()
+            if after:
+                target_field = after.split()[0].strip()
+                input_data = before
+        elif "target_field=" in input_lower:
+            # Find the position in the original string (case insensitive)
+            pos = input_lower.find("target_field=")
+            before = input_data[:pos].strip()
+            after = input_data[pos + len("target_field="):].strip()
+            if after:
+                target_field = after.split()[0].strip()
+                input_data = before
+        
+        # Normalize target field to snake_case format for consistency
+        target_field = target_field.lower().replace(" ", "_")
+        
+        print(f"🎯 Parsed target field: {target_field}")
+        print(f"📝 Cleaned input: {input_data}")
+        
+        result = run_deterministic_workflow_sync(
+            input_text=input_data,
+            target_field=target_field,
+            session_id=session_id,
+            sandbox_dir="sandbox",
+            model_provider=model_provider,
+            max_tokens=max_response_tokens,
+            max_turns=max_turns,
+        )
+        
+        # Print results
+        if result.get("success"):
+            print(f"✅ Deterministic workflow completed successfully!")
+            print(f"📁 Session directory: {result['session_directory']}")
+            print(f"🎯 Target field: {result['target_field']}")
+            print(f"📊 Summary: {result['summary']}")
+            print(f"📄 Files created: {len(result.get('files_created', []))}")
+            for file_path in result.get('files_created', []):
+                print(f"   📄 {Path(file_path).name}")
+        else:
+            print(f"❌ Deterministic workflow failed: {result.get('error', 'Unknown error')}")
+            
+        return result
+
+    # Handle test normalizer workflow specially (bypasses orchestrator)
+    if workflow_name == "test_normalizer":
+        from src.workflows.deterministic_workflow import test_normalizer_agent
+        
+        # Hardcode the test session directory
+        test_session_dir = "/teamspace/studios/this_studio/sandbox/test_session"
+        
+        result = await test_normalizer_agent(
+            test_session_dir=test_session_dir,
+            model_provider=model_provider,
+            max_tokens=max_response_tokens,
+            max_turns=max_turns,
+        )
+        
+        # Print results
+        if result.get("status") == "success":
+            print(f"✅ Normalizer agent test completed successfully!")
+            print(f"📁 Test session: {result['test_session_dir']}")
+            print(f"🎯 Target field: {result['normalizer_output']['target_field']}")
+            print(f"📊 Input candidates: {result['curator_input']['total_candidates']}")
+            print(f"🔬 Normalized results: {result['normalizer_output']['sample_results_count']}")
+            print(f"✨ Successful normalizations: {result['normalizer_output']['successful_normalizations']}")
+            print(f"📄 Files created: {len(result.get('files_created', []))}")
+            for file_path in result.get('files_created', []):
+                print(f"   📄 {Path(file_path).name}")
+        else:
+            print(f"❌ Normalizer agent test failed: {result.get('error', 'Unknown error')}")
+            
+        return result
 
     # Create orchestrator
     orchestrator = SimpleOrchestrator(
@@ -158,8 +259,12 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         "linking": create_linking_pipeline,
         "full_pipeline": create_full_pipeline,
         "hybrid_pipeline": create_hybrid_pipeline,
+        "enhanced_hybrid_pipeline": create_enhanced_hybrid_pipeline,
+        "enhanced_full_pipeline": create_enhanced_full_pipeline,
         "curation": create_curation_pipeline,
         "structured_pipeline": create_structured_pipeline,
+        "deterministic": create_deterministic_pipeline,  # New recommended approach
+        "test_normalizer": None,  # Special handling for normalizer agent testing
     }
 
     if workflow_name not in workflow_funcs:
@@ -168,22 +273,29 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
         )
 
     workflow_func = workflow_funcs[workflow_name]
+    
+    # Skip workflow function requirement for special workflows
+    if workflow_name in ["test_normalizer"] and workflow_func is None:
+        # This is handled specially above, should not reach this point
+        raise ValueError(f"Special workflow {workflow_name} should be handled before this point")
 
-    print(f"🚀 Starting {workflow_name} workflow...")
-    print(f"📋 Session ID: {session_id}")
-    print(f"🤖 Model: {model_name}")
-    print(f"📝 Input: {input_data}")
-    print("=" * 60)
+    # Starting workflow
 
     try:
+        # Handle deterministic workflow specially (bypasses orchestrator)
+        if workflow_name == "deterministic":
+            # This is already handled above, so we shouldn't reach here
+            raise ValueError("Deterministic workflow should be handled before orchestrator creation")
+            
         # Run the workflow with existing session directory if specified
-        if existing_session_dir and workflow_name in ["linking", "curation"]:
+        elif existing_session_dir and workflow_name in ["linking", "curation"]:
             result = await orchestrator.run_workflow(
                 lambda **kwargs: workflow_func(
                     existing_session_dir=existing_session_dir, input_data=input_data
                 ),
                 input_data,
                 session_id=session_id,  # Pass session_id explicitly to avoid orchestrator adding it
+                max_turns=max_turns,
                 **kwargs,
             )
         elif workflow_name in [
@@ -202,6 +314,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
                     input_data=input_data,
                 ),
                 input_data,
+                max_turns=max_turns,
                 **kwargs,
             )
         else:
@@ -211,24 +324,20 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, **k
                     session_id=session_id, sandbox_dir=orchestrator.sandbox_dir
                 ),
                 input_data,
+                max_turns=max_turns,
                 **kwargs,
             )
 
-        print("\n" + "=" * 60)
-        print("✅ Workflow completed successfully!")
-
         # Print session metadata
         session_metadata = orchestrator.get_session_metadata()
-        print(f"📁 Session directory: {session_metadata['session_dir']}")
-        print(f"📄 Total files created: {session_metadata['files_created']}")
+        print(f"Session directory: {session_metadata['session_dir']}")
+        print(f"Total files created: {session_metadata['files_created']}")
 
         # Display series directories
         if session_metadata["series_directories"]:
-            print(f"📂 Series directories: {session_metadata['series_count']}")
+            print(f"Series directories: {session_metadata['series_count']}")
             for series_dir in session_metadata["series_directories"]:
-                print(
-                    f"   📁 {series_dir['series_id']}/ ({series_dir['file_count']} files)"
-                )
+                print(f"   {series_dir['series_id']}/ ({series_dir['file_count']} files)")
                 for file_name in series_dir["files"]:
                     print(f"      📄 {file_name}")
         else:
@@ -272,6 +381,8 @@ def list_workflows():
         "linking": "Single-agent metadata linking and processing pipeline",
         "full_pipeline": "Complete pipeline: IngestionAgent → LinkerAgent → CuratorAgent",
         "hybrid_pipeline": "Hybrid pipeline: Deterministic data_intake + CuratorAgent",
+        "enhanced_hybrid_pipeline": "Enhanced hybrid pipeline: Deterministic data_intake + CuratorAgent + NormalizerAgent",
+        "enhanced_full_pipeline": "Enhanced full pipeline: IngestionAgent → LinkerAgent → CuratorAgent → NormalizerAgent",
         "curation": "Single-agent metadata curation pipeline for extracting specific fields",
     }
 
@@ -287,12 +398,16 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py geo_extraction "Extract metadata for GSM1019742" --model openai/gpt-4o
-  python main.py geo_extraction "Get series info for GSE41588 and paper abstract for PMID 23902433" --model openai/gpt-4o-mini
-  python main.py linking "session directory sandbox/di_c414a6ee-346e-469b-bae5-2c5316872314" --model google/gemini-2.5-flash
-  python main.py full_pipeline "GSM1000981 target_field Disease" --model openai/gpt-4o
-  python main.py hybrid_pipeline "GSM1000981 target_field Disease" --model openai/gpt-4o
+  python main.py geo_extraction "Extract metadata for GSM1019742"
+  python main.py geo_extraction "Get series info for GSE41588 and paper abstract for PMID 23902433"
+  python main.py linking "session directory sandbox/di_c414a6ee-346e-469b-bae5-2c5316872314"
+  python main.py full_pipeline "GSM1000981 target_field Disease"
+  python main.py hybrid_pipeline "GSM1000981 target_field Disease"
+  python main.py enhanced_hybrid_pipeline "GSM1000981 target_field Disease"
+  python main.py enhanced_full_pipeline "GSM1000981 target_field Disease"
   python main.py curation "session directory sandbox/test-session target_field Disease samples GSM1000981,GSM1000984"
+  python main.py deterministic "GSM1000981 target_field:disease"
+  python main.py test_normalizer "any_input"
   python main.py --list-workflows
         """,
     )
@@ -306,7 +421,12 @@ Examples:
             "linking",
             "full_pipeline",
             "hybrid_pipeline",
+            "enhanced_hybrid_pipeline",
+            "enhanced_full_pipeline",
             "curation",
+            "structured_pipeline",
+            "deterministic",
+            "test_normalizer",
         ],
         help="Workflow to run",
     )

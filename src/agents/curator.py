@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from agents import Agent, RunContextWrapper
+from agents import Agent, RunContextWrapper, Runner, RunConfig, ModelSettings
+from openai.types.shared import Reasoning
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from pydantic import Field
 from src.agents.handoff_base import BaseHandoff
@@ -146,16 +147,8 @@ def create_curator_agent(
             session_dir = (Path(sandbox_dir) / session_id).absolute()
             session_dir.mkdir(parents=True, exist_ok=True)
 
-        # Store data_intake_output for the tool to access
-        if data_intake_output:
-            print("📊 CuratorAgent: Data intake output provided for hybrid pipeline")
-            # Store in a module-level variable that the tool can access
-            import src.agents.curator as curator_module
-
-            curator_module._data_intake_output = data_intake_output
-
-        tools = get_curator_tools(session_dir)
-        print(f"✅ CuratorAgent: Initialized with {len(tools)} tools")
+        # NO TOOLS NEEDED - Data passed directly in input
+        tools = []
 
         # Load extraction template based on target field
         # Extract target field from input_data if available, otherwise default to "Disease"
@@ -226,6 +219,17 @@ def create_curator_agent(
         try:
             # Map target field to template filename
             template_mapping = {
+                "disease": "disease.md",
+                "tissue": "tissue.md",
+                "age": "age.md",
+                "organ": "organ.md",
+                "drug": "drug.md",
+                "treatment": "treatment.md",
+                "organism": "organism.md",
+                "ethnicity": "ethnicity.md",
+                "gender": "gender.md",
+                "cell_line": "cell_line.md",
+                # Legacy support for old formats
                 "Disease": "disease.md",
                 "Tissue": "tissue.md",
                 "Age": "age.md",
@@ -236,6 +240,7 @@ def create_curator_agent(
                 "Ethnicity": "ethnicity.md",
                 "Gender": "gender.md",
                 "Cell_Line": "cell_line.md",
+                "CellLine": "cell_line.md",
             }
 
             template_filename = template_mapping.get(
@@ -251,7 +256,7 @@ def create_curator_agent(
             if template_file.exists():
                 with open(template_file, "r", encoding="utf-8") as f:
                     extraction_template = f.read()
-                print(f"📋 CuratorAgent: Loaded extraction template for {target_field}")
+                # Loaded extraction template for target field
             else:
                 print(
                     f"⚠️  No extraction template found for {target_field}, using generic template"
@@ -261,23 +266,10 @@ def create_curator_agent(
             print(f"⚠️  Could not load extraction template for {target_field}: {e}")
             extraction_template = "# Generic Extraction Template\nExtract relevant candidates for the target field."
 
-        # Load the appropriate base instructions based on mode
-        if data_intake_output:
-            # Hybrid mode: data comes from data_intake workflow
-            base_instructions = load_prompt(
-                "curator_agent_hybrid.md", session_dir=str(session_dir)
-            )
-            print(
-                "📋 CuratorAgent: Using hybrid mode prompt (data from data_intake workflow)"
-            )
-        else:
-            # Standalone mode: data comes from previous agents
-            base_instructions = load_prompt(
-                "curator_agent_standalone.md", session_dir=str(session_dir)
-            )
-            print(
-                "📋 CuratorAgent: Using standalone mode prompt (data from previous agents)"
-            )
+        # Use standalone prompt - data passed directly in input
+        base_instructions = load_prompt(
+            "curator_agent_standalone.md", session_dir=str(session_dir)
+        )
 
         instructions = (
             RECOMMENDED_PROMPT_PREFIX
@@ -293,8 +285,9 @@ def create_curator_agent(
             instructions=instructions,
             tools=tools,
             handoffs=handoffs or [],
-            output_type=CuratorOutput,  # Restored strict output type
+            output_type=CuratorOutput,
         )
+        agent.strict_output = True
 
         return agent
 
@@ -304,4 +297,137 @@ def create_curator_agent(
 
         print("🔍 CuratorAgent creation traceback:")
         traceback.print_exc()
+        raise
+
+
+async def run_curator_agent(
+    data_intake_output: LinkerOutput,
+    target_field: str = "Disease",
+    session_id: str = None,
+    sandbox_dir: str = None,
+    model_provider = None,
+    max_tokens: int = 4096,
+    max_turns: int = 100,
+) -> CuratorOutput:
+    """
+    Run the curator agent and return its structured output.
+    
+    This function creates a curator agent, runs it using Runner.run_streamed,
+    and returns the final CuratorOutput Pydantic model. This is part of the
+    new deterministic workflow architecture where agents are decoupled.
+    
+    Parameters
+    ----------
+    data_intake_output : LinkerOutput
+        The output from the data intake workflow containing linked metadata
+    target_field : str, optional
+        The target metadata field to extract candidates for (e.g., 'Disease', 'Tissue', 'Age')
+    session_id : str, optional
+        The unique session identifier. If not provided, generates a new one.
+    sandbox_dir : str, optional
+        Base sandbox directory. If not provided, defaults to "sandbox"
+        
+    Returns
+    -------
+    CuratorOutput
+        The structured output from the curator agent containing extraction candidates
+    """
+    try:
+        # Use the session directory from data_intake_output
+        existing_session_dir = data_intake_output.session_directory
+        
+        # Prepare input data for the curator
+        sample_ids = data_intake_output.sample_ids_for_curation
+        input_data = f"target_field:{target_field} {' '.join(sample_ids)}"
+        
+        # Create the curator agent without handoffs (decoupled)
+        agent = create_curator_agent(
+            session_id=session_id,
+            sandbox_dir=sandbox_dir,
+            handoffs=[],  # No handoffs in deterministic workflow
+            existing_session_dir=existing_session_dir,
+            input_data=input_data,
+            data_intake_output=data_intake_output,
+        )
+        
+        # Agent is already configured with strict CuratorOutput
+        
+        # Prepare the input message with the data intake output
+        curator_message = (
+            f"Please curate metadata for the target field '{target_field}' using the following data intake output:\n\n"
+            f"{data_intake_output.model_dump_json(indent=2)}\n\n"
+            f"Extract candidates from the provided metadata for samples: {', '.join(sample_ids)}. "
+            f"Process all metadata internally and return a CuratorOutput object."
+        )
+        print(f"🔍 Curator message length: {len(curator_message)} characters")
+        
+        # Prepare run config if model provider is specified
+        run_config = None
+        if model_provider:
+            extra_body = {"provider": {"order": ["google-vertex/us"]}}
+            if max_tokens is not None:
+                extra_body["max_tokens"] = max_tokens
+                
+            run_config = RunConfig(
+                model_provider=model_provider,
+                model_settings=ModelSettings(
+                    max_tokens=max_tokens,
+                    reasoning=Reasoning(effort="high"),
+                    extra_body=extra_body,
+                ),
+            )
+        
+        # Run the agent using Runner.run_streamed
+        result = Runner.run_streamed(agent, curator_message, run_config=run_config, max_turns=max_turns)
+        
+        # Extract the final result with strict output
+        final_result = None
+        
+        try:
+            async for event in result.stream_events():
+                # Handle raw response events (token-by-token streaming)
+                if event.type == "raw_response_event":
+                    # Check if this is a text delta event with actual content
+                    if (
+                        hasattr(event, "data")
+                        and hasattr(event.data, "delta")
+                        and event.data.delta is not None
+                        and event.data.delta.strip()
+                    ):
+                        # Stream tokens naturally like ChatGPT
+                        print(event.data.delta, end="", flush=True)
+                    continue
+                
+                # Handle agent response events (final result)
+                elif event.type == "agent_response_event":
+                    print(f"\n✅ Found agent response event: {type(event.result)}")
+                    final_result = event.result
+                    break
+                    
+        except Exception as stream_error:
+            print(f"\n❌ Stream error: {stream_error}")
+            
+        print("\n🔍 Streaming completed")
+        
+        
+        try:
+            final_result = result.final_output
+            print(f"✅ Got final_output directly: {type(final_result)}")
+        except Exception as e:
+            print(f"❌ Could not get final_output: {e}")
+            raise RuntimeError("No result received from curator agent")
+            
+        # Validate that we got a CuratorOutput
+        if not isinstance(final_result, CuratorOutput):
+            raise RuntimeError(f"Expected CuratorOutput, got {type(final_result)}")
+            
+        print("✅ Curator agent completed with structured output")
+        return final_result
+        
+    except Exception as e:
+        print(f"❌ run_curator_agent error: {str(e)}")
+        import traceback
+        print("🔍 run_curator_agent traceback:")
+        traceback.print_exc()
+
         raise

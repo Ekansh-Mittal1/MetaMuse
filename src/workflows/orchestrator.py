@@ -81,7 +81,7 @@ class SimpleOrchestrator:
                 kwargs["session_id"] = self.session_id
 
             entry_agent = workflow_func(**kwargs)
-            print("✅ Orchestrator: Agent built successfully")
+            # Agent built successfully
 
             # Prepare run config if model provider is specified
             run_config = None
@@ -91,11 +91,6 @@ class SimpleOrchestrator:
                 # Add max_tokens to extra_body if specified
                 if self.provider_max_tokens is not None:
                     extra_body["max_tokens"] = self.provider_max_tokens
-                    print(
-                        f"🔧 Debug: Setting max_tokens to {self.provider_max_tokens} in extra_body"
-                    )
-                else:
-                    print("⚠️  Debug: provider_max_tokens is None")
 
                 run_config = RunConfig(
                     model_provider=self.model_provider,
@@ -110,12 +105,8 @@ class SimpleOrchestrator:
 
             # Run the workflow with streaming
             try:
-                # Get max_turns from kwargs or use a higher default for LinkerAgent
-                max_turns = kwargs.get("max_turns", 100)  # Increased from default 10
-                print(f"🔧 Debug: Using max_turns={max_turns}")
-
                 result = Runner.run_streamed(
-                    entry_agent, input_data, run_config=run_config, max_turns=max_turns
+                    entry_agent, input_data, run_config=run_config, max_turns=kwargs.get("max_turns", 100)
                 )
 
                 # Starting streaming execution (suppressed for natural streaming)
@@ -169,57 +160,33 @@ class SimpleOrchestrator:
                             current_time = time.time()
                             tool_calls_made.append(tool_name)
                             tool_call_times.append(current_time)
-                            print(
-                                f"🔧 Tool Called: {tool_name} (#{len(tool_calls_made)})"
-                            )
 
-                            # DEBUG: Print detailed tool call information for workflow violation analysis
-                            print("🔍 TOOL CALL DEBUG:")
-                            print(f"   📋 Tool Name: {tool_name}")
-                            print(f"   📋 Event Item Type: {type(event.item)}")
-
-                            # Try to extract tool arguments
+                            # Try to extract tool arguments for monitoring
                             tool_args = "No arguments found"
                             if hasattr(event.item, "tool_call"):
                                 tool_call = event.item.tool_call
-                                print(f"   📋 Has tool_call attribute: {tool_call}")
                                 if hasattr(tool_call, "function"):
                                     function = tool_call.function
-                                    print(f"   📋 Function: {function}")
                                     if hasattr(function, "arguments"):
                                         tool_args = function.arguments
-                                        print(f"   📋 Arguments: {tool_args}")
 
                             if hasattr(event.item, "arguments"):
                                 tool_args = event.item.arguments
-                                print(f"   📋 Direct Arguments: {tool_args}")
 
-                            print(f"   📋 Full Item: {event.item}")
-                            print(f"   📋 Item Attributes: {dir(event.item)}")
-
-                            # DEBUG: Track rapid successive calls
+                            # Track rapid successive calls
                             if len(tool_calls_made) > 1:
                                 time_since_last = current_time - tool_call_times[-2]
-                                print(
-                                    f"⚠️ DEBUG: Multiple tool calls detected! Previous calls: {tool_calls_made[:-1]}"
-                                )
-                                print(
-                                    f"⚠️ DEBUG: Time since last call: {time_since_last:.2f} seconds"
-                                )
+                                # Check for repeated get_data_intake_context calls (workflow violation)
                                 if (
                                     tool_name == "get_data_intake_context"
                                     and len(tool_calls_made) > 1
                                 ):
-                                    print(
-                                        "🚨 STOCHASTIC BEHAVIOR: Agent making repeated get_data_intake_context calls!"
-                                    )
-                                    print(
-                                        f"🚨 VIOLATION CAUSE: Agent called get_data_intake_context with args: {tool_args}"
-                                    )
+                                    # This is a workflow violation but continue processing
+                                    pass
+                                # Check for rapid successive calls (potential stochastic behavior)
                                 if time_since_last < 1.0:
-                                    print(
-                                        f"🚨 RAPID SUCCESSIVE CALLS: Agent making calls within {time_since_last:.2f}s - this indicates stochastic behavior!"
-                                    )
+                                    # Rapid calls detected but continue processing
+                                    pass
                         elif event.item.type == "tool_call_output_item":
                             output = getattr(event.item, "output", "No output")
                             # Try to extract tool name from output if it's a structured result
@@ -260,19 +227,13 @@ class SimpleOrchestrator:
                 return result
 
             except Exception as e:
-                print(f"❌ Runner.run_streamed failed: {str(e)}")
-                print("🔍 Runner.run_streamed traceback:")
                 import traceback
-
                 traceback.print_exc()
                 # Re-raise to ensure it's not suppressed
                 raise
 
         except Exception as e:
-            print(f"❌ Orchestrator error: {str(e)}")
             import traceback
-
-            print("🔍 Orchestrator traceback:")
             traceback.print_exc()
             raise
 

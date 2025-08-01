@@ -262,7 +262,7 @@ class DataIntakeWorkflow:
                         package_data = data_field["curation_package"]
                         curation_package = CurationDataPackage(**package_data)
                         curation_packages.append(curation_package)
-                        print(f"✅ Created CurationDataPackage for {sample_id}")
+                        # Created CurationDataPackage successfully
                     else:
                         print(
                             f"⚠️  Failed to create CurationDataPackage for {sample_id}: No curation_package in data field"
@@ -384,7 +384,7 @@ class DataIntakeWorkflow:
             files_created = []
             workflow_data = {"gsm_id": gsm_id}
 
-            print(f"🔧 Starting GSM workflow for {gsm_id}")
+            # Starting GSM workflow
 
             # Step 1: Extract GSM metadata
             print(f"Step 1: Extracting GSM metadata for {gsm_id}")
@@ -484,7 +484,7 @@ class DataIntakeWorkflow:
             files_created = []
             workflow_data = {"gse_id": gse_id}
 
-            print(f"🔧 Starting GSE workflow for {gse_id}")
+            # Starting GSE workflow
 
             # Step 1: Extract GSE metadata
             print(f"Step 1: Extracting GSE metadata for {gse_id}")
@@ -559,7 +559,7 @@ class DataIntakeWorkflow:
             files_created = []
             workflow_data = {"pmid": pmid}
 
-            print(f"🔧 Starting PMID workflow for {pmid}")
+            # Starting PMID workflow
 
             # Extract paper abstract
             print(f"Step 1: Extracting paper abstract for PMID {pmid}")
@@ -612,7 +612,7 @@ class DataIntakeWorkflow:
             Linker workflow result
         """
         try:
-            print(f"🔧 Starting linker workflow for {sample_id}")
+            # Starting linker workflow
 
             # Step 1: Load mapping file
             print("Step 1: Loading mapping file")
@@ -692,7 +692,7 @@ class DataIntakeWorkflow:
             Complete ingestion workflow result
         """
         try:
-            print(f"🔧 Starting ingestion workflow for: {input_text}")
+            # Starting ingestion workflow
 
             # Parse GEO IDs
             geo_ids = self._parse_geo_ids(input_text)
@@ -840,7 +840,7 @@ class DataIntakeWorkflow:
             Complete workflow result as LinkerOutput object
         """
         try:
-            print(f"🔧 Starting complete workflow for: {input_text}")
+            # Starting complete workflow
 
             # Parse GEO IDs
             geo_ids = self._parse_geo_ids(input_text)
@@ -1214,7 +1214,7 @@ Examples:
 
     # Set up logging
     if args.verbose:
-        print("🔧 Data Intake Workflow")
+        # Data Intake Workflow
         print(f"Input: {args.input}")
         print(f"Type: {args.type}")
         print(f"Session: {args.session or 'auto-generated'}")

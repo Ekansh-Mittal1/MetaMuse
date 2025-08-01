@@ -10,8 +10,78 @@ from src.agents.curator import (
     create_curator_agent,
     CuratorHandoff,
 )
+from src.agents.normalizer import (
+    create_normalizer_agent,
+    NormalizerHandoff,
+)
 from src.workflows.data_intake import run_data_intake_workflow
+from src.workflows.deterministic_workflow import (
+    run_deterministic_workflow,
+    run_deterministic_workflow_sync,
+)
 
+# New deterministic workflow function - recommended approach
+def create_deterministic_pipeline(
+    target_field: str = "Disease",
+    session_id: str = None,
+    sandbox_dir: str = None,
+    ontologies: list[str] = None,
+    min_score: float = 0.5,
+):
+    """
+    Create a deterministic metadata processing pipeline.
+    
+    This is the new recommended approach that uses the deterministic workflow
+    architecture where agents are completely decoupled and run independently
+    using Runner.run_streamed. Data is serialized between each step.
+    
+    The workflow is: data_intake -> curator_agent -> normalizer_agent
+    
+    Parameters
+    ----------
+    target_field : str, optional
+        The target metadata field to extract and normalize (e.g., 'Disease', 'Tissue', 'Age')
+    session_id : str, optional
+        The unique session identifier. If not provided, generates a new one.
+    sandbox_dir : str, optional
+        Base sandbox directory. If not provided, defaults to "sandbox"
+    ontologies : list[str], optional
+        Specific ontologies to search during normalization
+    min_score : float, optional
+        Minimum similarity score threshold for ontology matches
+        
+    Returns
+    -------
+    function
+        A function that accepts input_text and returns the complete workflow results
+    """
+    def workflow_function(input_text: str):
+        """
+        Execute the deterministic workflow with the given input.
+        
+        Parameters
+        ----------
+        input_text : str
+            Input text containing GEO IDs for processing
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Complete workflow results containing outputs from all stages
+        """
+        return run_deterministic_workflow_sync(
+            input_text=input_text,
+            target_field=target_field,
+            session_id=session_id,
+            sandbox_dir=sandbox_dir,
+            ontologies=ontologies,
+            min_score=min_score,
+        )
+    
+    return workflow_function
+
+
+# LEGACY FUNCTIONS - Use create_deterministic_pipeline() for new projects
 
 def create_extraction_pipeline(
     session_id: str = None, sandbox_dir: str = None
@@ -394,20 +464,8 @@ def create_structured_pipeline(
 
 def on_structured_handoff_callback(ctx, input_data):
     """Enhanced handoff callback for structured Pydantic workflows."""
-    print(f"🔄 [Structured Handoff] Request: {input_data.original_request}")
-
-    # Log structured data presence
-    for field_name, value in input_data.model_dump(
-        exclude={"original_request"}
-    ).items():
-        if hasattr(value, "model_dump"):  # Pydantic object
-            print(
-                f"📦 [Structured Handoff] {field_name}: {type(value).__name__} (validated)"
-            )
-        elif isinstance(value, list) and value:
-            print(f"📋 [Structured Handoff] {field_name}: {len(value)} items")
-        else:
-            print(f"🔤 [Structured Handoff] {field_name}: {value}")
+    # Log structured data presence for debugging if needed
+    pass
 
 
 def create_hybrid_pipeline(
@@ -456,9 +514,7 @@ def create_hybrid_pipeline(
             if part.strip() and part.strip().startswith("GSM"):
                 sample_ids.append(part.strip())
 
-    print("🔗 Hybrid pipeline: Running deterministic data_intake workflow...")
-    print(f"📋 Input: {geo_input}")
-    print(f"🔄 Session ID: {session_id}")
+    # Running deterministic data_intake workflow
 
     # Run the deterministic data_intake workflow first
     data_intake_result = run_data_intake_workflow(
@@ -469,17 +525,7 @@ def create_hybrid_pipeline(
     )
 
     if not data_intake_result.success:
-        print(f"❌ Data intake workflow failed: {data_intake_result.message}")
-        if data_intake_result.warnings:
-            for warning in data_intake_result.warnings:
-                print(f"   - {warning}")
         raise RuntimeError(f"Data intake workflow failed: {data_intake_result.message}")
-
-    print("✅ Data intake workflow completed successfully")
-    print(
-        f"📁 Files created: {len(data_intake_result.files_created) if data_intake_result.files_created else 0}"
-    )
-    print(f"📋 Sample IDs for curation: {data_intake_result.sample_ids_for_curation}")
 
     # Create CuratorAgent that will process the deterministic output
     # Note: The CuratorAgent will only have access to curation-specific tools,
@@ -488,8 +534,7 @@ def create_hybrid_pipeline(
     sample_ids_for_curation = data_intake_result.sample_ids_for_curation
 
     # Pass the LinkerOutput data directly to the CuratorAgent via data_intake_output parameter
-    print("🔍 Hybrid pipeline: Passing LinkerOutput data to CuratorAgent...")
-
+    
     # Create clean input_data without the LinkerOutput JSON
     curator_input_data = (
         f"target_field:{target_field} {' '.join(sample_ids_for_curation)}"
@@ -505,9 +550,101 @@ def create_hybrid_pipeline(
         data_intake_output=data_intake_result,
     )
 
-    print("🔗 Hybrid pipeline configured with deterministic data_intake + CuratorAgent")
-    print(f"📋 Target field: {target_field}")
-    print(f"📁 Sample IDs: {sample_ids_for_curation}")
+    return curator_agent
+
+
+def create_enhanced_hybrid_pipeline(
+    session_id: str = None, sandbox_dir: str = None, input_data: str = None
+) -> Agent:
+    """
+    Create an enhanced hybrid pipeline that includes normalization after curation.
+
+    This pipeline combines deterministic data_intake.py followed by CuratorAgent
+    and then NormalizerAgent for complete metadata processing workflow.
+
+    Parameters
+    ----------
+    session_id : str, optional
+        The unique session identifier. If not provided, generates a new one.
+    sandbox_dir : str, optional
+        Base sandbox directory. If not provided, defaults to "sandbox"
+    input_data : str, optional
+        Input data string that may contain sample IDs and target field information
+
+    Returns
+    -------
+    Agent
+        The curator agent that will process the deterministic output and hand off to normalizer
+    """
+    if session_id is None:
+        session_id = f"mm_enhanced_{str(uuid4())}"
+    if sandbox_dir is None:
+        sandbox_dir = "sandbox"
+
+    # Parse input_data for multiple sample IDs and target field
+    sample_ids = []
+    target_field = "Disease"  # Default target field
+    geo_input = input_data
+
+    if input_data:
+        # Look for target field specification
+        if "target_field:" in input_data.lower():
+            parts = input_data.split("target_field:")
+            if len(parts) > 1:
+                target_field = parts[1].split()[0].strip()
+                geo_input = parts[0].strip()
+
+        # Extract sample IDs for curator
+        for part in geo_input.replace(",", " ").split():
+            if part.strip() and part.strip().startswith("GSM"):
+                sample_ids.append(part.strip())
+
+    # Running deterministic data_intake workflow
+
+    # Run the deterministic data_intake workflow first
+    data_intake_result = run_data_intake_workflow(
+        input_text=geo_input,
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        workflow_type="complete",
+    )
+
+    if not data_intake_result.success:
+        raise RuntimeError(f"Data intake workflow failed: {data_intake_result.message}")
+
+    # Create session variables
+    existing_session_dir = data_intake_result.session_directory
+    sample_ids_for_curation = data_intake_result.sample_ids_for_curation
+
+    # Create clean input_data without the LinkerOutput JSON
+    curator_input_data = (
+        f"target_field:{target_field} {' '.join(sample_ids_for_curation)}"
+    )
+
+    # Create NormalizerAgent
+    normalizer_agent = create_normalizer_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[],
+        existing_session_dir=existing_session_dir,
+        input_data=curator_input_data,
+    )
+
+    # Create CuratorAgent with handoff to NormalizerAgent
+    curator_agent = create_curator_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[
+            handoff(
+                agent=normalizer_agent,
+                input_type=NormalizerHandoff,
+                on_handoff=on_handoff_callback,
+            )
+        ],
+        existing_session_dir=existing_session_dir,
+        input_data=curator_input_data,
+        data_intake_output=data_intake_result,
+    )
 
     return curator_agent
 
@@ -594,6 +731,123 @@ def create_full_pipeline(
     print("📋 Handoff type: CuratorHandoff")
     print(f"🎯 Target field: {target_field}")
     print(f"📁 Sample IDs: {sample_ids}")
+
+    # Create IngestionAgent with handoff to LinkerAgent
+    # Pass the target field information to the IngestionAgent
+    ingestion_input_data = (
+        f"target_field:{target_field} {input_data}"
+        if input_data
+        else f"target_field:{target_field}"
+    )
+    ingestion_agent = create_ingestion_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[
+            handoff(
+                agent=linker_agent,
+                input_type=LinkerHandoff,
+                on_handoff=on_handoff_callback,
+            )
+        ],
+        input_data=ingestion_input_data,
+    )
+
+    return ingestion_agent  # Return entry point
+
+
+def create_enhanced_full_pipeline(
+    session_id: str = None, sandbox_dir: str = None, input_data: str = None
+) -> Agent:
+    """
+    Create a complete metadata extraction, linking, curation, and normalization pipeline.
+
+    This pipeline chains together the IngestionAgent, LinkerAgent, CuratorAgent, and NormalizerAgent
+    to provide a complete workflow from metadata extraction to final ontology normalization.
+
+    Parameters
+    ----------
+    session_id : str, optional
+        The unique session identifier. If not provided, generates a new one.
+    sandbox_dir : str, optional
+        Base sandbox directory. If not provided, defaults to "sandbox"
+    input_data : str, optional
+        Input data string that may contain sample IDs and target field information
+
+    Returns
+    -------
+    Agent
+        The initial agent in the pipeline (IngestionAgent)
+    """
+    if session_id is None:
+        session_id = f"mm_efp_{str(uuid4())}"
+    if sandbox_dir is None:
+        sandbox_dir = "sandbox"
+
+    # Parse input_data for multiple sample IDs and target field
+    sample_ids = []
+    target_field = "Disease"  # Default target field
+
+    if input_data:
+        # Look for target field specification (support both : and = formats)
+        if "target_field:" in input_data.lower():
+            parts = input_data.split("target_field:")
+            if len(parts) > 1:
+                target_field = parts[1].split()[0].strip()
+                input_data = parts[0].strip()
+        elif "target_field=" in input_data.lower():
+            parts = input_data.split("target_field=")
+            if len(parts) > 1:
+                target_field = parts[1].split()[0].strip()
+                input_data = parts[0].strip()
+
+        # Accept comma or whitespace separated sample IDs
+        for part in input_data.replace(",", " ").split():
+            if part.strip() and part.strip().startswith("GSM"):
+                sample_ids.append(part.strip())
+
+    # Create NormalizerAgent (end of pipeline)
+    normalizer_agent = create_normalizer_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[],
+        input_data=f"target_field:{target_field} {' '.join(sample_ids)}",
+    )
+
+    # Create CuratorAgent with handoff to NormalizerAgent
+    curator_agent = create_curator_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[
+            handoff(
+                agent=normalizer_agent,
+                input_type=NormalizerHandoff,
+                on_handoff=on_handoff_callback,
+            )
+        ],
+        input_data=f"target_field:{target_field} {' '.join(sample_ids)}",
+    )
+
+    # Create LinkerAgent with handoff to CuratorAgent using CuratorHandoff
+    # Pass the target field information to the LinkerAgent
+    linker_input_data = (
+        f"target_field:{target_field} {input_data}"
+        if input_data
+        else f"target_field:{target_field}"
+    )
+    linker_agent = create_linker_agent(
+        session_id=session_id,
+        sandbox_dir=sandbox_dir,
+        handoffs=[
+            handoff(
+                agent=curator_agent,
+                input_type=CuratorHandoff,
+                on_handoff=on_handoff_callback,
+            )
+        ],
+        input_data=linker_input_data,
+    )
+
+    # LinkerAgent configured with handoff to CuratorAgent → NormalizerAgent
 
     # Create IngestionAgent with handoff to LinkerAgent
     # Pass the target field information to the IngestionAgent

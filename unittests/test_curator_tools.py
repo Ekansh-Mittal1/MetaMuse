@@ -22,7 +22,7 @@ from src.tools.curator_tools import (
 class TestCuratorTools:
     """Test class for CuratorTools."""
 
-    def setup_method(self):
+    def setup_method(self, mock_openai_client):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.session_dir = Path(self.temp_dir)
@@ -307,7 +307,7 @@ class TestCuratorTools:
 class TestCuratorToolsImplementations:
     """Test class for implementation functions."""
 
-    def setup_method(self):
+    def setup_method(self, mock_openai_client):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.session_dir = str(self.temp_dir)
@@ -389,7 +389,7 @@ class TestCuratorToolsImplementations:
         assert "files_created" in result
 
 
-def test_integration_workflow():
+def test_integration_workflow(mock_openai_client):
     """Integration test for the complete curation workflow."""
     # Create temporary directory
     with tempfile.TemporaryDirectory() as temp_dir:

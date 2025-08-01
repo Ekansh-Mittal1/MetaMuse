@@ -223,3 +223,7 @@ z_src_OLD/
 
 # Data
 sample_characteristics.tsv
+
+# Normalization data and indexes
+src/normalization/semantic_indexes/
+src/normalization/dictionaries/
