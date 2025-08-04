@@ -16,7 +16,6 @@ from uuid import uuid4
 from agents import Agent, RunContextWrapper, Runner, RunConfig, ModelSettings
 from openai.types.shared import Reasoning
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
-from agents.agent_output import AgentOutputSchema
 from pydantic import Field
 from src.agents.handoff_base import BaseHandoff
 
@@ -24,7 +23,7 @@ from src.agents.tool_utils import get_normalizer_tools
 from src.utils.prompts import load_prompt
 
 # Import Pydantic models for structured data
-from src.models import NormalizationResult, BatchNormalizationResult
+from src.models import BatchNormalizationResult
 from src.models.agent_outputs import CuratorOutput
 
 
@@ -209,7 +208,7 @@ def create_normalizer_agent(
 
         return agent
 
-    except Exception as e:
+    except Exception:
         import traceback
 
         print("🔍 NormalizerAgent creation traceback:")
@@ -224,17 +223,17 @@ async def run_normalizer_agent(
     sandbox_dir: str = None,
     ontologies: Optional[list[str]] = None,
     min_score: float = 0.5,
-    model_provider = None,
+    model_provider=None,
     max_tokens: int = 4096,
     max_turns: int = 100,
 ) -> BatchNormalizationResult:
     """
     Run the normalizer agent and return its structured output.
-    
+
     This function creates a normalizer agent, runs it using Runner.run_streamed,
     and returns the final BatchNormalizationResult Pydantic model. This is part of the
     new deterministic workflow architecture where agents are decoupled.
-    
+
     Parameters
     ----------
     curator_output : CuratorOutput
@@ -249,7 +248,7 @@ async def run_normalizer_agent(
         Specific ontologies to search (if None, uses defaults for target field)
     min_score : float, optional
         Minimum similarity score threshold for ontology matches
-        
+
     Returns
     -------
     BatchNormalizationResult
@@ -258,16 +257,16 @@ async def run_normalizer_agent(
     try:
         # Use the session directory from curator_output
         existing_session_dir = curator_output.session_directory
-        
+
         # Extract sample IDs from curator output
         sample_ids = list(curator_output.sample_ids_requested)
-        
+
         # Prepare input data for the normalizer
         input_data = f"target_field:{target_field} {' '.join(sample_ids)}"
         if ontologies:
             input_data += f" ontologies={','.join(ontologies)}"
         input_data += f" min_score={min_score}"
-        
+
         # Create the normalizer agent without handoffs (decoupled)
         agent = create_normalizer_agent(
             session_id=session_id,
@@ -277,14 +276,14 @@ async def run_normalizer_agent(
             input_data=input_data,
             curator_output=None,  # No longer needed - data passed in message
         )
-        
+
         # Prepare run config if model provider is specified
         run_config = None
         if model_provider:
             extra_body = {"provider": {"order": ["google-vertex/us"]}}
             if max_tokens is not None:
                 extra_body["max_tokens"] = max_tokens
-                
+
             run_config = RunConfig(
                 model_provider=model_provider,
                 model_settings=ModelSettings(
@@ -293,7 +292,7 @@ async def run_normalizer_agent(
                     extra_body=extra_body,
                 ),
             )
-        
+
         # Save curator results to a file to be passed to the next agent
         curator_results_file = (
             Path(existing_session_dir) / "curator_results_for_normalization.json"
@@ -316,10 +315,10 @@ async def run_normalizer_agent(
         result = Runner.run_streamed(
             agent, normalizer_message, run_config=run_config, max_turns=max_turns
         )
-        
+
         # Extract the final result with strict output
         final_result = None
-        
+
         try:
             async for event in result.stream_events():
                 # Handle raw response events (token-by-token streaming)
@@ -332,40 +331,44 @@ async def run_normalizer_agent(
                         and event.data.delta.strip()
                     ):
                         # Stream tokens naturally like ChatGPT with debug prefix
-                        print(f"[NORMALIZER_AGENT_OUTPUT]: {event.data.delta}", end="", flush=True)
+                        print(
+                            f"[NORMALIZER_AGENT_OUTPUT]: {event.data.delta}",
+                            end="",
+                            flush=True,
+                        )
                     continue
-                
+
                 # Handle agent response events (final result)
                 elif event.type == "agent_response_event":
                     print(f"\n✅ Found agent response event: {type(event.result)}")
                     final_result = event.result
                     break
-                    
+
         except Exception as stream_error:
             print(f"\n❌ Stream error: {stream_error}")
-            
+
         print("\n🔍 Streaming completed")
-        
-        
+
         try:
             final_result = result.final_output
             print(f"✅ Got final_output directly: {type(final_result)}")
         except Exception as e:
             print(f"❌ Could not get final_output: {e}")
             raise RuntimeError("No result received from curator agent")
-            
+
         # Validate that we got a BatchNormalizationResult
         if not isinstance(final_result, BatchNormalizationResult):
-            raise RuntimeError(f"Expected BatchNormalizationResult, got {type(final_result)}")
-            
+            raise RuntimeError(
+                f"Expected BatchNormalizationResult, got {type(final_result)}"
+            )
+
         print("✅ Normalizer agent completed with structured output")
         return final_result
-        
+
     except Exception as e:
         print(f"❌ run_normalizer_agent error: {str(e)}")
         import traceback
+
         print("🔍 run_normalizer_agent traceback:")
         traceback.print_exc()
         raise
-
-

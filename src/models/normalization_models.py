@@ -5,11 +5,12 @@ These models extend the curation workflow by adding ontology normalization
 capabilities to candidate values extracted by the CuratorAgent.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
-from .curation_models import CurationResult, ExtractedCandidate
+from .curation_models import CurationResult
 from .common import KeyValue
+
 
 class OntologyMatch(BaseModel):
     """A single ontology match result from semantic search."""
@@ -18,7 +19,9 @@ class OntologyMatch(BaseModel):
 
     term: str = Field(..., description="The matched ontology term")
     term_id: str = Field(..., description="The ontology term ID (e.g., MONDO:0018906)")
-    score: float = Field(..., ge=0.0, le=1.0, description="Semantic similarity score (0-1)")
+    score: float = Field(
+        ..., ge=0.0, le=1.0, description="Semantic similarity score (0-1)"
+    )
     ontology: str = Field(..., description="Source ontology (e.g., 'mondo', 'efo')")
     definition: Optional[str] = Field(None, description="Term definition if available")
 
@@ -30,11 +33,15 @@ class NormalizedCandidate(BaseModel):
 
     # Original candidate information
     value: str = Field(..., description="Original extracted candidate value")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Original confidence score (0-1)")
+    confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Original confidence score (0-1)"
+    )
     source: str = Field(..., description="Source type (series/sample/abstract)")
     context: str = Field(..., description="Context where candidate was found")
     rationale: str = Field(..., description="Explicit reasoning for extraction")
-    prenormalized: str = Field(..., description="Original ontology-normalized term with ID")
+    prenormalized: str = Field(
+        ..., description="Original ontology-normalized term with ID"
+    )
 
     # Normalization results
     ontology_matches: List[OntologyMatch] = Field(
@@ -98,21 +105,30 @@ class NormalizationRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    candidates: List[str] = Field(..., description="List of candidate values to normalize")
-    target_field: str = Field(..., description="Target metadata field (e.g., 'Disease')")
-    ontologies: Optional[List[str]] = Field(
-        None, description="Specific ontologies to search (if None, uses defaults for field)"
+    candidates: List[str] = Field(
+        ..., description="List of candidate values to normalize"
     )
-    top_k: int = Field(default=5, ge=1, le=20, description="Number of top matches to return")
+    target_field: str = Field(
+        ..., description="Target metadata field (e.g., 'Disease')"
+    )
+    ontologies: Optional[List[str]] = Field(
+        None,
+        description="Specific ontologies to search (if None, uses defaults for field)",
+    )
+    top_k: int = Field(
+        default=5, ge=1, le=20, description="Number of top matches to return"
+    )
     min_score: float = Field(
         default=0.5, ge=0.0, le=1.0, description="Minimum similarity score threshold"
     )
+
 
 class SampleResultEntry(BaseModel):
     sample_id: str
     result: NormalizationResult
 
     model_config = ConfigDict(extra="forbid")
+
 
 class BatchNormalizationResult(BaseModel):
     """Result of batch normalization across multiple samples."""
@@ -132,4 +148,4 @@ class BatchNormalizationResult(BaseModel):
     )
     processing_summary: List[KeyValue] = Field(
         default_factory=list, description="Summary statistics and metadata"
-    ) 
+    )

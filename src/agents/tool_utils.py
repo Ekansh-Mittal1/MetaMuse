@@ -47,11 +47,6 @@ from src.tools.curator_tools import (
 )
 
 from src.tools.normalizer_tools import (
-    find_candidates_files_impl,
-    batch_normalize_session_impl,
-    normalize_candidates_file,
-    get_available_ontologies,
-    get_ontology_mapping,
     semantic_search_candidates_impl,
 )
 
@@ -353,8 +348,10 @@ def get_session_tools(session_dir: str | Path) -> list:
             keep_fields_list = None
             if keep_fields:
                 keep_fields_list = [field.strip() for field in keep_fields.split(",")]
-            
-            return clean_metadata_files_impl(session_dir, sample_id, target_field, keep_fields_list)
+
+            return clean_metadata_files_impl(
+                session_dir, sample_id, target_field, keep_fields_list
+            )
 
         @function_tool
         def package_linked_data(
@@ -404,7 +401,9 @@ def get_session_tools(session_dir: str | Path) -> list:
             str
                 JSON string with the curation data package.
             """
-            return create_curation_data_package_impl(session_dir, sample_id, target_field)
+            return create_curation_data_package_impl(
+                session_dir, sample_id, target_field
+            )
 
         @function_tool
         def process_multiple_samples(
@@ -429,7 +428,9 @@ def get_session_tools(session_dir: str | Path) -> list:
             str
                 JSON string with processing results for all samples.
             """
-            return process_multiple_samples_impl(session_dir, sample_ids_json, target_field)
+            return process_multiple_samples_impl(
+                session_dir, sample_ids_json, target_field
+            )
 
         @function_tool
         def save_curation_results(curation_results_json: str) -> str:
@@ -490,8 +491,12 @@ def get_session_tools(session_dir: str | Path) -> list:
                         curation_result = CurationResult(**curation_data)
                         curation_results.append(curation_result)
                     except Exception as validation_error:
-                        print(f"🔍 VALIDATION ERROR for item {i}: {type(validation_error).__name__}: {str(validation_error)}")
-                        print(f"🔍 VALIDATION ERROR data keys: {list(curation_data.keys()) if isinstance(curation_data, dict) else 'Not a dict'}")
+                        print(
+                            f"🔍 VALIDATION ERROR for item {i}: {type(validation_error).__name__}: {str(validation_error)}"
+                        )
+                        print(
+                            f"🔍 VALIDATION ERROR data keys: {list(curation_data.keys()) if isinstance(curation_data, dict) else 'Not a dict'}"
+                        )
                         raise validation_error
 
                 # Call the implementation with correct parameters: (curation_results, session_dir)
@@ -499,7 +504,9 @@ def get_session_tools(session_dir: str | Path) -> list:
                 return json_module.dumps(result, indent=2)
 
             except json_module.JSONDecodeError as e:
-                print(f"🔍 VALIDATION ERROR - JSON parsing failed at position {e.pos}: {e.msg}")
+                print(
+                    f"🔍 VALIDATION ERROR - JSON parsing failed at position {e.pos}: {e.msg}"
+                )
                 start_pos = max(0, e.pos - 50)
                 end_pos = min(len(curation_results_json), e.pos + 50)
                 context = curation_results_json[start_pos:end_pos]
@@ -516,7 +523,9 @@ def get_session_tools(session_dir: str | Path) -> list:
                 }
                 return json_module.dumps(result, indent=2)
             except Exception as e:
-                print(f"🔍 VALIDATION ERROR - Other error: {type(e).__name__}: {str(e)}")
+                print(
+                    f"🔍 VALIDATION ERROR - Other error: {type(e).__name__}: {str(e)}"
+                )
                 result = {
                     "success": False,
                     "message": f"Error saving curation results: {str(e)}",
@@ -690,8 +699,10 @@ def get_curator_tools(session_dir: str | Path) -> list:
             keep_fields_list = None
             if keep_fields:
                 keep_fields_list = [field.strip() for field in keep_fields.split(",")]
-            
-            return clean_metadata_files_impl(session_dir, sample_id, target_field, keep_fields_list)
+
+            return clean_metadata_files_impl(
+                session_dir, sample_id, target_field, keep_fields_list
+            )
 
         @function_tool
         def package_linked_data(
@@ -741,7 +752,9 @@ def get_curator_tools(session_dir: str | Path) -> list:
             str
                 JSON string with processing results for all samples.
             """
-            return process_multiple_samples_impl(session_dir, sample_ids_json, target_field)
+            return process_multiple_samples_impl(
+                session_dir, sample_ids_json, target_field
+            )
 
         @function_tool
         def save_curation_results(curation_results_json: str) -> str:
@@ -802,8 +815,12 @@ def get_curator_tools(session_dir: str | Path) -> list:
                         curation_result = CurationResult(**curation_data)
                         curation_results.append(curation_result)
                     except Exception as validation_error:
-                        print(f"🔍 VALIDATION ERROR for item {i}: {type(validation_error).__name__}: {str(validation_error)}")
-                        print(f"🔍 VALIDATION ERROR data keys: {list(curation_data.keys()) if isinstance(curation_data, dict) else 'Not a dict'}")
+                        print(
+                            f"🔍 VALIDATION ERROR for item {i}: {type(validation_error).__name__}: {str(validation_error)}"
+                        )
+                        print(
+                            f"🔍 VALIDATION ERROR data keys: {list(curation_data.keys()) if isinstance(curation_data, dict) else 'Not a dict'}"
+                        )
                         raise validation_error
 
                 # Call the implementation with correct parameters: (curation_results, session_dir)
@@ -811,7 +828,9 @@ def get_curator_tools(session_dir: str | Path) -> list:
                 return json_module.dumps(result, indent=2)
 
             except json_module.JSONDecodeError as e:
-                print(f"🔍 VALIDATION ERROR - JSON parsing failed at position {e.pos}: {e.msg}")
+                print(
+                    f"🔍 VALIDATION ERROR - JSON parsing failed at position {e.pos}: {e.msg}"
+                )
                 start_pos = max(0, e.pos - 50)
                 end_pos = min(len(curation_results_json), e.pos + 50)
                 context = curation_results_json[start_pos:end_pos]
@@ -828,7 +847,9 @@ def get_curator_tools(session_dir: str | Path) -> list:
                 }
                 return json_module.dumps(result, indent=2)
             except Exception as e:
-                print(f"🔍 VALIDATION ERROR - Other error: {type(e).__name__}: {str(e)}")
+                print(
+                    f"🔍 VALIDATION ERROR - Other error: {type(e).__name__}: {str(e)}"
+                )
                 result = {
                     "success": False,
                     "message": f"Error saving curation results: {str(e)}",
@@ -966,7 +987,7 @@ def get_normalizer_tools(session_dir: str | Path) -> list:
                 The structured output object containing all normalization results.
             """
             print("--------------------------------\n\n\n")
-            print(f"🔧 [TOOL_CALL] semantic_search_candidates called with:")
+            print("🔧 [TOOL_CALL] semantic_search_candidates called with:")
             print(f"   - curation_results_file: {curation_results_file}")
             print(f"   - target_field: {target_field}")
             print(f"   - top_k: {top_k}")
@@ -983,7 +1004,9 @@ def get_normalizer_tools(session_dir: str | Path) -> list:
                     min_score=min_score,
                 )
 
-                print(f"✅ [TOOL_CALL] semantic_search_candidates completed successfully")
+                print(
+                    "✅ [TOOL_CALL] semantic_search_candidates completed successfully"
+                )
                 return result
 
             except Exception as e:

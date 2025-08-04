@@ -74,7 +74,9 @@ class GSMAttributes(BaseModel):
         None, description="Contact zip/postal code"
     )
     contact_zip_postal_code: Optional[str] = Field(
-        None, alias="contact_zip/postal_code", description="Contact zip/postal code (with slash)"
+        None,
+        alias="contact_zip/postal_code",
+        description="Contact zip/postal code (with slash)",
     )
 
     # Additional fields for multi-series samples
@@ -153,7 +155,9 @@ class GSEAttributes(BaseModel):
         None, description="Contact zip/postal code"
     )
     contact_zip_postal_code: Optional[str] = Field(
-        None, alias="contact_zip/postal_code", description="Contact zip/postal code (with slash)"
+        None,
+        alias="contact_zip/postal_code",
+        description="Contact zip/postal code (with slash)",
     )
 
     # Additional fields that may appear in GSE data

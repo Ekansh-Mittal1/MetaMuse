@@ -106,7 +106,10 @@ class SimpleOrchestrator:
             # Run the workflow with streaming
             try:
                 result = Runner.run_streamed(
-                    entry_agent, input_data, run_config=run_config, max_turns=kwargs.get("max_turns", 100)
+                    entry_agent,
+                    input_data,
+                    run_config=run_config,
+                    max_turns=kwargs.get("max_turns", 100),
                 )
 
                 # Starting streaming execution (suppressed for natural streaming)
@@ -226,14 +229,16 @@ class SimpleOrchestrator:
                 # Streaming execution completed (suppressed for natural streaming)
                 return result
 
-            except Exception as e:
+            except Exception:
                 import traceback
+
                 traceback.print_exc()
                 # Re-raise to ensure it's not suppressed
                 raise
 
-        except Exception as e:
+        except Exception:
             import traceback
+
             traceback.print_exc()
             raise
 

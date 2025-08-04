@@ -57,7 +57,7 @@ def load_extraction_template(target_field: str) -> str:
     # Map target field to template filename
     template_mapping = {
         "disease": "disease.md",
-        "tissue": "tissue.md", 
+        "tissue": "tissue.md",
         "age": "age.md",
         "organ": "organ.md",
         "drug": "drug.md",
@@ -209,138 +209,6 @@ class CuratorTools:
             error_msg = f"Error loading sample data: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
             print(f"❌ CURATOR ERROR: {error_msg}")
             return CuratorResult(success=False, message=error_msg)
-
-    def extract_metadata_candidates(
-        self, sample_data: Dict[str, Any], target_field: str
-    ) -> CuratorResult:
-        """
-        Extract potential candidates for the target metadata field from all files using LLM.
-
-        Parameters
-        ----------
-        sample_data : Dict[str, Any]
-            The sample data loaded from load_sample_data
-        target_field : str
-            The target metadata field to extract candidates for (e.g., "Disease", "Tissue", "Age")
-
-        Returns
-        -------
-        CuratorResult
-            Result containing candidates extracted from each file
-        """
-        try:
-            candidates_by_file = {}
-
-            # Extract from linked_data.json sample metadata
-            linked_data = sample_data.get("linked_data", {})
-            sample_metadata = linked_data.get("sample_metadata", {})
-
-            linked_candidates = self._extract_candidates_with_llm(
-                sample_metadata, target_field
-            )
-            if linked_candidates:
-                candidates_by_file["linked_data.json"] = linked_candidates
-
-            # Extract from each cleaned file
-            cleaned_files = sample_data.get("cleaned_files", {})
-            for filename, file_data in cleaned_files.items():
-                file_candidates = self._extract_candidates_with_llm(
-                    file_data, target_field
-                )
-                if file_candidates:
-                    candidates_by_file[filename] = file_candidates
-
-            return CuratorResult(
-                success=True,
-                message=f"Extracted candidates for {target_field} from {len(candidates_by_file)} files",
-                candidates=candidates_by_file,
-            )
-
-        except Exception as e:
-            error_msg = f"Error extracting candidates: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
-            print(f"❌ CURATOR ERROR: {error_msg}")
-            return CuratorResult(success=False, message=error_msg)
-
-    def _extract_candidates_with_llm(
-        self, data: Dict[str, Any], target_field: str
-    ) -> List[Dict[str, Any]]:
-        """
-        Extract candidates for a target field from a data structure using LLM.
-
-        Parameters
-        ----------
-        data : Dict[str, Any]
-            The data structure to search
-        target_field : str
-            The target field to extract candidates for
-
-        Returns
-        -------
-        List[Dict[str, Any]]
-            List of candidate dictionaries with value, confidence, context, and prenormalized
-        """
-        try:
-            # Convert data to searchable text
-            flattened_text = self._flatten_to_text(data)
-
-            # Skip if no meaningful text content
-            if len(flattened_text.strip()) < 10:
-                return []
-
-            # Load extraction template
-            template = load_extraction_template(target_field)
-
-            # Create LLM prompt
-            prompt = f"{template}\n\n## Text to Analyze:\n{flattened_text}"
-
-            # Make LLM call
-            response = self.llm_client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a metadata extraction specialist. Return only valid JSON.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.1,
-                max_tokens=1000,
-            )
-
-            # Parse response
-            response_text = response.choices[0].message.content.strip()
-
-            # Extract JSON from response (handle markdown code blocks)
-            if "```json" in response_text:
-                json_start = response_text.find("```json") + 7
-                json_end = response_text.find("```", json_start)
-                response_text = response_text[json_start:json_end]
-            elif "```" in response_text:
-                json_start = response_text.find("```") + 3
-                json_end = response_text.rfind("```")
-                response_text = response_text[json_start:json_end]
-
-            # Parse JSON and validate with Pydantic
-            response_data = json.loads(response_text)
-            extraction_response = ExtractionResponse(**response_data)
-
-            # Convert to dictionary format expected by existing code
-            candidates = []
-            for candidate in extraction_response.candidates:
-                candidates.append(
-                    {
-                        "value": candidate.value,
-                        "confidence": candidate.confidence,
-                        "context": candidate.context,
-                        "prenormalized": candidate.prenormalized,
-                    }
-                )
-
-            return candidates
-
-        except Exception as e:
-            print(f"❌ LLM extraction error for {target_field}: {str(e)}")
-            return []
 
     def _flatten_to_text(self, data: Any, prefix: str = "") -> str:
         """
@@ -501,10 +369,12 @@ class CuratorTools:
         try:
             # Get the series_id for this sample
             from src.tools.linker_tools import find_sample_directory_impl
-            
+
             dir_result = find_sample_directory_impl(sample_id, str(self.session_dir))
             if not dir_result.get("success"):
-                print(f"⚠️  Warning: Could not find series directory for {sample_id}, saving to session directory")
+                print(
+                    f"⚠️  Warning: Could not find series directory for {sample_id}, saving to session directory"
+                )
                 # Fallback to session directory if series_id lookup fails
                 series_dir = self.session_dir
             else:
@@ -550,8 +420,8 @@ def get_data_intake_context_impl() -> Dict[str, Any]:
         Dictionary containing the data intake output structure including cleaned metadata
     """
     # Track calls to prevent repeated data access
-    call_count = getattr(get_data_intake_context_impl, '_call_count', 0) + 1
-    setattr(get_data_intake_context_impl, '_call_count', call_count)
+    call_count = getattr(get_data_intake_context_impl, "_call_count", 0) + 1
+    setattr(get_data_intake_context_impl, "_call_count", call_count)
 
     print(f"🔧 CURATOR TOOL: get_data_intake_context (call #{call_count})")
 
@@ -602,17 +472,27 @@ def get_data_intake_context_impl() -> Dict[str, Any]:
         ):
             print("✅ First call successful - accessing data intake context")
             print("🔄 REMEMBER: This is your ONLY call to this tool")
-            print("🔄 Use this data for all your analysis - DO NOT call this tool again")
+            print(
+                "🔄 Use this data for all your analysis - DO NOT call this tool again"
+            )
 
             # DEBUG: Show what data is being returned
             result = curator_module._data_intake_output.model_dump()
-            print(f"🔍 DEBUG: Data intake contains {len(result.get('curation_packages', []))} packages")
+            print(
+                f"🔍 DEBUG: Data intake contains {len(result.get('curation_packages', []))} packages"
+            )
             if result.get("curation_packages"):
                 package = result["curation_packages"][0]
                 print(f"🔍 DEBUG: Sample ID: {package.get('sample_id', 'Unknown')}")
-                print(f"🔍 DEBUG: Has sample metadata: {package.get('sample_metadata') is not None}")
-                print(f"🔍 DEBUG: Has series metadata: {package.get('series_metadata') is not None}")
-                print(f"🔍 DEBUG: Has abstract metadata: {package.get('abstract_metadata') is not None}")
+                print(
+                    f"🔍 DEBUG: Has sample metadata: {package.get('sample_metadata') is not None}"
+                )
+                print(
+                    f"🔍 DEBUG: Has series metadata: {package.get('series_metadata') is not None}"
+                )
+                print(
+                    f"🔍 DEBUG: Has abstract metadata: {package.get('abstract_metadata') is not None}"
+                )
 
             # Convert the LinkerOutput to a dictionary and return as JSON
             result = curator_module._data_intake_output.model_dump()
@@ -642,7 +522,9 @@ def get_data_intake_context_impl() -> Dict[str, Any]:
             }
 
     except Exception as e:
-        print(f"🔍 DEBUG: Error in get_data_intake_context: {type(e).__name__}: {str(e)}")
+        print(
+            f"🔍 DEBUG: Error in get_data_intake_context: {type(e).__name__}: {str(e)}"
+        )
         return {
             "success": False,
             "message": f"Error accessing data intake context: {str(e)}",
@@ -697,11 +579,19 @@ def serialize_agent_output_impl(output_type: str) -> Dict[str, Any]:
                 "error": "Supported types: ingestion, linker, curator, json, csv",
                 "debug_info": {
                     "received_type": output_type,
-                    "supported_types": ["ingestion", "linker", "curator", "json", "csv"],
+                    "supported_types": [
+                        "ingestion",
+                        "linker",
+                        "curator",
+                        "json",
+                        "csv",
+                    ],
                 },
             }
     except Exception as e:
-        print(f"🔍 DEBUG: Error in serialize_agent_output: {type(e).__name__}: {str(e)}")
+        print(
+            f"🔍 DEBUG: Error in serialize_agent_output: {type(e).__name__}: {str(e)}"
+        )
         return {
             "success": False,
             "message": f"Error in serialization: {str(e)}",
@@ -916,10 +806,12 @@ def save_curation_results_impl(
         for result in curation_results:
             # Get the series_id for this sample
             from src.tools.linker_tools import find_sample_directory_impl
-            
+
             dir_result = find_sample_directory_impl(result.sample_id, session_dir)
             if not dir_result.get("success"):
-                print(f"⚠️  Warning: Could not find series directory for {result.sample_id}, saving to session directory")
+                print(
+                    f"⚠️  Warning: Could not find series directory for {result.sample_id}, saving to session directory"
+                )
                 # Fallback to session directory if series_id lookup fails
                 series_dir = session_path
             else:

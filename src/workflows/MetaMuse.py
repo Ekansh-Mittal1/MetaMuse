@@ -16,9 +16,9 @@ from src.agents.normalizer import (
 )
 from src.workflows.data_intake import run_data_intake_workflow
 from src.workflows.deterministic_workflow import (
-    run_deterministic_workflow,
     run_deterministic_workflow_sync,
 )
+
 
 # New deterministic workflow function - recommended approach
 def create_deterministic_pipeline(
@@ -30,13 +30,13 @@ def create_deterministic_pipeline(
 ):
     """
     Create a deterministic metadata processing pipeline.
-    
+
     This is the new recommended approach that uses the deterministic workflow
     architecture where agents are completely decoupled and run independently
     using Runner.run_streamed. Data is serialized between each step.
-    
+
     The workflow is: data_intake -> curator_agent -> normalizer_agent
-    
+
     Parameters
     ----------
     target_field : str, optional
@@ -49,21 +49,22 @@ def create_deterministic_pipeline(
         Specific ontologies to search during normalization
     min_score : float, optional
         Minimum similarity score threshold for ontology matches
-        
+
     Returns
     -------
     function
         A function that accepts input_text and returns the complete workflow results
     """
+
     def workflow_function(input_text: str):
         """
         Execute the deterministic workflow with the given input.
-        
+
         Parameters
         ----------
         input_text : str
             Input text containing GEO IDs for processing
-            
+
         Returns
         -------
         Dict[str, Any]
@@ -77,11 +78,12 @@ def create_deterministic_pipeline(
             ontologies=ontologies,
             min_score=min_score,
         )
-    
+
     return workflow_function
 
 
 # LEGACY FUNCTIONS - Use create_deterministic_pipeline() for new projects
+
 
 def create_extraction_pipeline(
     session_id: str = None, sandbox_dir: str = None
@@ -534,7 +536,7 @@ def create_hybrid_pipeline(
     sample_ids_for_curation = data_intake_result.sample_ids_for_curation
 
     # Pass the LinkerOutput data directly to the CuratorAgent via data_intake_output parameter
-    
+
     # Create clean input_data without the LinkerOutput JSON
     curator_input_data = (
         f"target_field:{target_field} {' '.join(sample_ids_for_curation)}"

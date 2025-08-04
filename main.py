@@ -69,9 +69,9 @@ MODEL_CONTEXT_LIMITS: dict[str, int] = {
 
 # Maximum response tokens for each model (increased for complex JSON outputs)
 MODEL_RESPONSE_LIMITS: dict[str, int] = {
-    "google/gemini-2.5-flash": 8_192,  # Increased for curator JSON output
-    "openai/gpt-4o": 32_768,           # Increased for normalizer verbose output
-    "openai/gpt-4o-mini": 32_768,      # Increased for normalizer verbose output
+    "google/gemini-2.5-flash": 32_768,  # Increased for curator JSON output
+    "openai/gpt-4o": 32_768,  # Increased for normalizer verbose output
+    "openai/gpt-4o-mini": 32_768,  # Increased for normalizer verbose output
 }
 
 # Disable tracing for OpenRouter
@@ -101,7 +101,9 @@ class CustomModelProvider(ModelProvider):
         return OpenAIChatCompletionsModel(model=model, openai_client=client)
 
 
-async def run_workflow(workflow_name: str, input_data: str, model_name: str, max_turns: int = 100, **kwargs):
+async def run_workflow(
+    workflow_name: str, input_data: str, model_name: str, max_turns: int = 100, **kwargs
+):
     """
     Run a specific workflow with the given input data.
 
@@ -146,25 +148,27 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, max
 
     # Create model provider
     model_provider = CustomModelProvider(model_name)
-    max_response_tokens = MODEL_RESPONSE_LIMITS.get(model_name, 16_384)  # High default for complex JSON output
+    max_response_tokens = MODEL_RESPONSE_LIMITS.get(
+        model_name, 16_384
+    )  # High default for complex JSON output
 
     # Handle deterministic workflow specially (bypasses orchestrator)
     if workflow_name == "deterministic":
         from src.workflows.deterministic_workflow import run_deterministic_workflow_sync
-        
+
         # Create session ID for deterministic workflow
         session_id = f"det_{str(uuid4())}"
-        
+
         # Extract target field from input if specified
         target_field = "Disease"  # Default
         input_lower = input_data.lower()
-        
+
         # Support multiple formats: "target_field:" and "target_field ="
         if "target_field:" in input_lower:
             # Find the position in the original string (case insensitive)
             pos = input_lower.find("target_field:")
             before = input_data[:pos].strip()
-            after = input_data[pos + len("target_field:"):].strip()
+            after = input_data[pos + len("target_field:") :].strip()
             if after:
                 target_field = after.split()[0].strip()
                 input_data = before
@@ -172,7 +176,7 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, max
             # Find the position in the original string (case insensitive)
             pos = input_lower.find("target_field =")
             before = input_data[:pos].strip()
-            after = input_data[pos + len("target_field ="):].strip()
+            after = input_data[pos + len("target_field =") :].strip()
             if after:
                 target_field = after.split()[0].strip()
                 input_data = before
@@ -180,17 +184,17 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, max
             # Find the position in the original string (case insensitive)
             pos = input_lower.find("target_field=")
             before = input_data[:pos].strip()
-            after = input_data[pos + len("target_field="):].strip()
+            after = input_data[pos + len("target_field=") :].strip()
             if after:
                 target_field = after.split()[0].strip()
                 input_data = before
-        
+
         # Normalize target field to snake_case format for consistency
         target_field = target_field.lower().replace(" ", "_")
-        
+
         print(f"🎯 Parsed target field: {target_field}")
         print(f"📝 Cleaned input: {input_data}")
-        
+
         result = run_deterministic_workflow_sync(
             input_text=input_data,
             target_field=target_field,
@@ -200,49 +204,57 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, max
             max_tokens=max_response_tokens,
             max_turns=max_turns,
         )
-        
+
         # Print results
         if result.get("success"):
-            print(f"✅ Deterministic workflow completed successfully!")
+            print("✅ Deterministic workflow completed successfully!")
             print(f"📁 Session directory: {result['session_directory']}")
             print(f"🎯 Target field: {result['target_field']}")
             print(f"📊 Summary: {result['summary']}")
             print(f"📄 Files created: {len(result.get('files_created', []))}")
-            for file_path in result.get('files_created', []):
+            for file_path in result.get("files_created", []):
                 print(f"   📄 {Path(file_path).name}")
         else:
-            print(f"❌ Deterministic workflow failed: {result.get('error', 'Unknown error')}")
-            
+            print(
+                f"❌ Deterministic workflow failed: {result.get('error', 'Unknown error')}"
+            )
+
         return result
 
     # Handle test normalizer workflow specially (bypasses orchestrator)
     if workflow_name == "test_normalizer":
         from src.workflows.deterministic_workflow import test_normalizer_agent
-        
+
         # Hardcode the test session directory
         test_session_dir = "/teamspace/studios/this_studio/sandbox/test_session"
-        
+
         result = await test_normalizer_agent(
             test_session_dir=test_session_dir,
             model_provider=model_provider,
             max_tokens=max_response_tokens,
             max_turns=max_turns,
         )
-        
+
         # Print results
         if result.get("status") == "success":
-            print(f"✅ Normalizer agent test completed successfully!")
+            print("✅ Normalizer agent test completed successfully!")
             print(f"📁 Test session: {result['test_session_dir']}")
             print(f"🎯 Target field: {result['normalizer_output']['target_field']}")
             print(f"📊 Input candidates: {result['curator_input']['total_candidates']}")
-            print(f"🔬 Normalized results: {result['normalizer_output']['sample_results_count']}")
-            print(f"✨ Successful normalizations: {result['normalizer_output']['successful_normalizations']}")
+            print(
+                f"🔬 Normalized results: {result['normalizer_output']['sample_results_count']}"
+            )
+            print(
+                f"✨ Successful normalizations: {result['normalizer_output']['successful_normalizations']}"
+            )
             print(f"📄 Files created: {len(result.get('files_created', []))}")
-            for file_path in result.get('files_created', []):
+            for file_path in result.get("files_created", []):
                 print(f"   📄 {Path(file_path).name}")
         else:
-            print(f"❌ Normalizer agent test failed: {result.get('error', 'Unknown error')}")
-            
+            print(
+                f"❌ Normalizer agent test failed: {result.get('error', 'Unknown error')}"
+            )
+
         return result
 
     # Create orchestrator
@@ -273,11 +285,13 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, max
         )
 
     workflow_func = workflow_funcs[workflow_name]
-    
+
     # Skip workflow function requirement for special workflows
     if workflow_name in ["test_normalizer"] and workflow_func is None:
         # This is handled specially above, should not reach this point
-        raise ValueError(f"Special workflow {workflow_name} should be handled before this point")
+        raise ValueError(
+            f"Special workflow {workflow_name} should be handled before this point"
+        )
 
     # Starting workflow
 
@@ -285,8 +299,10 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, max
         # Handle deterministic workflow specially (bypasses orchestrator)
         if workflow_name == "deterministic":
             # This is already handled above, so we shouldn't reach here
-            raise ValueError("Deterministic workflow should be handled before orchestrator creation")
-            
+            raise ValueError(
+                "Deterministic workflow should be handled before orchestrator creation"
+            )
+
         # Run the workflow with existing session directory if specified
         elif existing_session_dir and workflow_name in ["linking", "curation"]:
             result = await orchestrator.run_workflow(
@@ -337,7 +353,9 @@ async def run_workflow(workflow_name: str, input_data: str, model_name: str, max
         if session_metadata["series_directories"]:
             print(f"Series directories: {session_metadata['series_count']}")
             for series_dir in session_metadata["series_directories"]:
-                print(f"   {series_dir['series_id']}/ ({series_dir['file_count']} files)")
+                print(
+                    f"   {series_dir['series_id']}/ ({series_dir['file_count']} files)"
+                )
                 for file_name in series_dir["files"]:
                     print(f"      📄 {file_name}")
         else:

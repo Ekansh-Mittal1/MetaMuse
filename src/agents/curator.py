@@ -18,15 +18,32 @@ from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from pydantic import Field
 from src.agents.handoff_base import BaseHandoff
 
-from src.agents.tool_utils import get_curator_tools
 from src.utils.prompts import load_prompt
 
 # Import Pydantic models for structured data
 from src.models import CuratorOutput, CurationDataPackage
 from src.models.agent_outputs import LinkerOutput
+from src.models.curation_models import ExtractedCandidate
 
 # Module-level variable to store data_intake_output for tool access
 _data_intake_output: Optional[LinkerOutput] = None
+
+
+def get_curator_output_type_for_field(target_field: str):
+    """
+    Get the appropriate curator output type based on target field.
+
+    Parameters
+    ----------
+    target_field : str
+        The target metadata field
+
+    Returns
+    -------
+    type
+        The appropriate CuratorOutput model class
+    """
+    return CuratorOutput
 
 
 class CuratorHandoff(BaseHandoff):
@@ -280,12 +297,15 @@ def create_curator_agent(
             + f"Session ID: {session_id}\n"
         )
 
+        # Get appropriate output type based on target field
+        output_type = get_curator_output_type_for_field(target_field)
+
         agent = Agent(
             name="CuratorAgent",
             instructions=instructions,
             tools=tools,
             handoffs=handoffs or [],
-            output_type=CuratorOutput,
+            output_type=output_type,
         )
         agent.strict_output = True
 
@@ -305,17 +325,17 @@ async def run_curator_agent(
     target_field: str = "Disease",
     session_id: str = None,
     sandbox_dir: str = None,
-    model_provider = None,
+    model_provider=None,
     max_tokens: int = 4096,
     max_turns: int = 100,
 ) -> CuratorOutput:
     """
     Run the curator agent and return its structured output.
-    
+
     This function creates a curator agent, runs it using Runner.run_streamed,
     and returns the final CuratorOutput Pydantic model. This is part of the
     new deterministic workflow architecture where agents are decoupled.
-    
+
     Parameters
     ----------
     data_intake_output : LinkerOutput
@@ -326,7 +346,7 @@ async def run_curator_agent(
         The unique session identifier. If not provided, generates a new one.
     sandbox_dir : str, optional
         Base sandbox directory. If not provided, defaults to "sandbox"
-        
+
     Returns
     -------
     CuratorOutput
@@ -335,11 +355,11 @@ async def run_curator_agent(
     try:
         # Use the session directory from data_intake_output
         existing_session_dir = data_intake_output.session_directory
-        
+
         # Prepare input data for the curator
         sample_ids = data_intake_output.sample_ids_for_curation
         input_data = f"target_field:{target_field} {' '.join(sample_ids)}"
-        
+
         # Create the curator agent without handoffs (decoupled)
         agent = create_curator_agent(
             session_id=session_id,
@@ -349,9 +369,9 @@ async def run_curator_agent(
             input_data=input_data,
             data_intake_output=data_intake_output,
         )
-        
+
         # Agent is already configured with strict CuratorOutput
-        
+
         # Prepare the input message with the data intake output
         curator_message = (
             f"Please curate metadata for the target field '{target_field}' using the following data intake output:\n\n"
@@ -360,14 +380,14 @@ async def run_curator_agent(
             f"Process all metadata internally and return a CuratorOutput object."
         )
         print(f"🔍 Curator message length: {len(curator_message)} characters")
-        
+
         # Prepare run config if model provider is specified
         run_config = None
         if model_provider:
             extra_body = {"provider": {"order": ["google-vertex/us"]}}
             if max_tokens is not None:
                 extra_body["max_tokens"] = max_tokens
-                
+
             run_config = RunConfig(
                 model_provider=model_provider,
                 model_settings=ModelSettings(
@@ -376,13 +396,15 @@ async def run_curator_agent(
                     extra_body=extra_body,
                 ),
             )
-        
+
         # Run the agent using Runner.run_streamed
-        result = Runner.run_streamed(agent, curator_message, run_config=run_config, max_turns=max_turns)
-        
+        result = Runner.run_streamed(
+            agent, curator_message, run_config=run_config, max_turns=max_turns
+        )
+
         # Extract the final result with strict output
         final_result = None
-        
+
         try:
             async for event in result.stream_events():
                 # Handle raw response events (token-by-token streaming)
@@ -397,36 +419,36 @@ async def run_curator_agent(
                         # Stream tokens naturally like ChatGPT
                         print(event.data.delta, end="", flush=True)
                     continue
-                
+
                 # Handle agent response events (final result)
                 elif event.type == "agent_response_event":
                     print(f"\n✅ Found agent response event: {type(event.result)}")
                     final_result = event.result
                     break
-                    
+
         except Exception as stream_error:
             print(f"\n❌ Stream error: {stream_error}")
-            
+
         print("\n🔍 Streaming completed")
-        
-        
+
         try:
             final_result = result.final_output
             print(f"✅ Got final_output directly: {type(final_result)}")
         except Exception as e:
             print(f"❌ Could not get final_output: {e}")
             raise RuntimeError("No result received from curator agent")
-            
+
         # Validate that we got a CuratorOutput
         if not isinstance(final_result, CuratorOutput):
             raise RuntimeError(f"Expected CuratorOutput, got {type(final_result)}")
-            
+
         print("✅ Curator agent completed with structured output")
         return final_result
-        
+
     except Exception as e:
         print(f"❌ run_curator_agent error: {str(e)}")
         import traceback
+
         print("🔍 run_curator_agent traceback:")
         traceback.print_exc()
 

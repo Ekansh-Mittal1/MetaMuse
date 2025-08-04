@@ -11,7 +11,7 @@ import os
 import json
 import glob
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 # Add the normalization module to the path
@@ -22,7 +22,6 @@ from src.models import (
     OntologyMatch,
     NormalizedCandidate,
     NormalizationResult,
-    NormalizationRequest,
     ExtractedCandidate,
     CurationResult,
     BatchNormalizationResult,
@@ -33,6 +32,7 @@ from src.models import (
 
 class NormalizationError(Exception):
     """Custom exception for normalization errors."""
+
     pass
 
 
@@ -40,7 +40,7 @@ def get_default_ontologies_for_field(target_field: str) -> List[str]:
     """Get default ontologies for a target field."""
     ontology_mapping = get_ontology_mapping()
     ontologies = ontology_mapping.get(target_field.lower(), ["mondo"])
-    
+
     # If no exact match, try case-insensitive partial matching
     if not ontologies or ontologies == ["mondo"]:
         target_lower = target_field.lower()
@@ -48,7 +48,7 @@ def get_default_ontologies_for_field(target_field: str) -> List[str]:
             if target_lower in field_key or field_key in target_lower:
                 ontologies = field_ontologies
                 break
-    
+
     return ontologies
 
 
@@ -72,21 +72,21 @@ def find_candidates_files_impl(session_dir: str) -> Dict[str, Any]:
     # Look for candidates files in the session directory and subdirectories
     pattern = os.path.join(session_dir, "**", "*_candidates.json")
     candidates_files = glob.glob(pattern, recursive=True)
-    
+
     if not candidates_files:
         return {
             "success": False,
             "message": "No candidates files found in session directory",
             "session_directory": session_dir,
-            "searched_pattern": pattern
+            "searched_pattern": pattern,
         }
-    
+
     # Extract information about each file
     file_info = []
     for file_path in candidates_files:
         rel_path = os.path.relpath(file_path, session_dir)
         file_size = os.path.getsize(file_path)
-        
+
         # Try to extract sample_id and target_field from filename
         filename = os.path.basename(file_path)
         if filename.endswith("_candidates.json"):
@@ -101,21 +101,23 @@ def find_candidates_files_impl(session_dir: str) -> Dict[str, Any]:
         else:
             sample_id = "unknown"
             target_field = "unknown"
-        
-        file_info.append({
-            "file_path": file_path,
-            "relative_path": rel_path,
-            "file_size": file_size,
-            "sample_id": sample_id,
-            "target_field": target_field,
-            "filename": filename
-        })
-    
+
+        file_info.append(
+            {
+                "file_path": file_path,
+                "relative_path": rel_path,
+                "file_size": file_size,
+                "sample_id": sample_id,
+                "target_field": target_field,
+                "filename": filename,
+            }
+        )
+
     return {
         "success": True,
         "candidates_files": file_info,
         "total_files": len(file_info),
-        "session_directory": session_dir
+        "session_directory": session_dir,
     }
 
 
@@ -124,7 +126,7 @@ def batch_normalize_session_impl(
     target_field: str = "Disease",
     ontologies: Optional[List[str]] = None,
     top_k: int = 5,
-    min_score: float = 0.5
+    min_score: float = 0.5,
 ) -> Dict[str, Any]:
     """
     Normalize all candidates files in the session directory for a specific target field.
@@ -154,90 +156,98 @@ def batch_normalize_session_impl(
     field_pattern = target_field.lower()
     pattern = os.path.join(session_dir, "**", f"*_{field_pattern}_candidates.json")
     candidates_files = glob.glob(pattern, recursive=True)
-    
+
     if not candidates_files:
         return {
             "success": False,
             "message": f"No candidates files found for target field '{target_field}'",
             "session_directory": session_dir,
-            "searched_pattern": pattern
+            "searched_pattern": pattern,
         }
-    
-    print(f"🔄 Batch normalizing {len(candidates_files)} files for field '{target_field}'")
+
+    print(
+        f"🔄 Batch normalizing {len(candidates_files)} files for field '{target_field}'"
+    )
     print(f"🔍 Ontologies: {ontologies or 'auto-detected'}")
-    
+
     # Process each file using the normalizer implementation
     sample_results = {}
     total_candidates_normalized = 0
     successful_normalizations = 0
     processing_errors = []
-    
+
     for file_path in candidates_files:
         try:
             # Generate output file path
             output_file_path = file_path.replace("_candidates.json", "_normalized.json")
-            
+
             print(f"📄 Processing: {os.path.basename(file_path)}")
-            
+
             # Delegate to the actual implementation
             result = normalize_candidates_file(
                 candidates_file_path=file_path,
                 output_file_path=output_file_path,
                 ontologies=ontologies,
                 top_k=top_k,
-                min_score=min_score
+                min_score=min_score,
             )
-            
+
             # Extract sample ID from filename
             filename = os.path.basename(file_path)
-            sample_id = filename.split("_")[0] if "_" in filename else filename.replace("_candidates.json", "")
-            
+            sample_id = (
+                filename.split("_")[0]
+                if "_" in filename
+                else filename.replace("_candidates.json", "")
+            )
+
             sample_results[sample_id] = {
                 "input_file": file_path,
                 "output_file": output_file_path,
                 "result": result,
                 "candidates_count": result.total_candidates,
                 "normalized_count": result.total_normalized,
-                "status": "success"
+                "status": "success",
             }
-            
+
             total_candidates_normalized += result.total_candidates
             successful_normalizations += 1
-            
-            print(f"✅ {sample_id}: {result.total_normalized}/{result.total_candidates} candidates normalized")
-            
+
+            print(
+                f"✅ {sample_id}: {result.total_normalized}/{result.total_candidates} candidates normalized"
+            )
+
         except NormalizationError as e:
             sample_id = os.path.basename(file_path).split("_")[0]
             error_info = {
                 "sample_id": sample_id,
                 "file_path": file_path,
                 "error": str(e),
-                "error_type": "NormalizationError"
+                "error_type": "NormalizationError",
             }
             processing_errors.append(error_info)
             sample_results[sample_id] = {
                 "input_file": file_path,
                 "status": "error",
-                "error": str(e)
+                "error": str(e),
             }
             print(f"❌ {sample_id}: Normalization error - {str(e)}")
-            
+
         except Exception as e:
             sample_id = os.path.basename(file_path).split("_")[0]
             error_info = {
                 "sample_id": sample_id,
                 "file_path": file_path,
                 "error": str(e),
-                "error_type": "UnexpectedError"
+                "error_type": "UnexpectedError",
             }
             processing_errors.append(error_info)
             sample_results[sample_id] = {
                 "input_file": file_path,
                 "status": "error",
-                "error": str(e)
+                "error": str(e),
             }
             print(f"❌ {sample_id}: Unexpected error - {str(e)}")
-    
+
     # Create batch result
     batch_result = BatchNormalizationResult(
         session_id=os.path.basename(session_dir),
@@ -250,20 +260,21 @@ def batch_normalize_session_impl(
         sample_results=sample_results,
         normalization_timestamp=datetime.now().isoformat(),
         ontologies_used=ontologies or get_default_ontologies_for_field(target_field),
-        parameters={
-            "top_k": top_k,
-            "min_score": min_score
-        }
+        parameters={"top_k": top_k, "min_score": min_score},
     )
-    
+
     # Save batch result
-    batch_output_path = os.path.join(session_dir, f"batch_normalization_{target_field.lower()}_results.json")
-    with open(batch_output_path, 'w') as f:
+    batch_output_path = os.path.join(
+        session_dir, f"batch_normalization_{target_field.lower()}_results.json"
+    )
+    with open(batch_output_path, "w") as f:
         json.dump(batch_result.dict(), f, indent=2)
-    
-    print(f"📊 Batch normalization complete: {successful_normalizations}/{len(candidates_files)} files processed successfully")
+
+    print(
+        f"📊 Batch normalization complete: {successful_normalizations}/{len(candidates_files)} files processed successfully"
+    )
     print(f"💾 Batch results saved to: {batch_output_path}")
-    
+
     return {
         "success": True,
         "batch_result": batch_result.dict(),
@@ -272,8 +283,8 @@ def batch_normalize_session_impl(
             "total_files": len(candidates_files),
             "successful": successful_normalizations,
             "failed": len(processing_errors),
-            "total_candidates": total_candidates_normalized
-        }
+            "total_candidates": total_candidates_normalized,
+        },
     }
 
 
@@ -286,7 +297,7 @@ def get_default_ontologies_for_field(target_field: str) -> List[str]:
 def get_ontology_mapping() -> Dict[str, List[str]]:
     """
     Get the mapping of target fields to appropriate ontologies.
-    
+
     Returns:
         Dict[str, List[str]]: Mapping of field names to prioritized list of ontologies
     """
@@ -301,7 +312,7 @@ def get_ontology_mapping() -> Dict[str, List[str]]:
         "gender": ["pato"],
         # Legacy mappings for backwards compatibility
         "organ": ["uberon"],
-        "cell_type": ["clo"],
+        "cell_type": ["efo"],
         "phenotype": ["pato"],
         "age": ["pato"],
         "ancestry": ["hancestro"],
@@ -316,24 +327,24 @@ def get_ontology_mapping() -> Dict[str, List[str]]:
 def get_available_ontologies() -> Dict[str, Dict[str, Any]]:
     """
     Get information about available ontologies and their dictionary files.
-    
+
     Returns:
         Dict[str, Dict[str, Any]]: Information about available ontologies
     """
     field_to_dict = {
         "mondo": "mondo_terms.json",
-        "efo": "efo_terms.json", 
+        "efo": "efo_terms.json",
         "pato": "pato_terms.json",
         "uberon": "uberon_terms.json",
         "hancestro": "hancestro_terms.json",
         "hsapdv": "hsapdv_terms.json",
         "dron": "dron_terms.json",
-        "clo": "clo_terms.json"
+        "clo": "clo_terms.json",
     }
-    
+
     ontologies_info = {}
     dict_dir = Path(__file__).parent.parent / "normalization" / "dictionaries"
-    
+
     for field, dict_file in field_to_dict.items():
         dict_path = dict_dir / dict_file
         if dict_path.exists():
@@ -342,72 +353,68 @@ def get_available_ontologies() -> Dict[str, Dict[str, Any]]:
                 "dictionary_file": dict_file,
                 "file_size_mb": round(size_mb, 2),
                 "available": True,
-                "path": str(dict_path)
+                "path": str(dict_path),
             }
         else:
             ontologies_info[field] = {
                 "dictionary_file": dict_file,
                 "available": False,
-                "path": str(dict_path)
+                "path": str(dict_path),
             }
-    
+
     return ontologies_info
 
 
 def semantic_search_ontology(
-    query: str, 
-    ontology: str, 
-    top_k: int = 5,
-    min_score: float = 0.5
+    query: str, ontology: str, top_k: int = 5, min_score: float = 0.5
 ) -> List[OntologyMatch]:
     """
     Perform semantic search against a specific ontology.
-    
+
     Args:
         query (str): The query text to search for
         ontology (str): The ontology to search in (e.g., 'mondo', 'efo')
         top_k (int): Number of top results to return
         min_score (float): Minimum similarity score threshold
-        
+
     Returns:
         List[OntologyMatch]: List of ontology matches
-        
+
     Raises:
         NormalizationError: If ontology is not available or search fails
     """
     available_ontologies = get_available_ontologies()
-    
+
     if ontology not in available_ontologies:
         raise NormalizationError(f"Ontology '{ontology}' not recognized")
-        
+
     if not available_ontologies[ontology]["available"]:
         raise NormalizationError(f"Ontology '{ontology}' dictionary not available")
-    
+
     dict_path = available_ontologies[ontology]["path"]
-    
+
     try:
         # Initialize semantic search
         semantic_search = OntologySemanticSearch(dict_path)
-        
+
         # Load or build index
         semantic_search.load_index()
-        
+
         # Perform search
         results = semantic_search.search(query, k=top_k)
-        
+
         # Convert to OntologyMatch objects
         matches = []
         for term, ont_id, score in results:
             if score >= min_score:
-                matches.append(OntologyMatch(
-                    term=term,
-                    term_id=ont_id,
-                    score=score,
-                    ontology=ontology
-                ))
-        
+                matches.append(
+                    OntologyMatch(
+                        term=term, term_id=ont_id, score=score, ontology=ontology
+                    )
+                )
+
         return matches
-        
+
     except Exception as e:
         raise NormalizationError(f"Error searching ontology '{ontology}': {str(e)}")
 
@@ -430,7 +437,7 @@ def semantic_search_candidates_impl(
         # 1. Load CurationResult objects from the specified file
         with open(curation_results_file, "r") as f:
             curation_data = json.load(f)
-        
+
         curation_results = [CurationResult(**data) for data in curation_data]
         print(f"📊 Loaded {len(curation_results)} curation results")
 
@@ -454,39 +461,55 @@ def semantic_search_candidates_impl(
             best_match = None
             highest_score = 0.0
             for ontology in ontologies:
-                searcher = OntologySemanticSearch(f"src/normalization/dictionaries/{ontology}_terms.json")
+                searcher = OntologySemanticSearch(
+                    f"src/normalization/dictionaries/{ontology}_terms.json"
+                )
                 searcher.load_index()
                 matches = searcher.search(candidate.value, k=top_k)
                 for term, term_id, score in matches:
                     if score >= min_score and score > highest_score:
                         highest_score = score
                         best_match = OntologyMatch(
-                            term=term,
-                            term_id=term_id,
-                            score=score,
-                            ontology=ontology
+                            term=term, term_id=term_id, score=score, ontology=ontology
                         )
-            
+
             normalized_candidates_map[candidate.value] = NormalizedCandidate(
                 **candidate.model_dump(),
                 ontology_matches=[best_match] if best_match else [],
                 best_match=best_match,
                 normalization_confidence=highest_score if best_match else None,
-                normalization_notes=[]
+                normalization_notes=[],
             )
 
         # 4. Construct the final BatchNormalizationResult object
         sample_results = []
         successful_normalizations = 0
         for res in curation_results:
-            norm_series = [normalized_candidates_map[c.value] for c in res.series_candidates if c.value in normalized_candidates_map and normalized_candidates_map[c.value].best_match]
-            norm_sample = [normalized_candidates_map[c.value] for c in res.sample_candidates if c.value in normalized_candidates_map and normalized_candidates_map[c.value].best_match]
-            norm_abstract = [normalized_candidates_map[c.value] for c in res.abstract_candidates if c.value in normalized_candidates_map and normalized_candidates_map[c.value].best_match]
-            
+            norm_series = [
+                normalized_candidates_map[c.value]
+                for c in res.series_candidates
+                if c.value in normalized_candidates_map
+                and normalized_candidates_map[c.value].best_match
+            ]
+            norm_sample = [
+                normalized_candidates_map[c.value]
+                for c in res.sample_candidates
+                if c.value in normalized_candidates_map
+                and normalized_candidates_map[c.value].best_match
+            ]
+            norm_abstract = [
+                normalized_candidates_map[c.value]
+                for c in res.abstract_candidates
+                if c.value in normalized_candidates_map
+                and normalized_candidates_map[c.value].best_match
+            ]
+
             all_norm_candidates = norm_series + norm_sample + norm_abstract
             if all_norm_candidates:
                 successful_normalizations += len(all_norm_candidates)
-                best_overall_match = max(all_norm_candidates, key=lambda c: c.normalization_confidence or 0.0)
+                best_overall_match = max(
+                    all_norm_candidates, key=lambda c: c.normalization_confidence or 0.0
+                )
             else:
                 best_overall_match = None
 
@@ -495,21 +518,26 @@ def semantic_search_candidates_impl(
                 normalized_series_candidates=norm_series,
                 normalized_sample_candidates=norm_sample,
                 normalized_abstract_candidates=norm_abstract,
-                final_normalized_term=best_overall_match.best_match.term if best_overall_match and best_overall_match.best_match else None,
-                final_normalized_id=best_overall_match.best_match.term_id if best_overall_match and best_overall_match.best_match else None,
-                final_ontology=best_overall_match.best_match.ontology if best_overall_match and best_overall_match.best_match else None,
-                normalization_method="semantic_search"
+                final_normalized_term=best_overall_match.best_match.term
+                if best_overall_match and best_overall_match.best_match
+                else None,
+                final_normalized_id=best_overall_match.best_match.term_id
+                if best_overall_match and best_overall_match.best_match
+                else None,
+                final_ontology=best_overall_match.best_match.ontology
+                if best_overall_match and best_overall_match.best_match
+                else None,
+                normalization_method="semantic_search",
             )
-            
+
             # Wrap in SampleResultEntry as expected by BatchNormalizationResult
             sample_entry = SampleResultEntry(
-                sample_id=res.sample_id,
-                result=norm_result
+                sample_id=res.sample_id, result=norm_result
             )
             sample_results.append(sample_entry)
 
         session_dir = str(Path(curation_results_file).parent)
-        
+
         return BatchNormalizationResult(
             sample_results=sample_results,
             session_directory=session_dir,
@@ -518,13 +546,14 @@ def semantic_search_candidates_impl(
             successful_normalizations=successful_normalizations,
             processing_summary=[
                 KeyValue(key="ontologies_used", value=", ".join(ontologies)),
-                KeyValue(key="min_score_threshold", value=str(min_score))
-            ]
+                KeyValue(key="min_score_threshold", value=str(min_score)),
+            ],
         )
 
     except Exception as e:
         print(f"❌ semantic_search_candidates_impl error: {str(e)}")
         import traceback
+
         traceback.print_exc()
         # Re-raise to be caught by the tool wrapper
         raise
@@ -535,18 +564,18 @@ def normalize_candidate_value(
     target_field: str,
     ontologies: Optional[List[str]] = None,
     top_k: int = 5,
-    min_score: float = 0.5
+    min_score: float = 0.5,
 ) -> NormalizedCandidate:
     """
     Normalize a single candidate value against appropriate ontologies.
-    
+
     Args:
         candidate (ExtractedCandidate): The candidate to normalize
         target_field (str): The target metadata field
         ontologies (Optional[List[str]]): Specific ontologies to search
         top_k (int): Number of top matches to return per ontology
         min_score (float): Minimum similarity score threshold
-        
+
     Returns:
         NormalizedCandidate: The normalized candidate with ontology matches
     """
@@ -554,11 +583,13 @@ def normalize_candidate_value(
     if ontologies is None:
         field_ontology_map = get_ontology_mapping()
         field_key = target_field.lower().replace(" ", "_")
-        ontologies = field_ontology_map.get(field_key, ["mondo", "efo"])  # Default fallback
-    
+        ontologies = field_ontology_map.get(
+            field_key, ["mondo", "efo"]
+        )  # Default fallback
+
     all_matches = []
     normalization_notes = []
-    
+
     # Search each ontology
     for ontology in ontologies:
         try:
@@ -566,26 +597,28 @@ def normalize_candidate_value(
                 query=candidate.value,
                 ontology=ontology,
                 top_k=top_k,
-                min_score=min_score
+                min_score=min_score,
             )
             all_matches.extend(matches)
-            
+
             if matches:
-                normalization_notes.append(f"Found {len(matches)} matches in {ontology}")
+                normalization_notes.append(
+                    f"Found {len(matches)} matches in {ontology}"
+                )
             else:
                 normalization_notes.append(f"No matches above threshold in {ontology}")
-                
+
         except NormalizationError as e:
             normalization_notes.append(f"Error searching {ontology}: {str(e)}")
             continue
-    
+
     # Sort all matches by score (descending)
     all_matches.sort(key=lambda x: x.score, reverse=True)
-    
+
     # Determine best match and overall confidence
     best_match = all_matches[0] if all_matches else None
     normalization_confidence = best_match.score if best_match else 0.0
-    
+
     # Create normalized candidate
     normalized_candidate = NormalizedCandidate(
         value=candidate.value,
@@ -597,9 +630,9 @@ def normalize_candidate_value(
         ontology_matches=all_matches,
         best_match=best_match,
         normalization_confidence=normalization_confidence,
-        normalization_notes=normalization_notes
+        normalization_notes=normalization_notes,
     )
-    
+
     return normalized_candidate
 
 
@@ -607,17 +640,17 @@ def normalize_curation_result(
     curation_result: CurationResult,
     ontologies: Optional[List[str]] = None,
     top_k: int = 5,
-    min_score: float = 0.5
+    min_score: float = 0.5,
 ) -> NormalizationResult:
     """
     Normalize all candidates in a CurationResult.
-    
+
     Args:
         curation_result (CurationResult): The curation result to normalize
         ontologies (Optional[List[str]]): Specific ontologies to search
         top_k (int): Number of top matches to return per ontology
         min_score (float): Minimum similarity score threshold
-        
+
     Returns:
         NormalizationResult: The normalized result
     """
@@ -628,53 +661,53 @@ def normalize_curation_result(
             candidate, curation_result.target_field, ontologies, top_k, min_score
         )
         normalized_series_candidates.append(normalized)
-    
+
     normalized_sample_candidates = []
     for candidate in curation_result.sample_candidates:
         normalized = normalize_candidate_value(
             candidate, curation_result.target_field, ontologies, top_k, min_score
         )
         normalized_sample_candidates.append(normalized)
-    
+
     normalized_abstract_candidates = []
     for candidate in curation_result.abstract_candidates:
         normalized = normalize_candidate_value(
             candidate, curation_result.target_field, ontologies, top_k, min_score
         )
         normalized_abstract_candidates.append(normalized)
-    
+
     # Determine final normalized result
     all_normalized_candidates = (
-        normalized_series_candidates + 
-        normalized_sample_candidates + 
-        normalized_abstract_candidates
+        normalized_series_candidates
+        + normalized_sample_candidates
+        + normalized_abstract_candidates
     )
-    
+
     final_normalized_term = None
     final_normalized_id = None
     final_ontology = None
     normalization_method = "semantic_search"
-    
+
     # Choose the best normalized match based on original confidence and normalization confidence
     if all_normalized_candidates:
         # Weight by original confidence * normalization confidence
         best_candidate = max(
             all_normalized_candidates,
-            key=lambda x: x.confidence * (x.normalization_confidence or 0.0)
+            key=lambda x: x.confidence * (x.normalization_confidence or 0.0),
         )
-        
+
         if best_candidate.best_match:
             final_normalized_term = best_candidate.best_match.term
             final_normalized_id = best_candidate.best_match.term_id
             final_ontology = best_candidate.best_match.ontology
-    
+
     # Determine which ontologies were searched
     ontologies_searched = ontologies or []
     if not ontologies_searched:
         field_ontology_map = get_ontology_mapping()
         field_key = curation_result.target_field.lower().replace(" ", "_")
         ontologies_searched = field_ontology_map.get(field_key, ["mondo", "efo"])
-    
+
     # Create the normalization result by copying all fields from curation_result
     # and adding the normalization-specific fields
     normalization_result = NormalizationResult(
@@ -701,52 +734,56 @@ def normalize_curation_result(
         normalization_method=normalization_method,
         ontologies_searched=ontologies_searched,
         normalization_timestamp=datetime.now().isoformat(),
-        normalization_tool_version="1.0.0"
+        normalization_tool_version="1.0.0",
     )
-    
+
     return normalization_result
 
 
 def load_curation_result_from_file(file_path: str) -> CurationResult:
     """
     Load a CurationResult from a JSON file.
-    
+
     Args:
         file_path (str): Path to the curation result JSON file
-        
+
     Returns:
         CurationResult: The loaded curation result
-        
+
     Raises:
         NormalizationError: If file cannot be loaded or parsed
     """
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             data = json.load(f)
-        
+
         return CurationResult(**data)
-        
+
     except Exception as e:
-        raise NormalizationError(f"Error loading curation result from {file_path}: {str(e)}")
+        raise NormalizationError(
+            f"Error loading curation result from {file_path}: {str(e)}"
+        )
 
 
 def save_normalization_result(result: NormalizationResult, file_path: str) -> None:
     """
     Save a NormalizationResult to a JSON file.
-    
+
     Args:
         result (NormalizationResult): The normalization result to save
         file_path (str): Path where to save the result
-        
+
     Raises:
         NormalizationError: If file cannot be saved
     """
     try:
-        with open(file_path, 'w') as f:
+        with open(file_path, "w") as f:
             json.dump(result.model_dump(), f, indent=2)
-            
+
     except Exception as e:
-        raise NormalizationError(f"Error saving normalization result to {file_path}: {str(e)}")
+        raise NormalizationError(
+            f"Error saving normalization result to {file_path}: {str(e)}"
+        )
 
 
 def normalize_candidates_file(
@@ -754,35 +791,35 @@ def normalize_candidates_file(
     output_file_path: str,
     ontologies: Optional[List[str]] = None,
     top_k: int = 5,
-    min_score: float = 0.5
+    min_score: float = 0.5,
 ) -> NormalizationResult:
     """
     Normalize candidates from a JSON file and save the result.
-    
+
     Args:
         candidates_file_path (str): Path to the candidates JSON file
         output_file_path (str): Path where to save the normalized result
         ontologies (Optional[List[str]]): Specific ontologies to search
         top_k (int): Number of top matches to return per ontology
         min_score (float): Minimum similarity score threshold
-        
+
     Returns:
         NormalizationResult: The normalization result
-        
+
     Raises:
         NormalizationError: If processing fails
     """
     # Load the curation result
     curation_result = load_curation_result_from_file(candidates_file_path)
-    
+
     # Normalize it
     normalization_result = normalize_curation_result(
         curation_result, ontologies, top_k, min_score
     )
-    
+
     # Save the result
     save_normalization_result(normalization_result, output_file_path)
-    
+
     return normalization_result
 
 
@@ -790,52 +827,51 @@ def normalize_candidates_file(
 if __name__ == "__main__":
     # Test the normalization tools
     print("Testing normalization tools...")
-    
+
     # Test available ontologies
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Available Ontologies:")
-    print(f"{'='*60}")
-    
+    print(f"{'=' * 60}")
+
     ontologies = get_available_ontologies()
     for field, info in ontologies.items():
-        if info['available']:
+        if info["available"]:
             print(f"  {field}: {info['dictionary_file']} ({info['file_size_mb']} MB)")
         else:
             print(f"  {field}: {info['dictionary_file']} (not available)")
-    
+
     # Test ontology mapping
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Target Field -> Ontology Mapping:")
-    print(f"{'='*60}")
-    
+    print(f"{'=' * 60}")
+
     mapping = get_ontology_mapping()
     for field, onts in mapping.items():
         print(f"  {field}: {', '.join(onts)}")
-    
+
     # Test semantic search if ontologies are available
-    available_onts = [k for k, v in ontologies.items() if v['available']]
+    available_onts = [k for k, v in ontologies.items() if v["available"]]
     if available_onts:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("Testing Semantic Search:")
-        print(f"{'='*60}")
-        
+        print(f"{'=' * 60}")
+
         test_queries = [
             ("diabetes", "mondo"),
             ("heart", "uberon"),
             ("cancer", "efo"),
         ]
-        
+
         for query, ontology in test_queries:
             if ontology in available_onts:
                 try:
                     matches = semantic_search_ontology(query, ontology, top_k=3)
                     print(f"\nQuery: '{query}' in {ontology}")
                     for i, match in enumerate(matches, 1):
-                        print(f"  {i}. {match.term} → {match.term_id} (score: {match.score:.4f})")
+                        print(
+                            f"  {i}. {match.term} → {match.term_id} (score: {match.score:.4f})"
+                        )
                 except NormalizationError as e:
                     print(f"Error: {e}")
     else:
         print("\nNo ontology dictionaries available for testing.")
-
-
-
