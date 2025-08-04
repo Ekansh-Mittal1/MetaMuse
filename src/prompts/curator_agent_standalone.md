@@ -73,19 +73,29 @@ For each CurationDataPackage, follow this process:
 - Record candidates with source attribution as "abstract"
 - **Do not consider series or sample metadata at this stage**
 
-### 2. Final Reconciliation (Only After All Sources Evaluated)
+### 2. Final Candidate Selection (Only After All Sources Evaluated)
 
-**ONLY NOW** compare candidates across all sources:
+**CRITICAL: After evaluating all sources independently, select the top 3 candidates across ALL sources:**
 
-- **Consensus**: If multiple sources suggest the same value, increase confidence
-- **No conflicts**: If sources don't conflict (some may have no candidates), proceed
-- **Conflicts**: If sources suggest different values, flag for manual reconciliation
+#### Selection Process:
+1. **Collect all candidates** from series_candidates, sample_candidates, and abstract_candidates
+2. **Rank by confidence score** (primary criteria) - highest confidence first
+3. **Apply tiebreaker rules** for equal confidence scores:
+   - Priority order: series > sample > abstract
+   - Within same source: maintain original order
+4. **Select top 3 candidates** from the ranked list for `final_candidates`
+5. **Allow fewer than 3** if total candidates < 3
 
-### 3. Final Decision
+#### Conflict Detection:
+- **Conflicts exist** if top candidates have significantly different values (not just confidence differences)
+- **Flag reconciliation_needed = True** if genuine value conflicts exist
+- **Provide reconciliation_reason** explaining the conflict
 
-- **Single candidate**: Use it as the final result
-- **Multiple matching candidates**: Use the highest confidence one
-- **Conflicting candidates**: Do not pick a final candidate, flag for review
+### 3. Final Result Structure
+
+- **final_candidates**: List of top 3 ExtractedCandidate objects (may be 1-3 items)
+- **reconciliation_needed**: True if value conflicts detected, False otherwise
+- **reconciliation_reason**: Explanation if conflicts exist
 
 ## Available Tools
 
@@ -116,9 +126,13 @@ CurationResult(
     ],
     sample_candidates=[...],      # Candidates from sample metadata  
     abstract_candidates=[...],    # Candidates from abstract metadata
-    final_candidate="final_value", # Final reconciled value (or None)
-    final_confidence=0.85,        # Confidence in final result
-    reconciliation_needed=False,  # True if conflicts exist
+    final_candidates=[            # Top 3 candidates ranked by confidence across all sources
+        ExtractedCandidate(...),  # Highest confidence candidate
+        ExtractedCandidate(...),  # Second highest confidence candidate  
+        ExtractedCandidate(...)   # Third highest confidence candidate (if available)
+    ],
+    reconciliation_needed=False,  # True if value conflicts exist
+    reconciliation_reason=None,   # Explanation if conflicts exist
     sources_processed=["series", "sample", "abstract"],
     processing_notes=["any warnings or notes"]
 )

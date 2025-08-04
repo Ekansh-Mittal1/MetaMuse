@@ -8,7 +8,7 @@ capabilities to candidate values extracted by the CuratorAgent.
 from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
-from .curation_models import CurationResult
+from .curation_models import ExtractedCandidate
 from .common import KeyValue
 
 
@@ -43,13 +43,16 @@ class NormalizedCandidate(BaseModel):
         ..., description="Original ontology-normalized term with ID"
     )
 
-    # Normalization results
-    ontology_matches: List[OntologyMatch] = Field(
-        default_factory=list, description="Ranked list of ontology matches"
+    # Normalization results - top 5 matches only
+    top_ontology_matches: List[OntologyMatch] = Field(
+        default_factory=list, description="Top 5 ranked ontology matches"
     )
+    
+    # Legacy field for backward compatibility
     best_match: Optional[OntologyMatch] = Field(
-        None, description="The highest-scoring ontology match"
+        None, description="Legacy: The highest-scoring ontology match (use top_ontology_matches instead)"
     )
+    
     normalization_confidence: Optional[float] = Field(
         None, ge=0.0, le=1.0, description="Overall confidence in normalization"
     )
@@ -58,37 +61,74 @@ class NormalizedCandidate(BaseModel):
     )
 
 
-class NormalizationResult(CurationResult):
-    """Result of normalization for a single sample and target field, extending CurationResult."""
+class NormalizationResult(BaseModel):
+    """Result of normalization for a single sample and target field."""
 
     model_config = ConfigDict(extra="forbid")
 
-    # Enhanced candidates with normalization
-    normalized_series_candidates: List[NormalizedCandidate] = Field(
-        default_factory=list, description="Normalized candidates from series metadata"
+    # Basic identification (copied from CurationResult)
+    tool_name: str = Field(
+        default="NormalizerAgent", description="Name of the tool that produced this output"
     )
-    normalized_sample_candidates: List[NormalizedCandidate] = Field(
-        default_factory=list, description="Normalized candidates from sample metadata"
+    sample_id: str = Field(..., description="Sample ID that was normalized")
+    target_field: str = Field(..., description="Target metadata field (e.g., Disease)")
+
+    # Original candidates for reference
+    series_candidates: List[ExtractedCandidate] = Field(
+        default_factory=list, description="Original candidates from series metadata"
     )
-    normalized_abstract_candidates: List[NormalizedCandidate] = Field(
-        default_factory=list, description="Normalized candidates from abstract metadata"
+    sample_candidates: List[ExtractedCandidate] = Field(
+        default_factory=list, description="Original candidates from sample metadata"
+    )
+    abstract_candidates: List[ExtractedCandidate] = Field(
+        default_factory=list, description="Original candidates from abstract metadata"
+    )
+    final_candidates: List[ExtractedCandidate] = Field(
+        default_factory=list, description="Original top 3 candidates selected for normalization"
     )
 
-    # Enhanced final result with normalization
+    # Normalization results
+    final_normalized_candidates: List[NormalizedCandidate] = Field(
+        default_factory=list, description="Top 3 normalized candidates with their ontology matches"
+    )
+    
+    # Legacy curation fields for backward compatibility
+    final_candidate: Optional[str] = Field(
+        None, description="Legacy: Final reconciled candidate value (use final_candidates instead)"
+    )
+    final_confidence: Optional[float] = Field(
+        None, ge=0.0, le=1.0, description="Legacy: Confidence in final result (use final_candidates instead)"
+    )
+    
+    # Legacy normalization fields for backward compatibility
     final_normalized_term: Optional[str] = Field(
-        None, description="Final normalized ontology term"
+        None, description="Legacy: Final normalized ontology term"
     )
     final_normalized_id: Optional[str] = Field(
-        None, description="Final normalized ontology term ID"
+        None, description="Legacy: Final normalized ontology term ID"
     )
     final_ontology: Optional[str] = Field(
-        None, description="Source ontology of final normalized term"
+        None, description="Legacy: Source ontology of final normalized term"
     )
+    
+    # Processing metadata
+    reconciliation_needed: bool = Field(
+        False, description="Whether manual reconciliation was needed"
+    )
+    reconciliation_reason: Optional[str] = Field(
+        None, description="Reason for manual reconciliation"
+    )
+    sources_processed: List[str] = Field(
+        default_factory=list, description="Sources that were processed"
+    )
+    processing_notes: List[str] = Field(
+        default_factory=list, description="Processing notes and warnings"
+    )
+
+    # Normalization-specific metadata
     normalization_method: Optional[str] = Field(
         None, description="Method used for normalization (e.g., 'semantic_search')"
     )
-
-    # Normalization metadata
     ontologies_searched: List[str] = Field(
         default_factory=list, description="List of ontologies that were searched"
     )

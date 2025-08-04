@@ -354,7 +354,7 @@ async def run_normalizer_agent(
             print(f"✅ Got final_output directly: {type(final_result)}")
         except Exception as e:
             print(f"❌ Could not get final_output: {e}")
-            raise RuntimeError("No result received from curator agent")
+            raise RuntimeError("No result received from normalizer agent")
 
         # Validate that we got a BatchNormalizationResult
         if not isinstance(final_result, BatchNormalizationResult):

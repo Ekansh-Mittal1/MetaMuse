@@ -441,25 +441,22 @@ def semantic_search_candidates_impl(
         curation_results = [CurationResult(**data) for data in curation_data]
         print(f"📊 Loaded {len(curation_results)} curation results")
 
-        # 2. Extract all ExtractedCandidate objects
+        # 2. Extract only final_candidates (top 3 per sample)
         all_candidates = []
         for res in curation_results:
-            all_candidates.extend(res.series_candidates)
-            all_candidates.extend(res.sample_candidates)
-            all_candidates.extend(res.abstract_candidates)
-        print(f"🔎 Extracted {len(all_candidates)} total candidates for normalization.")
+            all_candidates.extend(res.final_candidates)
+        print(f"🔎 Extracted {len(all_candidates)} final candidates for normalization (max 3 per sample).")
 
         # Determine ontologies to use if not specified
         if ontologies is None:
             ontologies = get_default_ontologies_for_field(target_field)
         print(f"🔍 Using ontologies: {ontologies}")
 
-        # 3. Perform semantic search for all candidates
+        # 3. Perform semantic search for all candidates (return top 5 matches per candidate)
         normalized_candidates_map = {}
         for candidate in all_candidates:
-            # This is a simplified search logic, can be batched for performance
-            best_match = None
-            highest_score = 0.0
+            # Collect all matches across ontologies and get top 5
+            all_matches = []
             for ontology in ontologies:
                 searcher = OntologySemanticSearch(
                     f"src/normalization/dictionaries/{ontology}_terms.json"
@@ -467,17 +464,22 @@ def semantic_search_candidates_impl(
                 searcher.load_index()
                 matches = searcher.search(candidate.value, k=top_k)
                 for term, term_id, score in matches:
-                    if score >= min_score and score > highest_score:
-                        highest_score = score
-                        best_match = OntologyMatch(
+                    if score >= min_score:
+                        all_matches.append(OntologyMatch(
                             term=term, term_id=term_id, score=score, ontology=ontology
-                        )
+                        ))
+            
+            # Sort by score and take top 5
+            all_matches.sort(key=lambda x: x.score, reverse=True)
+            top_5_matches = all_matches[:5]
+            
+            # Calculate overall normalization confidence as highest score
+            normalization_confidence = top_5_matches[0].score if top_5_matches else None
 
             normalized_candidates_map[candidate.value] = NormalizedCandidate(
                 **candidate.model_dump(),
-                ontology_matches=[best_match] if best_match else [],
-                best_match=best_match,
-                normalization_confidence=highest_score if best_match else None,
+                top_ontology_matches=top_5_matches,
+                normalization_confidence=normalization_confidence,
                 normalization_notes=[],
             )
 
@@ -513,21 +515,48 @@ def semantic_search_candidates_impl(
             else:
                 best_overall_match = None
 
+            # Create final normalized candidates from the normalized final_candidates
+            final_normalized_candidates = []
+            for candidate in res.final_candidates:
+                if candidate.value in normalized_candidates_map:
+                    final_normalized_candidates.append(normalized_candidates_map[candidate.value])
+            
+            # Legacy fields for backward compatibility
+            final_candidate = res.final_candidates[0].value if res.final_candidates else None
+            final_confidence = res.final_candidates[0].confidence if res.final_candidates else None
+            final_normalized_term = best_overall_match.best_match.term if best_overall_match and best_overall_match.best_match else None
+            final_normalized_id = best_overall_match.best_match.term_id if best_overall_match and best_overall_match.best_match else None
+            final_ontology = best_overall_match.best_match.ontology if best_overall_match and best_overall_match.best_match else None
+
             norm_result = NormalizationResult(
-                **res.model_dump(),
-                normalized_series_candidates=norm_series,
-                normalized_sample_candidates=norm_sample,
-                normalized_abstract_candidates=norm_abstract,
-                final_normalized_term=best_overall_match.best_match.term
-                if best_overall_match and best_overall_match.best_match
-                else None,
-                final_normalized_id=best_overall_match.best_match.term_id
-                if best_overall_match and best_overall_match.best_match
-                else None,
-                final_ontology=best_overall_match.best_match.ontology
-                if best_overall_match and best_overall_match.best_match
-                else None,
+                # Basic identification
+                tool_name="NormalizerAgent",
+                sample_id=res.sample_id,
+                target_field=res.target_field,
+                # Original candidates for reference
+                series_candidates=res.series_candidates,
+                sample_candidates=res.sample_candidates,
+                abstract_candidates=res.abstract_candidates,
+                final_candidates=res.final_candidates,
+                # Legacy fields for backward compatibility
+                final_candidate=final_candidate,
+                final_confidence=final_confidence,
+                # Normalization results
+                final_normalized_candidates=final_normalized_candidates,
+                # Legacy normalized fields for backward compatibility
+                final_normalized_term=final_normalized_term,
+                final_normalized_id=final_normalized_id,
+                final_ontology=final_ontology,
+                # Processing metadata
+                reconciliation_needed=res.reconciliation_needed,
+                reconciliation_reason=res.reconciliation_reason,
+                sources_processed=res.sources_processed,
+                processing_notes=res.processing_notes,
+                # Normalization-specific metadata
                 normalization_method="semantic_search",
+                ontologies_searched=ontologies,
+                normalization_timestamp=datetime.now().isoformat(),
+                normalization_tool_version="1.0.0",
             )
 
             # Wrap in SampleResultEntry as expected by BatchNormalizationResult
@@ -615,11 +644,12 @@ def normalize_candidate_value(
     # Sort all matches by score (descending)
     all_matches.sort(key=lambda x: x.score, reverse=True)
 
-    # Determine best match and overall confidence
-    best_match = all_matches[0] if all_matches else None
+    # Take top 5 matches and determine overall confidence
+    top_5_matches = all_matches[:5]
+    best_match = top_5_matches[0] if top_5_matches else None
     normalization_confidence = best_match.score if best_match else 0.0
 
-    # Create normalized candidate
+    # Create normalized candidate with both new and legacy fields
     normalized_candidate = NormalizedCandidate(
         value=candidate.value,
         confidence=candidate.confidence,
@@ -627,8 +657,8 @@ def normalize_candidate_value(
         context=candidate.context,
         rationale=candidate.rationale,
         prenormalized=candidate.prenormalized,
-        ontology_matches=all_matches,
-        best_match=best_match,
+        top_ontology_matches=top_5_matches,
+        best_match=best_match,  # Legacy field for compatibility
         normalization_confidence=normalization_confidence,
         normalization_notes=normalization_notes,
     )
@@ -654,52 +684,15 @@ def normalize_curation_result(
     Returns:
         NormalizationResult: The normalized result
     """
-    # Normalize candidates from each source
-    normalized_series_candidates = []
-    for candidate in curation_result.series_candidates:
+    # Normalize only the final_candidates (top 3) - this is the core functionality
+    final_normalized_candidates = []
+    for candidate in curation_result.final_candidates:
         normalized = normalize_candidate_value(
             candidate, curation_result.target_field, ontologies, top_k, min_score
         )
-        normalized_series_candidates.append(normalized)
+        final_normalized_candidates.append(normalized)
 
-    normalized_sample_candidates = []
-    for candidate in curation_result.sample_candidates:
-        normalized = normalize_candidate_value(
-            candidate, curation_result.target_field, ontologies, top_k, min_score
-        )
-        normalized_sample_candidates.append(normalized)
-
-    normalized_abstract_candidates = []
-    for candidate in curation_result.abstract_candidates:
-        normalized = normalize_candidate_value(
-            candidate, curation_result.target_field, ontologies, top_k, min_score
-        )
-        normalized_abstract_candidates.append(normalized)
-
-    # Determine final normalized result
-    all_normalized_candidates = (
-        normalized_series_candidates
-        + normalized_sample_candidates
-        + normalized_abstract_candidates
-    )
-
-    final_normalized_term = None
-    final_normalized_id = None
-    final_ontology = None
     normalization_method = "semantic_search"
-
-    # Choose the best normalized match based on original confidence and normalization confidence
-    if all_normalized_candidates:
-        # Weight by original confidence * normalization confidence
-        best_candidate = max(
-            all_normalized_candidates,
-            key=lambda x: x.confidence * (x.normalization_confidence or 0.0),
-        )
-
-        if best_candidate.best_match:
-            final_normalized_term = best_candidate.best_match.term
-            final_normalized_id = best_candidate.best_match.term_id
-            final_ontology = best_candidate.best_match.ontology
 
     # Determine which ontologies were searched
     ontologies_searched = ontologies or []
@@ -708,29 +701,53 @@ def normalize_curation_result(
         field_key = curation_result.target_field.lower().replace(" ", "_")
         ontologies_searched = field_ontology_map.get(field_key, ["mondo", "efo"])
 
-    # Create the normalization result by copying all fields from curation_result
-    # and adding the normalization-specific fields
+    # Determine legacy fields for backward compatibility
+    final_candidate = None
+    final_confidence = None
+    final_normalized_term = None
+    final_normalized_id = None
+    final_ontology = None
+    
+    # Set legacy fields from first final_candidate if available
+    if curation_result.final_candidates:
+        top_candidate = curation_result.final_candidates[0]
+        final_candidate = top_candidate.value
+        final_confidence = top_candidate.confidence
+        
+        # Set legacy normalized fields from first normalized candidate if available
+        if final_normalized_candidates:
+            top_normalized = final_normalized_candidates[0]
+            if top_normalized.best_match:
+                final_normalized_term = top_normalized.best_match.term
+                final_normalized_id = top_normalized.best_match.term_id
+                final_ontology = top_normalized.best_match.ontology
+
+    # Create the normalization result with both new and legacy fields
     normalization_result = NormalizationResult(
-        # Copy all fields from CurationResult
-        tool_name=curation_result.tool_name,
+        # Basic identification
+        tool_name="NormalizerAgent",
         sample_id=curation_result.sample_id,
         target_field=curation_result.target_field,
+        # Original candidates for reference
         series_candidates=curation_result.series_candidates,
         sample_candidates=curation_result.sample_candidates,
         abstract_candidates=curation_result.abstract_candidates,
-        final_candidate=curation_result.final_candidate,
-        final_confidence=curation_result.final_confidence,
+        final_candidates=curation_result.final_candidates,
+        # Legacy fields for backward compatibility
+        final_candidate=final_candidate,
+        final_confidence=final_confidence,
+        # Normalization results
+        final_normalized_candidates=final_normalized_candidates,
+        # Legacy normalized fields for backward compatibility
+        final_normalized_term=final_normalized_term,
+        final_normalized_id=final_normalized_id,
+        final_ontology=final_ontology,
+        # Processing metadata
         reconciliation_needed=curation_result.reconciliation_needed,
         reconciliation_reason=curation_result.reconciliation_reason,
         sources_processed=curation_result.sources_processed,
         processing_notes=curation_result.processing_notes,
-        # Add normalization-specific fields
-        normalized_series_candidates=normalized_series_candidates,
-        normalized_sample_candidates=normalized_sample_candidates,
-        normalized_abstract_candidates=normalized_abstract_candidates,
-        final_normalized_term=final_normalized_term,
-        final_normalized_id=final_normalized_id,
-        final_ontology=final_ontology,
+        # Normalization-specific metadata
         normalization_method=normalization_method,
         ontologies_searched=ontologies_searched,
         normalization_timestamp=datetime.now().isoformat(),
