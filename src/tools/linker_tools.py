@@ -875,10 +875,6 @@ def clean_metadata_files_impl(
         tools = LinkerTools(session_dir)
         result = tools.clean_metadata_files(sample_id, fields_to_remove)
 
-        print(
-            f"[CLEAN_IMPL] Result: success={result.success}, message={result.message}"
-        )
-
         return {
             "success": result.success,
             "message": result.message,

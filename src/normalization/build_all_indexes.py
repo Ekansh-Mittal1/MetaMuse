@@ -7,9 +7,7 @@ from semantic_search import OntologySemanticSearch
 DICT_DIR = Path(__file__).parent / "dictionaries"
 
 # List all JSON dictionary files, ignoring dron_terms.json
-all_dict_files = [
-    f for f in DICT_DIR.glob("*_terms.json") if f.name != "dron_terms.json"
-]
+all_dict_files = [f for f in DICT_DIR.glob("*_terms.json") if f.name == "cl_terms.json"]
 
 print(f"Found {len(all_dict_files)} dictionaries (excluding dron):")
 for f in all_dict_files:

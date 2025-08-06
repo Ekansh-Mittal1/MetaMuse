@@ -9,6 +9,13 @@ from dotenv import load_dotenv
 from pathlib import Path
 import traceback
 
+# Import field definitions for filtering
+from src.models.metadata_models import (
+    GSM_STANDARD_FIELDS,
+    GSE_STANDARD_FIELDS,
+    PMID_STANDARD_FIELDS,
+)
+
 
 class NCBIClient:
     """
@@ -286,6 +293,9 @@ class NCBIClient:
 
                 # Add small delay to respect rate limits
                 time.sleep(0.34)  # ~3 requests per second
+
+                # Filter to only include standard PMID fields
+                paper_info = self._filter_standard_fields(paper_info, "PMID")
 
                 return paper_info
 
@@ -704,6 +714,48 @@ class NCBIClient:
                         f"Error processing series matrix for {gse_id} after {attempt + 1} attempts: {e}"
                     )
 
+    def _filter_standard_fields(
+        self, attributes: Dict[str, Any], record_type: str
+    ) -> Dict[str, Any]:
+        """
+        Filter attributes to only include standard fields defined in the metadata models.
+
+        Args:
+            attributes (Dict[str, Any]): Raw attributes from NCBI
+            record_type (str): Type of record ('GSM', 'GSE', or 'PMID')
+
+        Returns:
+            Dict[str, Any]: Filtered attributes containing only standard fields
+        """
+        # Get the appropriate standard fields set
+        if record_type == "GSM":
+            standard_fields = GSM_STANDARD_FIELDS
+        elif record_type == "GSE":
+            standard_fields = GSE_STANDARD_FIELDS
+        elif record_type == "PMID":
+            standard_fields = PMID_STANDARD_FIELDS
+        else:
+            # If unknown type, pass through all fields (shouldn't happen)
+            return attributes
+
+        # Filter to only include standard fields
+        filtered_attributes = {}
+        filtered_count = 0
+
+        for key, value in attributes.items():
+            if key in standard_fields:
+                filtered_attributes[key] = value
+            else:
+                filtered_count += 1
+
+        # Log filtering results if fields were filtered
+        if filtered_count > 0:
+            print(
+                f"🔧 Filtered {filtered_count} non-standard fields from {record_type} attributes"
+            )
+
+        return filtered_attributes
+
     def _parse_soft_format(self, content: str, record_id: str) -> Dict[str, Any]:
         """
         Parse the SOFT format response from GEO.
@@ -764,6 +816,12 @@ class NCBIClient:
                         metadata["attributes"][key] = f"{existing_value}, {value}"
                     else:
                         metadata["attributes"][key] = value
+
+        # Filter attributes to only include standard fields
+        record_type = "GSE" if is_gse else "GSM"
+        metadata["attributes"] = self._filter_standard_fields(
+            metadata["attributes"], record_type
+        )
 
         return metadata
 
@@ -1127,7 +1185,6 @@ def extract_gsm_metadata_impl(
     str
         Path to the saved metadata file.
     """
-    print(f"🔧 extract_gsm_metadata: {gsm_id}")
 
     # Validate GSM ID format
     if not gsm_id.upper().startswith("GSM") or not gsm_id[3:].isdigit():
@@ -1169,8 +1226,6 @@ def extract_gsm_metadata_impl(
             primary_series_id = valid_series_ids[0]
             series_dir = _get_series_subdirectory(session_dir, primary_series_id)
             output_file = series_dir / f"{gsm_id}_metadata.json"
-            print(f"📁 Saving to series subdirectory: {primary_series_id}")
-
             # If there are multiple series IDs, add a note to the metadata
             if len(valid_series_ids) > 1:
                 metadata["attributes"]["all_series_ids"] = ", ".join(valid_series_ids)
@@ -1182,7 +1237,6 @@ def extract_gsm_metadata_impl(
     with open(output_file, "w") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-    print(f"📁 Saved to: {output_file}")
     return str(output_file)
 
 
@@ -1208,7 +1262,6 @@ def extract_gse_metadata_impl(
     str
         Path to the saved metadata file.
     """
-    print(f"🔧 extract_gse_metadata: {gse_id}")
 
     # Validate GSE ID format
     if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
@@ -1225,7 +1278,6 @@ def extract_gse_metadata_impl(
     with open(output_file, "w") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-    print(f"📁 Saved to: {output_file}")
     return str(output_file)
 
 
@@ -1251,7 +1303,6 @@ def extract_series_matrix_metadata_impl(
     str
         Path to the saved metadata file.
     """
-    print(f"🔧 extract_series_matrix_metadata: {gse_id}")
 
     # Validate GSE ID format
     if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
@@ -1282,11 +1333,12 @@ def extract_series_matrix_metadata_impl(
                 total_size_str = f"{total_size / (1024 * 1024):.1f} MB"
             else:
                 total_size_str = f"{total_size / (1024 * 1024 * 1024):.1f} GB"
-            print(f"📁 Saved to: {output_file} (Total file size: {total_size_str})")
+
         else:
-            print(f"📁 Saved to: {output_file}")
+            pass
     else:
-        print(f"📁 Saved to: {output_file}")
+        pass
+
     return str(output_file)
 
 
@@ -1319,7 +1371,6 @@ def extract_paper_abstract_impl(
     str
         Path to the saved metadata file.
     """
-    print(f"🔧 extract_paper_abstract: PMID {pmid}")
 
     # Validate PMID format
     if not isinstance(pmid, int) or pmid <= 0:
@@ -1339,11 +1390,11 @@ def extract_paper_abstract_impl(
             series_id = source_path.name.replace("_metadata.json", "")
             series_dir = _get_series_subdirectory(session_dir, series_id)
             output_file = series_dir / f"PMID_{pmid}_metadata.json"
-            print(f"📁 Saving to source series directory: {series_id}")
+
         else:
             # Fallback to session root if source file format is unexpected
             output_file = session_path / f"PMID_{pmid}_metadata.json"
-            print("📁 Source file format unexpected, saving to session root")
+
     else:
         # Check if there are any GSE directories in the session
         gse_dirs = [
@@ -1356,23 +1407,20 @@ def extract_paper_abstract_impl(
             series_dir = gse_dirs[0]
             series_id = series_dir.name
             output_file = series_dir / f"PMID_{pmid}_metadata.json"
-            print(f"📁 Saving to existing series directory: {series_dir.name}")
+
         else:
             # No GSE directories found, save to session root
             output_file = session_path / f"PMID_{pmid}_metadata.json"
-            print("📁 No series directories found, saving to session root")
 
     # Add series_id to the metadata if available
     if series_id:
         metadata["series_id"] = series_id
         metadata["source_gse_file"] = source_gse_file if source_gse_file else None
-        print(f"📝 Added series_id '{series_id}' to PMID {pmid} metadata")
 
     # Save metadata
     with open(output_file, "w") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-    print(f"📁 Saved to: {output_file}")
     return str(output_file)
 
 
@@ -1394,7 +1442,6 @@ def extract_pubmed_id_from_gse_metadata_impl(
     str
         JSON string containing the extracted PubMed ID and status information.
     """
-    print(f"🔧 extract_pubmed_id_from_gse_metadata: {Path(gse_metadata_file).name}")
 
     # The gse_metadata_file should already be a full path from extract_gse_metadata_impl
     # Just verify the file exists
@@ -1410,7 +1457,6 @@ def extract_pubmed_id_from_gse_metadata_impl(
     # Extract PubMed ID
     result = extract_pubmed_id_from_gse_metadata(gse_metadata_file)
 
-    print(f"📁 Extracted PMID: {result.get('pubmed_id')}")
     return json.dumps(result, indent=2, ensure_ascii=False)
 
 
@@ -1432,7 +1478,6 @@ def extract_series_id_from_gsm_metadata_impl(
     str
         JSON string containing the extracted Series ID and status information.
     """
-    print(f"🔧 extract_series_id_from_gsm_metadata: {Path(gsm_metadata_file).name}")
 
     # The gsm_metadata_file should already be a full path from extract_gsm_metadata_impl
     # Just verify the file exists
@@ -1448,7 +1493,6 @@ def extract_series_id_from_gsm_metadata_impl(
     # Extract Series ID
     result = extract_series_id_from_gsm_metadata(gsm_metadata_file)
 
-    print(f"📁 Extracted Series ID: {result.get('series_id')}")
     return json.dumps(result, indent=2, ensure_ascii=False)
 
 
@@ -1467,7 +1511,6 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
     str
         Path to the created mapping file.
     """
-    print("🔧 create_series_sample_mapping")
 
     session_path = Path(session_dir)
     mapping = {}
@@ -1478,14 +1521,13 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
     ]
 
     if not series_dirs:
-        print("⚠️  No series subdirectories found in session directory")
         # Create empty mapping file
         mapping_file = session_path / "series_sample_mapping.json"
         with open(mapping_file, "w") as f:
             json.dump(
                 {"mapping": {}, "total_series": 0, "total_samples": 0}, f, indent=2
             )
-        print(f"📁 Created empty mapping file: {mapping_file}")
+
         return str(mapping_file)
 
     # Process each series directory
@@ -1545,9 +1587,8 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
         if sample_ids:
             # Store just the list of sample IDs to match Pydantic model expectation
             mapping[series_id] = sample_ids
-            print(f"📁 Found {len(sample_ids)} samples for series {series_id}")
         else:
-            print(f"⚠️  No samples found for series {series_id}")
+            pass
 
     # Create reverse mapping (sample_id -> series_id) for quick lookup
     reverse_mapping = {}
@@ -1572,9 +1613,6 @@ def create_series_sample_mapping_impl(session_dir: str) -> str:
     mapping_file = session_path / "series_sample_mapping.json"
     with open(mapping_file, "w") as f:
         json.dump(mapping_data, f, indent=2, ensure_ascii=False)
-
-    print(f"📁 Created mapping file: {mapping_file}")
-    print(f"📊 Mapping contains {total_series} series and {total_samples} samples")
 
     return str(mapping_file)
 
@@ -1607,7 +1645,6 @@ def validate_geo_inputs_impl(
     str
         JSON string containing validation results.
     """
-    print("🔧 validate_geo_inputs")
 
     result = {"validation_status": "success", "validated_inputs": {}, "errors": []}
 
@@ -1639,5 +1676,4 @@ def validate_geo_inputs_impl(
     if result["errors"]:
         result["validation_status"] = "failed"
 
-    print(f"📁 Validation result: {result['validation_status']}")
     return json.dumps(result, indent=2, ensure_ascii=False)

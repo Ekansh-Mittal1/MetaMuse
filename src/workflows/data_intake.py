@@ -387,7 +387,7 @@ class DataIntakeWorkflow:
             # Starting GSM workflow
 
             # Step 1: Extract GSM metadata
-            print(f"Step 1: Extracting GSM metadata for {gsm_id}")
+
             gsm_file = extract_gsm_metadata_impl(
                 gsm_id, str(self.session_dir), self.email, self.api_key
             )
@@ -395,7 +395,7 @@ class DataIntakeWorkflow:
             workflow_data["gsm_metadata_file"] = gsm_file
 
             # Step 2: Extract Series ID from GSM metadata
-            print(f"Step 2: Extracting Series ID from {gsm_id} metadata")
+
             series_result = extract_series_id_from_gsm_metadata_impl(
                 gsm_file, str(self.session_dir)
             )
@@ -410,7 +410,7 @@ class DataIntakeWorkflow:
             workflow_data["series_id"] = series_id
 
             # Step 3: Extract GSE metadata
-            print(f"Step 3: Extracting GSE metadata for {series_id}")
+
             gse_file = extract_gse_metadata_impl(
                 series_id, str(self.session_dir), self.email, self.api_key
             )
@@ -418,7 +418,7 @@ class DataIntakeWorkflow:
             workflow_data["gse_metadata_file"] = gse_file
 
             # Step 4: Extract PubMed ID from GSE metadata
-            print(f"Step 4: Extracting PubMed ID from {series_id} metadata")
+
             pmid_result = extract_pubmed_id_from_gse_metadata_impl(
                 gse_file, str(self.session_dir)
             )
@@ -428,7 +428,7 @@ class DataIntakeWorkflow:
                 workflow_data["pmid"] = pmid
 
                 # Step 5: Extract paper abstract
-                print(f"Step 5: Extracting paper abstract for PMID {pmid}")
+
                 try:
                     paper_file = extract_paper_abstract_impl(
                         pmid, str(self.session_dir), self.email, self.api_key, gse_file
@@ -447,7 +447,7 @@ class DataIntakeWorkflow:
                 )
 
             # Step 6: Create series-sample mapping
-            print("Step 6: Creating series-sample mapping")
+
             mapping_file = create_series_sample_mapping_impl(str(self.session_dir))
             files_created.append(mapping_file)
             workflow_data["mapping_file"] = mapping_file
@@ -487,7 +487,7 @@ class DataIntakeWorkflow:
             # Starting GSE workflow
 
             # Step 1: Extract GSE metadata
-            print(f"Step 1: Extracting GSE metadata for {gse_id}")
+
             gse_file = extract_gse_metadata_impl(
                 gse_id, str(self.session_dir), self.email, self.api_key
             )
@@ -495,7 +495,7 @@ class DataIntakeWorkflow:
             workflow_data["gse_metadata_file"] = gse_file
 
             # Step 2: Extract PubMed ID from GSE metadata
-            print(f"Step 2: Extracting PubMed ID from {gse_id} metadata")
+
             pmid_result = extract_pubmed_id_from_gse_metadata_impl(
                 gse_file, str(self.session_dir)
             )
@@ -505,7 +505,7 @@ class DataIntakeWorkflow:
                 workflow_data["pmid"] = pmid
 
                 # Step 3: Extract paper abstract
-                print(f"Step 3: Extracting paper abstract for PMID {pmid}")
+
                 try:
                     paper_file = extract_paper_abstract_impl(
                         pmid, str(self.session_dir), self.email, self.api_key, gse_file
@@ -519,10 +519,10 @@ class DataIntakeWorkflow:
                     print("⚠️  Continuing workflow without paper abstract...")
                     workflow_data["paper_extraction_error"] = str(e)
             else:
-                print(f"Step 3: No PMID found for {gse_id}, skipping paper extraction")
+                pass
 
             # Step 4: Create series-sample mapping
-            print("Step 4: Creating series-sample mapping")
+
             mapping_file = create_series_sample_mapping_impl(str(self.session_dir))
             files_created.append(mapping_file)
             workflow_data["mapping_file"] = mapping_file
@@ -562,7 +562,7 @@ class DataIntakeWorkflow:
             # Starting PMID workflow
 
             # Extract paper abstract
-            print(f"Step 1: Extracting paper abstract for PMID {pmid}")
+
             try:
                 paper_file = extract_paper_abstract_impl(
                     pmid, str(self.session_dir), self.email, self.api_key
@@ -615,7 +615,7 @@ class DataIntakeWorkflow:
             # Starting linker workflow
 
             # Step 1: Load mapping file
-            print("Step 1: Loading mapping file")
+
             mapping_result = load_mapping_file_impl(str(self.session_dir))
             if not mapping_result["success"]:
                 return WorkflowResult(
@@ -625,7 +625,7 @@ class DataIntakeWorkflow:
                 )
 
             # Step 2: Find sample directory
-            print(f"Step 2: Finding directory for {sample_id}")
+
             dir_result = find_sample_directory_impl(sample_id, str(self.session_dir))
             if not dir_result["success"]:
                 return WorkflowResult(
@@ -635,7 +635,7 @@ class DataIntakeWorkflow:
                 )
 
             # Step 3: Clean metadata files
-            print(f"Step 3: Cleaning metadata files for {sample_id}")
+
             clean_result = clean_metadata_files_impl(
                 sample_id, str(self.session_dir), fields_to_remove
             )
@@ -647,7 +647,7 @@ class DataIntakeWorkflow:
                 )
 
             # Step 4: Package linked data
-            print(f"Step 4: Packaging linked data for {sample_id}")
+
             package_result = package_linked_data_impl(
                 sample_id, str(self.session_dir), fields_to_remove
             )
@@ -789,10 +789,6 @@ class DataIntakeWorkflow:
             Complete linker workflow result
         """
         try:
-            print(
-                f"🔧 Starting linker workflow for {len(sample_ids)} samples: {sample_ids}"
-            )
-
             all_results = []
             all_files_created = []
 
@@ -928,9 +924,6 @@ class DataIntakeWorkflow:
                     "keywords",
                     "mesh_terms",
                 ]
-                print(
-                    f"📋 Using default field removal list ({len(fields_to_remove)} fields)"
-                )
 
             # Run linker workflow
             linker_result = self.run_linker_workflow(all_sample_ids, fields_to_remove)
@@ -943,11 +936,9 @@ class DataIntakeWorkflow:
             )
 
             # Load cleaned metadata
-            print("📊 Loading cleaned metadata for LinkerOutput...")
             cleaned_metadata = self._load_cleaned_metadata(all_sample_ids)
 
             # Create CurationDataPackages for CuratorAgent handoff
-            print("📦 Creating CurationDataPackages for CuratorAgent handoff...")
             curation_packages = self._create_curation_packages(
                 all_sample_ids, cleaned_metadata, fields_to_remove
             )

@@ -125,8 +125,8 @@ def batch_normalize_session_impl(
     session_dir: str,
     target_field: str = "Disease",
     ontologies: Optional[List[str]] = None,
-    top_k: int = 5,
-    min_score: float = 0.5,
+    top_k: int = 2,
+    min_score: float = 0.0,
 ) -> Dict[str, Any]:
     """
     Normalize all candidates files in the session directory for a specific target field.
@@ -144,7 +144,7 @@ def batch_normalize_session_impl(
         List of ontologies to search. If None, uses defaults based on target field
     top_k : int, default 5
         Number of top matches to return per ontology
-    min_score : float, default 0.5
+    min_score : float, default 0.0
         Minimum similarity score threshold for matches
 
     Returns
@@ -168,7 +168,6 @@ def batch_normalize_session_impl(
     print(
         f"🔄 Batch normalizing {len(candidates_files)} files for field '{target_field}'"
     )
-    print(f"🔍 Ontologies: {ontologies or 'auto-detected'}")
 
     # Process each file using the normalizer implementation
     sample_results = {}
@@ -180,8 +179,6 @@ def batch_normalize_session_impl(
         try:
             # Generate output file path
             output_file_path = file_path.replace("_candidates.json", "_normalized.json")
-
-            print(f"📄 Processing: {os.path.basename(file_path)}")
 
             # Delegate to the actual implementation
             result = normalize_candidates_file(
@@ -273,7 +270,6 @@ def batch_normalize_session_impl(
     print(
         f"📊 Batch normalization complete: {successful_normalizations}/{len(candidates_files)} files processed successfully"
     )
-    print(f"💾 Batch results saved to: {batch_output_path}")
 
     return {
         "success": True,
@@ -303,7 +299,7 @@ def get_ontology_mapping() -> Dict[str, List[str]]:
     """
     return {
         "disease": ["mondo"],
-        "tissue": ["uberon"],
+        "tissue": ["uberon", "cl"],
         "cell_line": ["clo"],
         "cell line": ["clo"],
         "ethnicity": ["hancestro"],
@@ -366,7 +362,7 @@ def get_available_ontologies() -> Dict[str, Dict[str, Any]]:
 
 
 def semantic_search_ontology(
-    query: str, ontology: str, top_k: int = 5, min_score: float = 0.5
+    query: str, ontology: str, top_k: int = 2, min_score: float = 0.5
 ) -> List[OntologyMatch]:
     """
     Perform semantic search against a specific ontology.
@@ -375,7 +371,7 @@ def semantic_search_ontology(
         query (str): The query text to search for
         ontology (str): The ontology to search in (e.g., 'mondo', 'efo')
         top_k (int): Number of top results to return
-        min_score (float): Minimum similarity score threshold
+        min_score (float): Minimum similarity score threshold (default 0.0)
 
     Returns:
         List[OntologyMatch]: List of ontology matches
@@ -423,15 +419,13 @@ def semantic_search_candidates_impl(
     curation_results_file: str,
     target_field: str = "Disease",
     ontologies: Optional[List[str]] = None,
-    top_k: int = 5,
+    top_k: int = 2,
     min_score: float = 0.5,
 ) -> BatchNormalizationResult:
     """
     Perform semantic search on extracted candidates from a curation results file
     and return a complete BatchNormalizationResult object.
     """
-    print(f"🔧 semantic_search_candidates_impl called for target_field: {target_field}")
-    print(f"📄 Reading curation results from: {curation_results_file}")
 
     try:
         # 1. Load CurationResult objects from the specified file
@@ -439,18 +433,15 @@ def semantic_search_candidates_impl(
             curation_data = json.load(f)
 
         curation_results = [CurationResult(**data) for data in curation_data]
-        print(f"📊 Loaded {len(curation_results)} curation results")
 
         # 2. Extract only final_candidates (top 3 per sample)
         all_candidates = []
         for res in curation_results:
             all_candidates.extend(res.final_candidates)
-        print(f"🔎 Extracted {len(all_candidates)} final candidates for normalization (max 3 per sample).")
 
         # Determine ontologies to use if not specified
         if ontologies is None:
             ontologies = get_default_ontologies_for_field(target_field)
-        print(f"🔍 Using ontologies: {ontologies}")
 
         # 3. Perform semantic search for all candidates (return top 5 matches per candidate)
         normalized_candidates_map = {}
@@ -465,20 +456,31 @@ def semantic_search_candidates_impl(
                 matches = searcher.search(candidate.value, k=top_k)
                 for term, term_id, score in matches:
                     if score >= min_score:
-                        all_matches.append(OntologyMatch(
-                            term=term, term_id=term_id, score=score, ontology=ontology
-                        ))
-            
+                        # Clamp score to avoid floating-point precision issues
+                        clamped_score = min(score, 1.0)
+                        all_matches.append(
+                            OntologyMatch(
+                                term=term,
+                                term_id=term_id,
+                                score=clamped_score,
+                                ontology=ontology,
+                            )
+                        )
+
             # Sort by score and take top 5
             all_matches.sort(key=lambda x: x.score, reverse=True)
             top_5_matches = all_matches[:5]
-            
+
             # Calculate overall normalization confidence as highest score
             normalization_confidence = top_5_matches[0].score if top_5_matches else None
+
+            # Set best_match to the top match for legacy compatibility
+            best_match = top_5_matches[0] if top_5_matches else None
 
             normalized_candidates_map[candidate.value] = NormalizedCandidate(
                 **candidate.model_dump(),
                 top_ontology_matches=top_5_matches,
+                best_match=best_match,
                 normalization_confidence=normalization_confidence,
                 normalization_notes=[],
             )
@@ -519,14 +521,32 @@ def semantic_search_candidates_impl(
             final_normalized_candidates = []
             for candidate in res.final_candidates:
                 if candidate.value in normalized_candidates_map:
-                    final_normalized_candidates.append(normalized_candidates_map[candidate.value])
-            
+                    final_normalized_candidates.append(
+                        normalized_candidates_map[candidate.value]
+                    )
+
             # Legacy fields for backward compatibility
-            final_candidate = res.final_candidates[0].value if res.final_candidates else None
-            final_confidence = res.final_candidates[0].confidence if res.final_candidates else None
-            final_normalized_term = best_overall_match.best_match.term if best_overall_match and best_overall_match.best_match else None
-            final_normalized_id = best_overall_match.best_match.term_id if best_overall_match and best_overall_match.best_match else None
-            final_ontology = best_overall_match.best_match.ontology if best_overall_match and best_overall_match.best_match else None
+            final_candidate = (
+                res.final_candidates[0].value if res.final_candidates else None
+            )
+            final_confidence = (
+                res.final_candidates[0].confidence if res.final_candidates else None
+            )
+            final_normalized_term = (
+                best_overall_match.best_match.term
+                if best_overall_match and best_overall_match.best_match
+                else None
+            )
+            final_normalized_id = (
+                best_overall_match.best_match.term_id
+                if best_overall_match and best_overall_match.best_match
+                else None
+            )
+            final_ontology = (
+                best_overall_match.best_match.ontology
+                if best_overall_match and best_overall_match.best_match
+                else None
+            )
 
             norm_result = NormalizationResult(
                 # Basic identification
@@ -592,8 +612,8 @@ def normalize_candidate_value(
     candidate: ExtractedCandidate,
     target_field: str,
     ontologies: Optional[List[str]] = None,
-    top_k: int = 5,
-    min_score: float = 0.5,
+    top_k: int = 2,
+    min_score: float = 0.0,
 ) -> NormalizedCandidate:
     """
     Normalize a single candidate value against appropriate ontologies.
@@ -603,7 +623,7 @@ def normalize_candidate_value(
         target_field (str): The target metadata field
         ontologies (Optional[List[str]]): Specific ontologies to search
         top_k (int): Number of top matches to return per ontology
-        min_score (float): Minimum similarity score threshold
+        min_score (float): Minimum similarity score threshold (default 0.0)
 
     Returns:
         NormalizedCandidate: The normalized candidate with ontology matches
@@ -669,8 +689,8 @@ def normalize_candidate_value(
 def normalize_curation_result(
     curation_result: CurationResult,
     ontologies: Optional[List[str]] = None,
-    top_k: int = 5,
-    min_score: float = 0.5,
+    top_k: int = 2,
+    min_score: float = 0.0,
 ) -> NormalizationResult:
     """
     Normalize all candidates in a CurationResult.
@@ -679,7 +699,7 @@ def normalize_curation_result(
         curation_result (CurationResult): The curation result to normalize
         ontologies (Optional[List[str]]): Specific ontologies to search
         top_k (int): Number of top matches to return per ontology
-        min_score (float): Minimum similarity score threshold
+        min_score (float): Minimum similarity score threshold (default 0.0)
 
     Returns:
         NormalizationResult: The normalized result
@@ -707,13 +727,13 @@ def normalize_curation_result(
     final_normalized_term = None
     final_normalized_id = None
     final_ontology = None
-    
+
     # Set legacy fields from first final_candidate if available
     if curation_result.final_candidates:
         top_candidate = curation_result.final_candidates[0]
         final_candidate = top_candidate.value
         final_confidence = top_candidate.confidence
-        
+
         # Set legacy normalized fields from first normalized candidate if available
         if final_normalized_candidates:
             top_normalized = final_normalized_candidates[0]
@@ -807,7 +827,7 @@ def normalize_candidates_file(
     candidates_file_path: str,
     output_file_path: str,
     ontologies: Optional[List[str]] = None,
-    top_k: int = 5,
+    top_k: int = 2,
     min_score: float = 0.5,
 ) -> NormalizationResult:
     """
@@ -818,7 +838,7 @@ def normalize_candidates_file(
         output_file_path (str): Path where to save the normalized result
         ontologies (Optional[List[str]]): Specific ontologies to search
         top_k (int): Number of top matches to return per ontology
-        min_score (float): Minimum similarity score threshold
+        min_score (float): Minimum similarity score threshold (default 0.0)
 
     Returns:
         NormalizationResult: The normalization result
@@ -842,53 +862,16 @@ def normalize_candidates_file(
 
 # Example usage and testing
 if __name__ == "__main__":
-    # Test the normalization tools
-    print("Testing normalization tools...")
-
-    # Test available ontologies
-    print(f"\n{'=' * 60}")
-    print("Available Ontologies:")
-    print(f"{'=' * 60}")
-
-    ontologies = get_available_ontologies()
-    for field, info in ontologies.items():
-        if info["available"]:
-            print(f"  {field}: {info['dictionary_file']} ({info['file_size_mb']} MB)")
-        else:
-            print(f"  {field}: {info['dictionary_file']} (not available)")
-
-    # Test ontology mapping
-    print(f"\n{'=' * 60}")
-    print("Target Field -> Ontology Mapping:")
-    print(f"{'=' * 60}")
-
-    mapping = get_ontology_mapping()
-    for field, onts in mapping.items():
-        print(f"  {field}: {', '.join(onts)}")
-
-    # Test semantic search if ontologies are available
-    available_onts = [k for k, v in ontologies.items() if v["available"]]
-    if available_onts:
-        print(f"\n{'=' * 60}")
-        print("Testing Semantic Search:")
-        print(f"{'=' * 60}")
-
-        test_queries = [
-            ("diabetes", "mondo"),
-            ("heart", "uberon"),
-            ("cancer", "efo"),
-        ]
-
-        for query, ontology in test_queries:
-            if ontology in available_onts:
-                try:
-                    matches = semantic_search_ontology(query, ontology, top_k=3)
-                    print(f"\nQuery: '{query}' in {ontology}")
-                    for i, match in enumerate(matches, 1):
-                        print(
-                            f"  {i}. {match.term} → {match.term_id} (score: {match.score:.4f})"
-                        )
-                except NormalizationError as e:
-                    print(f"Error: {e}")
-    else:
-        print("\nNo ontology dictionaries available for testing.")
+    # Quiet testing - only show errors
+    try:
+        ontologies = get_available_ontologies()
+        mapping = get_ontology_mapping()
+        # Test basic functionality without verbose output
+        available_onts = [k for k, v in ontologies.items() if v["available"]]
+        if available_onts:
+            test_queries = [("diabetes", "mondo"), ("heart", "uberon")]
+            for query, ontology in test_queries:
+                if ontology in available_onts:
+                    semantic_search_ontology(query, ontology, top_k=3)
+    except Exception as e:
+        print(f"❌ Testing error: {e}")

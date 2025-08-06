@@ -75,16 +75,23 @@ For each CurationDataPackage, follow this process:
 
 ### 2. Final Candidate Selection (Only After All Sources Evaluated)
 
-**CRITICAL: After evaluating all sources independently, select the top 3 candidates across ALL sources:**
+**CRITICAL: After evaluating all sources independently, select UP TO 3 UNIQUE candidates across ALL sources:**
 
 #### Selection Process:
 1. **Collect all candidates** from series_candidates, sample_candidates, and abstract_candidates
-2. **Rank by confidence score** (primary criteria) - highest confidence first
-3. **Apply tiebreaker rules** for equal confidence scores:
+2. **Remove duplicates** - ensure all candidates have unique values (case-insensitive comparison)
+3. **Rank by confidence score** (primary criteria) - highest confidence first
+4. **Apply tiebreaker rules** for equal confidence scores:
    - Priority order: series > sample > abstract
    - Within same source: maintain original order
-4. **Select top 3 candidates** from the ranked list for `final_candidates`
-5. **Allow fewer than 3** if total candidates < 3
+5. **Select UP TO 3 UNIQUE candidates** from the ranked list for `final_candidates`
+6. **Report all unique candidates found** - even if there is only 1 or 2 candidates
+
+#### Uniqueness Requirements:
+- **All candidates in final_candidates must have unique values** (case-insensitive)
+- **If duplicate values exist**, keep only the highest confidence version
+- **Report 1, 2, or 3 unique candidates** - whatever number you actually found
+- **Always report results** - do not leave final_candidates empty unless no candidates were found
 
 #### Conflict Detection:
 - **Conflicts exist** if top candidates have significantly different values (not just confidence differences)
@@ -126,10 +133,10 @@ CurationResult(
     ],
     sample_candidates=[...],      # Candidates from sample metadata  
     abstract_candidates=[...],    # Candidates from abstract metadata
-    final_candidates=[            # Top 3 candidates ranked by confidence across all sources
-        ExtractedCandidate(...),  # Highest confidence candidate
-        ExtractedCandidate(...),  # Second highest confidence candidate  
-        ExtractedCandidate(...)   # Third highest confidence candidate (if available)
+    final_candidates=[            # UP TO 3 UNIQUE candidates ranked by confidence across all sources
+        ExtractedCandidate(...),  # Highest confidence candidate (unique value)
+        ExtractedCandidate(...),  # Second highest confidence candidate (unique value)
+        ExtractedCandidate(...)   # Third highest confidence candidate (unique value)
     ],
     reconciliation_needed=False,  # True if value conflicts exist
     reconciliation_reason=None,   # Explanation if conflicts exist

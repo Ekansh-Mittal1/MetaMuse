@@ -224,8 +224,9 @@ async def run_normalizer_agent(
     ontologies: Optional[list[str]] = None,
     min_score: float = 0.5,
     model_provider=None,
-    max_tokens: int = 4096,
+    max_tokens: int = 65536,
     max_turns: int = 100,
+    verbose_output: bool = False,
 ) -> BatchNormalizationResult:
     """
     Run the normalizer agent and return its structured output.
@@ -248,6 +249,8 @@ async def run_normalizer_agent(
         Specific ontologies to search (if None, uses defaults for target field)
     min_score : float, optional
         Minimum similarity score threshold for ontology matches
+    verbose_output : bool, optional
+        Whether to print streaming output during agent execution. Defaults to False.
 
     Returns
     -------
@@ -294,8 +297,10 @@ async def run_normalizer_agent(
             )
 
         # Save curator results to a file to be passed to the next agent
+        # Use target field in filename to avoid conflicts during parallel execution
         curator_results_file = (
-            Path(existing_session_dir) / "curator_results_for_normalization.json"
+            Path(existing_session_dir)
+            / f"curator_results_for_normalization_{target_field.lower()}.json"
         )
         curation_results_data = []
         if curator_output.curation_results:
@@ -331,11 +336,12 @@ async def run_normalizer_agent(
                         and event.data.delta.strip()
                     ):
                         # Stream tokens naturally like ChatGPT with debug prefix
-                        print(
-                            f"[NORMALIZER_AGENT_OUTPUT]: {event.data.delta}",
-                            end="",
-                            flush=True,
-                        )
+                        if verbose_output:
+                            print(
+                                f"[NORMALIZER_AGENT_OUTPUT]: {event.data.delta}",
+                                end="",
+                                flush=True,
+                            )
                     continue
 
                 # Handle agent response events (final result)
@@ -347,11 +353,8 @@ async def run_normalizer_agent(
         except Exception as stream_error:
             print(f"\n❌ Stream error: {stream_error}")
 
-        print("\n🔍 Streaming completed")
-
         try:
             final_result = result.final_output
-            print(f"✅ Got final_output directly: {type(final_result)}")
         except Exception as e:
             print(f"❌ Could not get final_output: {e}")
             raise RuntimeError("No result received from normalizer agent")
@@ -362,7 +365,6 @@ async def run_normalizer_agent(
                 f"Expected BatchNormalizationResult, got {type(final_result)}"
             )
 
-        print("✅ Normalizer agent completed with structured output")
         return final_result
 
     except Exception as e:

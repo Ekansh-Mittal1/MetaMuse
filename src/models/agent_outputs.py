@@ -7,7 +7,7 @@ can be seamlessly passed between agents or consumed by workflows.
 """
 
 from typing import List, Optional, Dict
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 from .common import KeyValue
 from .metadata_models import (
@@ -187,6 +187,14 @@ class CuratorOutput(BaseModel):
     average_confidence: Optional[float] = Field(
         None, ge=0.0, le=1.0, description="Average confidence across all curations"
     )
+
+    @field_validator("average_confidence", mode="before")
+    @classmethod
+    def validate_average_confidence(cls, v):
+        """Handle 'Not applicable' string by converting to None."""
+        if isinstance(v, str) and v.lower() in ["not applicable", "n/a", "none"]:
+            return None
+        return v
 
     # Processing summary
     warnings: List[str] = Field(default_factory=list, description="Warnings generated")

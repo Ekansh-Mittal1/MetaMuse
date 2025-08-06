@@ -78,6 +78,10 @@ def load_extraction_template(target_field: str) -> str:
         "Gender": "gender.md",
         "Cell_Line": "cell_line.md",
         "CellLine": "cell_line.md",
+        "Developmental_Stage": "developmental_stage.md",
+        "DevelopmentalStage": "developmental_stage.md",
+        "Developmental": "developmental_stage.md",
+        "developmental_stage": "developmental_stage.md",
     }
 
     template_filename = template_mapping.get(target_field, f"{target_field.lower()}.md")

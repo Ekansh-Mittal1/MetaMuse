@@ -157,7 +157,6 @@ class OntologySemanticSearch:
         Returns:
             list: List of tuples (term, ontology_id, score)
         """
-        print(f"🔍 [SEMANTIC_SEARCH] Performing semantic search for: '{query}' (k={k})")
 
         if self.index is None:
             raise ValueError("Index not built. Call build_index() first.")

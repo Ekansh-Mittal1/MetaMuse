@@ -7,7 +7,6 @@ a dataframe with both sample_id and series_id.
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add the project root to Python path
@@ -15,9 +14,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 import pandas as pd
-import json
-from typing import List, Dict, Any
-import traceback
+from typing import List
 from tqdm import tqdm
 import random
 
@@ -111,7 +108,7 @@ def get_series_id_for_sample(sample_id: str) -> str:
 
         return None
 
-    except Exception as e:
+    except Exception:
         # Silently handle errors and return None
         return None
 
@@ -145,7 +142,7 @@ def create_sample_series_dataframe(sample_ids: List[str]) -> pd.DataFrame:
     found_count = df["series_id"].notna().sum()
     missing_count = len(sample_ids) - found_count
 
-    print(f"\n📈 Results Summary:")
+    print("\n📈 Results Summary:")
     print(f"   Total samples: {len(sample_ids)}")
     print(f"   Series IDs found: {found_count}")
     print(f"   Series IDs missing: {missing_count}")
@@ -181,7 +178,7 @@ def main():
 
     # Show summary statistics
     if not df.empty:
-        print(f"\n📊 Summary:")
+        print("\n📊 Summary:")
         print(f"   Unique series IDs found: {df['series_id'].nunique()}")
         print(
             f"   Most common series ID: {df['series_id'].mode().iloc[0] if not df['series_id'].mode().empty else 'None'}"
@@ -189,7 +186,7 @@ def main():
 
         # Show series ID distribution
         series_counts = df["series_id"].value_counts()
-        print(f"\n📈 Series ID distribution:")
+        print("\n📈 Series ID distribution:")
         for series_id, count in series_counts.head(5).items():
             print(f"   {series_id}: {count} samples")
 

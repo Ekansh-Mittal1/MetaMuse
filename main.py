@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import argparse
+import logging
 import os
 import sys
 import traceback
@@ -11,6 +12,11 @@ from uuid import uuid4
 from openai import AsyncOpenAI
 
 from dotenv import load_dotenv
+
+# Suppress HTTP request logging from httpx/openai
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 from agents import (
     set_tracing_disabled,
@@ -32,6 +38,8 @@ from src.workflows.MetaMuse import (
     create_structured_pipeline,
     create_deterministic_pipeline,  # New deterministic workflow
 )
+from src.workflows.batch_targets import run_batch_targets_workflow_async
+from src.workflows.batch_samples import run_batch_samples_workflow
 
 load_dotenv(override=True)
 
@@ -62,16 +70,16 @@ MODEL_CHOICES = ("google/gemini-2.5-flash", "openai/gpt-4o", "openai/gpt-4o-mini
 
 # Context window limits for each model
 MODEL_CONTEXT_LIMITS: dict[str, int] = {
-    "google/gemini-2.5-flash": 4_096,
+    "google/gemini-2.5-flash": 1_048_576,  # Significantly increased context window
     "openai/gpt-4o": 128_000,
     "openai/gpt-4o-mini": 128_000,
 }
 
 # Maximum response tokens for each model (increased for complex JSON outputs)
 MODEL_RESPONSE_LIMITS: dict[str, int] = {
-    "google/gemini-2.5-flash": 32_768,  # Increased for curator JSON output
-    "openai/gpt-4o": 32_768,  # Increased for normalizer verbose output
-    "openai/gpt-4o-mini": 32_768,  # Increased for normalizer verbose output
+    "google/gemini-2.5-flash": 65_536,  # Significantly increased for large curator outputs
+    "openai/gpt-4o": 65_536,  # Significantly increased for large outputs
+    "openai/gpt-4o-mini": 65_536,  # Significantly increased for large outputs
 }
 
 # Disable tracing for OpenRouter
@@ -151,6 +159,104 @@ async def run_workflow(
     max_response_tokens = MODEL_RESPONSE_LIMITS.get(
         model_name, 16_384
     )  # High default for complex JSON output
+
+    # Handle batch_targets workflow specially (bypasses orchestrator)
+    if workflow_name == "batch_targets":
+        # Create session ID for batch targets workflow
+        session_id = f"batch_{str(uuid4())}"
+
+        # Parse target_fields from input_data if specified
+        # Format: "target_fields=disease,tissue,organ GSM1234567 GSM1234568"
+        target_fields = None
+        cleaned_input = input_data
+
+        if "target_fields=" in input_data.lower():
+            # Find the position in the original string (case insensitive)
+            pos = input_data.lower().find("target_fields=")
+            before = input_data[:pos].strip()
+            after = input_data[pos + len("target_fields=") :].strip()
+
+            # Extract target_fields value
+            if after:
+                target_fields_str = after.split()[0].strip()
+                target_fields = [
+                    field.strip() for field in target_fields_str.split(",")
+                ]
+                cleaned_input = (
+                    before + " " + " ".join(after.split()[1:])
+                    if len(after.split()) > 1
+                    else before
+                )
+
+        print("🎯 Starting batch targets workflow")
+
+        result = await run_batch_targets_workflow_async(
+            input_text=cleaned_input,
+            session_id=session_id,
+            sandbox_dir="sandbox",
+            model_provider=model_provider,
+            max_tokens=max_response_tokens,
+            max_turns=max_turns,
+            target_fields=target_fields,
+        )
+
+        # Print results
+        if result.get("success"):
+            print("✅ Batch targets workflow completed successfully!")
+        else:
+            print(
+                f"❌ Batch targets workflow failed: {result.get('error', 'Unknown error')}"
+            )
+
+        return result
+
+    # Handle batch_samples workflow specially (bypasses orchestrator)
+    if workflow_name == "batch_samples":
+        print("🎯 Starting batch samples workflow")
+
+        # Parse parameters from input_data
+        # Format: "sample_count=100 batch_size=5 output_dir=batch target_fields=disease,tissue"
+        sample_count = 100  # Default
+        batch_size = 5  # Default
+        output_dir = "batch"  # Default
+        age_file = "Age.txt"  # Default
+        target_fields = None  # Default
+
+        # Parse input parameters
+        if input_data:
+            parts = input_data.split()
+            for part in parts:
+                if "=" in part:
+                    key, value = part.split("=", 1)
+                    if key == "sample_count":
+                        sample_count = int(value)
+                    elif key == "batch_size":
+                        batch_size = int(value)
+                    elif key == "output_dir":
+                        output_dir = value
+                    elif key == "age_file":
+                        age_file = value
+                    elif key == "target_fields":
+                        target_fields = [field.strip() for field in value.split(",")]
+
+        try:
+            output_path = await run_batch_samples_workflow(
+                sample_count=sample_count,
+                batch_size=batch_size,
+                output_dir=output_dir,
+                age_file=age_file,
+                model_provider=model_provider,
+                max_tokens=max_response_tokens,
+                target_fields=target_fields,
+            )
+
+            print("✅ Batch samples workflow completed successfully!")
+
+            return {"success": True, "output_path": output_path}
+
+        except Exception as e:
+            print(f"❌ Batch samples workflow failed: {e}")
+            return {"success": False, "error": str(e)}
 
     # Handle deterministic workflow specially (bypasses orchestrator)
     if workflow_name == "deterministic":
@@ -402,6 +508,7 @@ def list_workflows():
         "enhanced_hybrid_pipeline": "Enhanced hybrid pipeline: Deterministic data_intake + CuratorAgent + NormalizerAgent",
         "enhanced_full_pipeline": "Enhanced full pipeline: IngestionAgent → LinkerAgent → CuratorAgent → NormalizerAgent",
         "curation": "Single-agent metadata curation pipeline for extracting specific fields",
+        "batch_targets": "Batch processing pipeline for all metadata fields (Disease, Tissue, Organ, Cell Line, Ethnicity, Developmental Stage, Gender/Sex, Organism, PubMed ID, Instrument)",
     }
 
     print("Available workflows:")
@@ -425,6 +532,10 @@ Examples:
   python main.py enhanced_full_pipeline "GSM1000981 target_field Disease"
   python main.py curation "session directory sandbox/test-session target_field Disease samples GSM1000981,GSM1000984"
   python main.py deterministic "GSM1000981 target_field:disease"
+  python main.py batch_targets "GSM1000981"
+  python main.py batch_targets "GSM1000981,GSM1000984"
+  python main.py batch_samples "sample_count=100 batch_size=5"
+  python main.py batch_samples "sample_count=50 batch_size=3 output_dir=my_batch"
   python main.py test_normalizer "any_input"
   python main.py --list-workflows
         """,
@@ -445,6 +556,8 @@ Examples:
             "structured_pipeline",
             "deterministic",
             "test_normalizer",
+            "batch_targets",
+            "batch_samples",
         ],
         help="Workflow to run",
     )

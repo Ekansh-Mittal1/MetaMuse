@@ -33,7 +33,7 @@ async def run_deterministic_workflow(
     ontologies: Optional[list[str]] = None,
     min_score: float = 0.5,
     model_provider=None,
-    max_tokens: int = 4096,
+    max_tokens: int = 65536,
     max_turns: int = 100,
 ) -> Dict[str, Any]:
     """
@@ -225,7 +225,7 @@ def run_deterministic_workflow_sync(
     ontologies: Optional[list[str]] = None,
     min_score: float = 0.5,
     model_provider=None,
-    max_tokens: int = 4096,
+    max_tokens: int = 65536,
     max_turns: int = 100,
 ) -> Dict[str, Any]:
     """
@@ -301,7 +301,7 @@ def run_deterministic_workflow_sync(
 async def test_normalizer_agent(
     test_session_dir: str = "sandbox/test_session",
     model_provider=None,
-    max_tokens: int = 4096,
+    max_tokens: int = 65536,
     max_turns: int = 100,
 ) -> Dict[str, Any]:
     """
@@ -446,7 +446,7 @@ async def test_normalizer_agent(
 def test_normalizer_agent_sync(
     test_session_dir: str = "sandbox/test_session",
     model_provider=None,
-    max_tokens: int = 4096,
+    max_tokens: int = 65536,
     max_turns: int = 100,
 ) -> Dict[str, Any]:
     """

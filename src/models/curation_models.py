@@ -71,19 +71,24 @@ class CurationResult(BaseModel):
         default_factory=list, description="Candidates from abstract metadata"
     )
 
-    # Final result - top 3 candidates across all sources  
+    # Final result - top 3 candidates across all sources
     final_candidates: List[ExtractedCandidate] = Field(
-        default_factory=list, description="Top 3 candidates ranked by confidence across all sources"
+        default_factory=list,
+        description="Top 3 candidates ranked by confidence across all sources",
     )
-    
+
     # Legacy fields for backward compatibility with existing structured output
     final_candidate: Optional[str] = Field(
-        None, description="Legacy: Final reconciled candidate value (use final_candidates instead)"
+        None,
+        description="Legacy: Final reconciled candidate value (use final_candidates instead)",
     )
     final_confidence: Optional[float] = Field(
-        None, ge=0.0, le=1.0, description="Legacy: Confidence in final result (use final_candidates instead)"
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Legacy: Confidence in final result (use final_candidates instead)",
     )
-    
+
     reconciliation_needed: bool = Field(
         False, description="Whether manual reconciliation is needed"
     )

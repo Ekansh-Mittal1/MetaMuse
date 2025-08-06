@@ -11,6 +11,116 @@ from pydantic import BaseModel, Field, validator, ConfigDict
 from .common import KeyValue
 
 
+# Define standard fields for filtering during ingestion
+GSM_STANDARD_FIELDS = {
+    # Core required fields
+    "title",
+    "geo_accession",
+    # Status and dates
+    "status",
+    "submission_date",
+    "last_update_date",
+    # Experimental details
+    "type",
+    "channel_count",
+    "source_name_ch1",
+    "organism_ch1",
+    "taxid_ch1",
+    "characteristics_ch1",
+    # Protocols
+    "treatment_protocol_ch1",
+    "growth_protocol_ch1",
+    "extract_protocol_ch1",
+    # Technical details
+    "molecule_ch1",
+    "description",
+    "data_processing",
+    "platform_id",
+    "instrument_model",
+    "library_selection",
+    "library_source",
+    "library_strategy",
+    # Contact information
+    "contact_name",
+    "contact_email",
+    "contact_laboratory",
+    "contact_department",
+    "contact_institute",
+    "contact_address",
+    "contact_city",
+    "contact_state",
+    "contact_country",
+    "contact_phone",
+    "contact_fax",
+    "contact_zip_postal_code",
+    "contact_zip/postal_code",
+    # Additional standard fields
+    "all_series_ids",
+    "relation",
+    "supplementary_file_1",
+    "series_id",
+    "data_row_count",
+}
+
+GSE_STANDARD_FIELDS = {
+    # Core required fields
+    "title",
+    "geo_accession",
+    # Status and dates
+    "status",
+    "submission_date",
+    "last_update_date",
+    # Publication info
+    "pubmed_id",
+    "summary",
+    "overall_design",
+    "type",
+    "citation",
+    # Contributors
+    "contributor",
+    # Sample information
+    "sample_id",
+    # Contact information
+    "contact_name",
+    "contact_email",
+    "contact_laboratory",
+    "contact_department",
+    "contact_institute",
+    "contact_address",
+    "contact_city",
+    "contact_state",
+    "contact_country",
+    "contact_phone",
+    "contact_fax",
+    "contact_zip_postal_code",
+    "contact_zip/postal_code",
+    # Platform and organism info
+    "platform_id",
+    "platform_organism",
+    "platform_technology_type",
+    "sample_organism",
+    "sample_taxid",
+    "relation",
+}
+
+PMID_STANDARD_FIELDS = {
+    # Core fields
+    "pmid",
+    "title",
+    "abstract",
+    # Author information
+    "authors",
+    "journal",
+    "publication_date",
+    "keywords",
+    "mesh_terms",
+    # Additional fields
+    "doi",
+    "series_id",
+    "source_gse_file",
+}
+
+
 class GSMAttributes(BaseModel):
     """Attributes section of GSM metadata."""
 
@@ -132,6 +242,7 @@ class GSEAttributes(BaseModel):
         None, description="Overall experimental design"
     )
     type: Optional[str] = Field(None, description="Study type")
+    citation: Optional[str] = Field(None, description="Citation information")
 
     # Contributors (often removed during cleaning)
     contributor: Optional[str] = Field(None, description="Contributors")

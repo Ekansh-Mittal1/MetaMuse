@@ -47,12 +47,13 @@ class NormalizedCandidate(BaseModel):
     top_ontology_matches: List[OntologyMatch] = Field(
         default_factory=list, description="Top 5 ranked ontology matches"
     )
-    
+
     # Legacy field for backward compatibility
     best_match: Optional[OntologyMatch] = Field(
-        None, description="Legacy: The highest-scoring ontology match (use top_ontology_matches instead)"
+        None,
+        description="Legacy: The highest-scoring ontology match (use top_ontology_matches instead)",
     )
-    
+
     normalization_confidence: Optional[float] = Field(
         None, ge=0.0, le=1.0, description="Overall confidence in normalization"
     )
@@ -68,7 +69,8 @@ class NormalizationResult(BaseModel):
 
     # Basic identification (copied from CurationResult)
     tool_name: str = Field(
-        default="NormalizerAgent", description="Name of the tool that produced this output"
+        default="NormalizerAgent",
+        description="Name of the tool that produced this output",
     )
     sample_id: str = Field(..., description="Sample ID that was normalized")
     target_field: str = Field(..., description="Target metadata field (e.g., Disease)")
@@ -84,22 +86,28 @@ class NormalizationResult(BaseModel):
         default_factory=list, description="Original candidates from abstract metadata"
     )
     final_candidates: List[ExtractedCandidate] = Field(
-        default_factory=list, description="Original top 3 candidates selected for normalization"
+        default_factory=list,
+        description="Original top 3 candidates selected for normalization",
     )
 
     # Normalization results
     final_normalized_candidates: List[NormalizedCandidate] = Field(
-        default_factory=list, description="Top 3 normalized candidates with their ontology matches"
+        default_factory=list,
+        description="Top 3 normalized candidates with their ontology matches",
     )
-    
+
     # Legacy curation fields for backward compatibility
     final_candidate: Optional[str] = Field(
-        None, description="Legacy: Final reconciled candidate value (use final_candidates instead)"
+        None,
+        description="Legacy: Final reconciled candidate value (use final_candidates instead)",
     )
     final_confidence: Optional[float] = Field(
-        None, ge=0.0, le=1.0, description="Legacy: Confidence in final result (use final_candidates instead)"
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Legacy: Confidence in final result (use final_candidates instead)",
     )
-    
+
     # Legacy normalization fields for backward compatibility
     final_normalized_term: Optional[str] = Field(
         None, description="Legacy: Final normalized ontology term"
@@ -110,7 +118,7 @@ class NormalizationResult(BaseModel):
     final_ontology: Optional[str] = Field(
         None, description="Legacy: Source ontology of final normalized term"
     )
-    
+
     # Processing metadata
     reconciliation_needed: bool = Field(
         False, description="Whether manual reconciliation was needed"

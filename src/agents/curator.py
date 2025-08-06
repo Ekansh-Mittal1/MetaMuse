@@ -8,6 +8,7 @@ and reconciling conflicts across multiple data sources.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
@@ -23,7 +24,6 @@ from src.utils.prompts import load_prompt
 # Import Pydantic models for structured data
 from src.models import CuratorOutput, CurationDataPackage
 from src.models.agent_outputs import LinkerOutput
-from src.models.curation_models import ExtractedCandidate
 
 # Module-level variable to store data_intake_output for tool access
 _data_intake_output: Optional[LinkerOutput] = None
@@ -326,8 +326,9 @@ async def run_curator_agent(
     session_id: str = None,
     sandbox_dir: str = None,
     model_provider=None,
-    max_tokens: int = 4096,
+    max_tokens: int = 65536,
     max_turns: int = 100,
+    verbose_output: bool = False,
 ) -> CuratorOutput:
     """
     Run the curator agent and return its structured output.
@@ -346,6 +347,8 @@ async def run_curator_agent(
         The unique session identifier. If not provided, generates a new one.
     sandbox_dir : str, optional
         Base sandbox directory. If not provided, defaults to "sandbox"
+    verbose_output : bool, optional
+        Whether to print streaming output during agent execution. Defaults to False.
 
     Returns
     -------
@@ -372,14 +375,20 @@ async def run_curator_agent(
 
         # Agent is already configured with strict CuratorOutput
 
-        # Prepare the input message with the data intake output
+        # Prepare the input message with only the curation packages (not the entire data intake output)
+        curation_packages_json = ""
+        if data_intake_output.curation_packages:
+            curation_packages_data = [
+                pkg.model_dump() for pkg in data_intake_output.curation_packages
+            ]
+            curation_packages_json = json.dumps(curation_packages_data, indent=2)
+
         curator_message = (
-            f"Please curate metadata for the target field '{target_field}' using the following data intake output:\n\n"
-            f"{data_intake_output.model_dump_json(indent=2)}\n\n"
+            f"Please curate metadata for the target field '{target_field}' using the following curation packages:\n\n"
+            f"{curation_packages_json}\n\n"
             f"Extract candidates from the provided metadata for samples: {', '.join(sample_ids)}. "
             f"Process all metadata internally and return a CuratorOutput object."
         )
-        print(f"🔍 Curator message length: {len(curator_message)} characters")
 
         # Prepare run config if model provider is specified
         run_config = None
@@ -417,7 +426,8 @@ async def run_curator_agent(
                         and event.data.delta.strip()
                     ):
                         # Stream tokens naturally like ChatGPT
-                        print(event.data.delta, end="", flush=True)
+                        if verbose_output:
+                            print(event.data.delta, end="", flush=True)
                     continue
 
                 # Handle agent response events (final result)
@@ -429,11 +439,8 @@ async def run_curator_agent(
         except Exception as stream_error:
             print(f"\n❌ Stream error: {stream_error}")
 
-        print("\n🔍 Streaming completed")
-
         try:
             final_result = result.final_output
-            print(f"✅ Got final_output directly: {type(final_result)}")
         except Exception as e:
             print(f"❌ Could not get final_output: {e}")
             raise RuntimeError("No result received from curator agent")
@@ -442,7 +449,14 @@ async def run_curator_agent(
         if not isinstance(final_result, CuratorOutput):
             raise RuntimeError(f"Expected CuratorOutput, got {type(final_result)}")
 
-        print("✅ Curator agent completed with structured output")
+        # FIX: Ensure session_directory is correct (LLM sometimes mixes session ID with GSM sample ID)
+        correct_session_dir = str(Path(existing_session_dir).absolute())
+        if final_result.session_directory != correct_session_dir:
+            print(
+                f"🔧 Correcting session_directory: {final_result.session_directory} -> {correct_session_dir}"
+            )
+            final_result.session_directory = correct_session_dir
+
         return final_result
 
     except Exception as e:

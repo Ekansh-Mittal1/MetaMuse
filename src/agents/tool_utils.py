@@ -961,7 +961,7 @@ def get_normalizer_tools(session_dir: str | Path) -> list:
         def semantic_search_candidates(
             curation_results_file: str,
             target_field: str = "Disease",
-            top_k: int = 5,
+            top_k: int = 2,
             min_score: float = 0.5,
         ) -> BatchNormalizationResult:
             """
@@ -986,13 +986,6 @@ def get_normalizer_tools(session_dir: str | Path) -> list:
             BatchNormalizationResult
                 The structured output object containing all normalization results.
             """
-            print("--------------------------------\n\n\n")
-            print("🔧 [TOOL_CALL] semantic_search_candidates called with:")
-            print(f"   - curation_results_file: {curation_results_file}")
-            print(f"   - target_field: {target_field}")
-            print(f"   - top_k: {top_k}")
-            print(f"   - min_score: {min_score}")
-            print("\n\n\n--------------------------------")
 
             try:
                 # Call the implementation in src/tools
