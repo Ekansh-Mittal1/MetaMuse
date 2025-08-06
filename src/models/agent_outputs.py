@@ -17,7 +17,7 @@ from .metadata_models import (
 )
 
 # Import CurationDataPackage for LinkerOutput
-from .curation_models import CurationDataPackage, CurationResult
+from .curation_models import CurationDataPackage, CurationResult, SampleTypeCurationResult
 
 
 class IngestionOutput(BaseModel):
@@ -135,7 +135,7 @@ class LinkerOutput(BaseModel):
         default_factory=list, description="Sample IDs ready for curation process"
     )
     recommended_curation_fields: List[str] = Field(
-        default_factory=list, description="Suggested metadata fields for curation"
+        default_factory=list, description="Recommended target fields for curation"
     )
 
 
@@ -170,6 +170,75 @@ class CuratorOutput(BaseModel):
     )
     successful_curations: int = Field(
         ..., ge=0, description="Successfully curated samples"
+    )
+    samples_needing_review: int = Field(
+        ..., ge=0, description="Samples requiring manual review"
+    )
+
+    # File management
+    files_created: List[str] = Field(
+        default_factory=list, description="Files created during curation"
+    )
+    curation_results_file: Optional[str] = Field(
+        None, description="Path to detailed curation results file"
+    )
+
+    # Quality metrics
+    average_confidence: Optional[float] = Field(
+        None, ge=0.0, le=1.0, description="Average confidence across all curations"
+    )
+
+    @field_validator("average_confidence", mode="before")
+    @classmethod
+    def validate_average_confidence(cls, v):
+        """Handle 'Not applicable' string by converting to None."""
+        if isinstance(v, str) and v.lower() in ["not applicable", "n/a", "none"]:
+            return None
+        return v
+
+    # Processing summary
+    warnings: List[str] = Field(default_factory=list, description="Warnings generated")
+
+
+class SampleTypeCuratorOutput(BaseModel):
+    """Structured output from CuratorAgent for SampleType target field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Execution summary
+    success: bool = Field(..., description="Whether curation completed successfully")
+    message: str = Field(..., description="Summary of curation results")
+    execution_time_seconds: float = Field(
+        ..., ge=0, description="Time taken for execution"
+    )
+
+    # Input tracking
+    sample_ids_requested: List[str] = Field(
+        ..., description="Sample IDs requested for curation"
+    )
+    target_field: str = Field(
+        default="SampleType", description="Target metadata field that was curated"
+    )
+    session_directory: str = Field(..., description="Session directory used")
+
+    # Output data - full SampleTypeCurationResult objects with complete information
+    curation_results: Optional[List[SampleTypeCurationResult]] = Field(
+        default=None,
+        description="Detailed curation results with full SampleTypeCurationResult objects including enum classification and confidence scores",
+    )
+
+    # Summary statistics
+    total_samples_processed: int = Field(
+        ..., ge=0, description="Total samples processed"
+    )
+    primary_samples_count: int = Field(
+        ..., ge=0, description="Number of samples classified as primary (patient biopsy)"
+    )
+    cell_line_samples_count: int = Field(
+        ..., ge=0, description="Number of samples classified as cell lines"
+    )
+    unknown_samples_count: int = Field(
+        ..., ge=0, description="Number of samples classified as unknown"
     )
     samples_needing_review: int = Field(
         ..., ge=0, description="Samples requiring manual review"

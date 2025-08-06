@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 from uuid import uuid4
 
 from agents import Agent, RunContextWrapper, Runner, RunConfig, ModelSettings
@@ -23,7 +23,7 @@ from src.utils.prompts import load_prompt
 
 # Import Pydantic models for structured data
 from src.models import CuratorOutput, CurationDataPackage
-from src.models.agent_outputs import LinkerOutput
+from src.models.agent_outputs import LinkerOutput, SampleTypeCuratorOutput
 
 # Module-level variable to store data_intake_output for tool access
 _data_intake_output: Optional[LinkerOutput] = None
@@ -43,6 +43,10 @@ def get_curator_output_type_for_field(target_field: str):
     type
         The appropriate CuratorOutput model class
     """
+    if target_field.lower() in ["sampletype", "sample_type"]:
+        from src.models.agent_outputs import SampleTypeCuratorOutput
+        return SampleTypeCuratorOutput
+    from src.models.agent_outputs import CuratorOutput
     return CuratorOutput
 
 
@@ -236,17 +240,6 @@ def create_curator_agent(
         try:
             # Map target field to template filename
             template_mapping = {
-                "disease": "disease.md",
-                "tissue": "tissue.md",
-                "age": "age.md",
-                "organ": "organ.md",
-                "drug": "drug.md",
-                "treatment": "treatment.md",
-                "organism": "organism.md",
-                "ethnicity": "ethnicity.md",
-                "gender": "gender.md",
-                "cell_line": "cell_line.md",
-                # Legacy support for old formats
                 "Disease": "disease.md",
                 "Tissue": "tissue.md",
                 "Age": "age.md",
@@ -258,6 +251,7 @@ def create_curator_agent(
                 "Gender": "gender.md",
                 "Cell_Line": "cell_line.md",
                 "CellLine": "cell_line.md",
+                "SampleType": "sample_type.md",
             }
 
             template_filename = template_mapping.get(
@@ -329,7 +323,7 @@ async def run_curator_agent(
     max_tokens: int = 65536,
     max_turns: int = 100,
     verbose_output: bool = False,
-) -> CuratorOutput:
+) -> Union[CuratorOutput, SampleTypeCuratorOutput]:
     """
     Run the curator agent and return its structured output.
 
@@ -445,9 +439,10 @@ async def run_curator_agent(
             print(f"❌ Could not get final_output: {e}")
             raise RuntimeError("No result received from curator agent")
 
-        # Validate that we got a CuratorOutput
-        if not isinstance(final_result, CuratorOutput):
-            raise RuntimeError(f"Expected CuratorOutput, got {type(final_result)}")
+        # Validate that we got a CuratorOutput or SampleTypeCuratorOutput
+        from src.models.agent_outputs import CuratorOutput, SampleTypeCuratorOutput
+        if not isinstance(final_result, (CuratorOutput, SampleTypeCuratorOutput)):
+            raise RuntimeError(f"Expected CuratorOutput or SampleTypeCuratorOutput, got {type(final_result)}")
 
         # FIX: Ensure session_directory is correct (LLM sometimes mixes session ID with GSM sample ID)
         correct_session_dir = str(Path(existing_session_dir).absolute())

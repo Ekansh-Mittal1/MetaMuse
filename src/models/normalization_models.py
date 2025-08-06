@@ -8,7 +8,7 @@ capabilities to candidate values extracted by the CuratorAgent.
 from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
-from .curation_models import ExtractedCandidate
+from .curation_models import ExtractedCandidate, SampleTypeExtractedCandidate, SampleType
 from .common import KeyValue
 
 
@@ -148,6 +148,73 @@ class NormalizationResult(BaseModel):
     )
 
 
+class SampleTypeNormalizationResult(BaseModel):
+    """Result for SampleType target field (no normalization needed)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Basic identification
+    tool_name: str = Field(
+        default="NormalizerAgent",
+        description="Name of the tool that produced this output",
+    )
+    sample_id: str = Field(..., description="Sample ID that was processed")
+    target_field: str = Field(
+        default="SampleType", description="Target metadata field (SampleType)"
+    )
+
+    # Enum result (no normalization needed)
+    sample_type: SampleType = Field(
+        ..., description="Sample type classification (primary_sample, cell_line, or unknown)"
+    )
+    confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Confidence in the sample type classification"
+    )
+
+    # Original candidates for reference
+    series_candidates: List[SampleTypeExtractedCandidate] = Field(
+        default_factory=list, description="Original candidates from series metadata"
+    )
+    sample_candidates: List[SampleTypeExtractedCandidate] = Field(
+        default_factory=list, description="Original candidates from sample metadata"
+    )
+    abstract_candidates: List[SampleTypeExtractedCandidate] = Field(
+        default_factory=list, description="Original candidates from abstract metadata"
+    )
+    final_candidates: List[SampleTypeExtractedCandidate] = Field(
+        default_factory=list,
+        description="Original top 3 candidates selected for processing",
+    )
+
+    # Processing metadata
+    reconciliation_needed: bool = Field(
+        False, description="Whether manual reconciliation was needed"
+    )
+    reconciliation_reason: Optional[str] = Field(
+        None, description="Reason for manual reconciliation"
+    )
+    sources_processed: List[str] = Field(
+        default_factory=list, description="Sources that were processed"
+    )
+    processing_notes: List[str] = Field(
+        default_factory=list, description="Processing notes and warnings"
+    )
+
+    # Normalization-specific metadata (not applicable but kept for consistency)
+    normalization_method: Optional[str] = Field(
+        default="enum_classification", description="Method used (enum classification)"
+    )
+    ontologies_searched: List[str] = Field(
+        default_factory=list, description="No ontologies searched for enum fields"
+    )
+    normalization_timestamp: Optional[str] = Field(
+        None, description="When processing was performed"
+    )
+    normalization_tool_version: Optional[str] = Field(
+        None, description="Version of processing tool used"
+    )
+
+
 class NormalizationRequest(BaseModel):
     """Request for normalizing a set of candidates."""
 
@@ -178,6 +245,13 @@ class SampleResultEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class PrimarySampleResultEntry(BaseModel):
+    sample_id: str
+    result: SampleTypeNormalizationResult
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class BatchNormalizationResult(BaseModel):
     """Result of batch normalization across multiple samples."""
 
@@ -195,5 +269,67 @@ class BatchNormalizationResult(BaseModel):
         ..., description="Number of candidates successfully normalized"
     )
     processing_summary: List[KeyValue] = Field(
-        default_factory=list, description="Summary statistics and metadata"
+        default_factory=list, description="Summary of processing steps"
+    )
+
+
+class BatchPrimarySampleResult(BaseModel):
+    """Result of batch PrimarySample processing across multiple samples."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sample_results: List[PrimarySampleResultEntry] = Field(
+        ..., description="PrimarySample results keyed by sample_id"
+    )
+    session_directory: str = Field(..., description="Path to session directory")
+    target_field: str = Field(
+        default="PrimarySample", description="Target field that was processed"
+    )
+    total_samples_processed: int = Field(
+        ..., description="Total number of samples processed"
+    )
+    primary_samples_count: int = Field(
+        ..., description="Number of samples classified as primary (patient biopsy)"
+    )
+    cell_line_samples_count: int = Field(
+        ..., description="Number of samples classified as cell lines"
+    )
+    processing_summary: List[KeyValue] = Field(
+        default_factory=list, description="Summary of processing steps"
+    )
+
+
+class SampleTypeResultEntry(BaseModel):
+    sample_id: str
+    result: SampleTypeNormalizationResult
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BatchSampleTypeResult(BaseModel):
+    """Result of batch SampleType processing across multiple samples."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sample_results: List[SampleTypeResultEntry] = Field(
+        ..., description="SampleType results keyed by sample_id"
+    )
+    session_directory: str = Field(..., description="Path to session directory")
+    target_field: str = Field(
+        default="SampleType", description="Target field that was processed"
+    )
+    total_samples_processed: int = Field(
+        ..., description="Total number of samples processed"
+    )
+    primary_samples_count: int = Field(
+        ..., description="Number of samples classified as primary (patient biopsy)"
+    )
+    cell_line_samples_count: int = Field(
+        ..., description="Number of samples classified as cell lines"
+    )
+    unknown_samples_count: int = Field(
+        ..., description="Number of samples classified as unknown"
+    )
+    processing_summary: List[KeyValue] = Field(
+        default_factory=list, description="Processing summary information"
     )

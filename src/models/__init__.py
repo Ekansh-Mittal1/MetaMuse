@@ -1,107 +1,127 @@
 """
-Pydantic models for MetaMuse agent system.
+Pydantic models for the metadata curation workflow.
 
-This package contains all data models used for structured data exchange
-between agents, replacing the previous JSON-based approach.
+This module provides structured data models for:
+- Metadata cleaning and validation
+- Curation workflow data packages
+- Agent outputs and results
+- Normalization results
 """
 
+# Import all model classes for easy access
 from .metadata_models import (
+    CleanedSeriesMetadata,
+    CleanedSampleMetadata,
+    CleanedAbstractMetadata,
     GSMMetadata,
-    GSMAttributes,
     GSEMetadata,
-    GSEAttributes,
     PMIDMetadata,
     SeriesSampleMapping,
     LinkedData,
 )
 
-from .result_models import (
-    IngestionResult,
-    LinkerResult,
-    CuratorResult,
-    WorkflowResult,
-    AgentResult,
-    CandidateExtraction,
-    SerializationResult,
-    create_success_result,
-    create_error_result,
+# Curation models
+from .curation_models import (
+    CurationDataPackage,
+    ExtractedCandidate,
+    SampleTypeExtractedCandidate,
+    CurationResult,
+    SampleTypeCurationResult,
+    SampleType,
+)
+
+# Normalization models
+from .normalization_models import (
+    OntologyMatch,
+    NormalizedCandidate,
+    NormalizationResult,
+    SampleTypeNormalizationResult,
+    NormalizationRequest,
+    SampleResultEntry,
+    SampleTypeResultEntry,
+    BatchNormalizationResult,
+    BatchSampleTypeResult,
 )
 
 from .agent_outputs import (
     IngestionOutput,
     LinkerOutput,
     CuratorOutput,
+    SampleTypeCuratorOutput,
+    create_successful_ingestion_output,
+    create_successful_linker_output,
+    create_successful_curator_output,
 )
 
+from .result_models import (
+    WorkflowResult,
+    AgentResult,
+    IngestionResult,
+    LinkerResult,
+    CuratorResult,
+    SerializationResult,
+    create_success_result,
+    create_error_result,
+)
+
+from .common import KeyValue
+
 from .serialization import (
-    ModelSerializer,
-    WorkflowSerializer,
-    SerializationError,
     serialize_any_metadata,
     load_metadata_from_json,
 )
 
-from .curation_models import (
-    CleanedSeriesMetadata,
-    CleanedSampleMetadata,
-    CleanedAbstractMetadata,
-    CurationDataPackage,
-    ExtractedCandidate,
-    CurationResult,
-)
-
-from .normalization_models import (
-    OntologyMatch,
-    NormalizedCandidate,
-    NormalizationResult,
-    NormalizationRequest,
-    BatchNormalizationResult,
-    SampleResultEntry,
-    KeyValue,
-)
-
+# Export all models for easy importing
 __all__ = [
     # Metadata models
+    "CleanedSeriesMetadata",
+    "CleanedSampleMetadata", 
+    "CleanedAbstractMetadata",
     "GSMMetadata",
-    "GSMAttributes",
     "GSEMetadata",
-    "GSEAttributes",
     "PMIDMetadata",
     "SeriesSampleMapping",
     "LinkedData",
+    
+    # Curation models
+    "CurationDataPackage",
+    "ExtractedCandidate",
+    "SampleTypeExtractedCandidate",
+    "CurationResult",
+    "SampleTypeCurationResult",
+    "SampleType",
+    
+    # Normalization models
+    "OntologyMatch",
+    "NormalizedCandidate", 
+    "NormalizationResult",
+    "SampleTypeNormalizationResult",
+    "NormalizationRequest",
+    "SampleResultEntry",
+    "SampleTypeResultEntry",
+    "BatchNormalizationResult",
+    "BatchSampleTypeResult",
+    
+    # Agent output models
+    "IngestionOutput",
+    "LinkerOutput", 
+    "CuratorOutput",
+    "SampleTypeCuratorOutput",
+    
     # Result models
+    "WorkflowResult",
+    "AgentResult",
     "IngestionResult",
     "LinkerResult",
     "CuratorResult",
-    "WorkflowResult",
-    "AgentResult",
-    "CandidateExtraction",
     "SerializationResult",
     "create_success_result",
     "create_error_result",
-    # Agent output models
-    "IngestionOutput",
-    "LinkerOutput",
-    "CuratorOutput",
-    # Serialization
-    "ModelSerializer",
-    "WorkflowSerializer",
-    "SerializationError",
+    
+    # Common models
+    "KeyValue",
+    
+    # Serialization utilities
     "serialize_any_metadata",
     "load_metadata_from_json",
-    # Curation models
-    "CleanedSeriesMetadata",
-    "CleanedSampleMetadata",
-    "CleanedAbstractMetadata",
-    "CurationDataPackage",
-    "ExtractedCandidate",
-    "CurationResult",
-    # Normalization models
-    "OntologyMatch",
-    "NormalizedCandidate",
-    "NormalizationResult",
-    "NormalizationRequest",
-    "BatchNormalizationResult",
-    "SampleResultEntry",
-    "KeyValue",
 ]

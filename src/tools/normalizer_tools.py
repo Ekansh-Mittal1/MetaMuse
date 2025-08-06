@@ -152,6 +152,13 @@ def batch_normalize_session_impl(
     Dict[str, Any]
         Dictionary containing the batch normalization results
     """
+    # Check for enum target fields that don't need normalization
+    if target_field.lower() in ["sampletype", "sample_type"]:
+        raise NormalizationError(
+            f"Target field '{target_field}' is an enum field and does not require normalization. "
+            f"This field should be processed by the curator agent only."
+        )
+    
     # Find all candidates files for the target field
     field_pattern = target_field.lower()
     pattern = os.path.join(session_dir, "**", f"*_{field_pattern}_candidates.json")
@@ -427,6 +434,13 @@ def semantic_search_candidates_impl(
     and return a complete BatchNormalizationResult object.
     """
 
+    # Check for enum target fields that don't need normalization
+    if target_field.lower() in ["sampletype", "sample_type"]:
+        raise NormalizationError(
+            f"Target field '{target_field}' is an enum field and does not require normalization. "
+            f"This field should be processed by the curator agent only."
+        )
+
     try:
         # 1. Load CurationResult objects from the specified file
         with open(curation_results_file, "r") as f:
@@ -628,6 +642,13 @@ def normalize_candidate_value(
     Returns:
         NormalizedCandidate: The normalized candidate with ontology matches
     """
+    # Check for boolean target fields that don't need normalization
+    if target_field.lower() in ["sampletype", "sample_type"]:
+        raise NormalizationError(
+            f"Target field '{target_field}' is an enum field and does not require normalization. "
+            f"This field should be processed by the curator agent only."
+        )
+
     # Determine which ontologies to search
     if ontologies is None:
         field_ontology_map = get_ontology_mapping()
@@ -704,6 +725,13 @@ def normalize_curation_result(
     Returns:
         NormalizationResult: The normalized result
     """
+    # Check for boolean target fields that don't need normalization
+    if curation_result.target_field.lower() in ["sampletype", "sample_type"]:
+        raise NormalizationError(
+            f"Target field '{curation_result.target_field}' is an enum field and does not require normalization. "
+            f"This field should be processed by the curator agent only."
+        )
+
     # Normalize only the final_candidates (top 3) - this is the core functionality
     final_normalized_candidates = []
     for candidate in curation_result.final_candidates:

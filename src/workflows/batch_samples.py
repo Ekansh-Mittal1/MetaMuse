@@ -99,10 +99,27 @@ class BatchSamplesProcessor:
         self.batch_dir = self.output_dir / f"batch_{timestamp}"
         self.batch_dir.mkdir(parents=True, exist_ok=True)
 
-        # Initialize tracking
+        # Initialize tracking data structures
         self.sample_tracking = {}
-        self.failed_samples = []
         self.processed_samples = []
+        self.failed_samples = []
+        
+        # Error tracking structures
+        self.batch_errors = {}  # Track errors by batch number
+        self.target_field_errors = {}  # Track errors by target field
+        self.sample_errors = {}  # Track errors by sample ID
+        self.stage_errors = {}  # Track errors by processing stage
+        self.error_summary = {
+            "total_batches": 0,
+            "failed_batches": 0,
+            "total_samples": 0,
+            "failed_samples": 0,
+            "total_target_fields": 0,
+            "failed_target_fields": 0,
+            "stage_failures": {},
+            "error_types": {},
+            "timestamp": datetime.now().isoformat()
+        }
 
         # Set up logging to file
         log_handler = logging.FileHandler(self.batch_dir / "processing_log.txt")
@@ -241,6 +258,7 @@ class BatchSamplesProcessor:
                 max_turns=100,
                 enable_parallel_execution=True,
                 target_fields=self.target_fields,
+                error_tracker=self,  # Pass self as error tracker
             )
 
             batch_end_time = time.time()
@@ -266,10 +284,19 @@ class BatchSamplesProcessor:
                 )
                 self.processed_samples.extend(batch_samples)
             else:
+                error_msg = result.get('message', 'Unknown error')
                 logger.error(
-                    f"Batch {batch_num + 1} failed: {result.get('message', 'Unknown error')}"
+                    f"Batch {batch_num + 1} failed: {error_msg}"
                 )
                 self.failed_samples.extend(batch_samples)
+                
+                # Track batch error
+                self.track_batch_error(
+                    batch_num=batch_num + 1,
+                    error=error_msg,
+                    samples=batch_samples,
+                    stage="batch_targets_workflow"
+                )
 
             return result
 
@@ -284,7 +311,23 @@ class BatchSamplesProcessor:
                     "error": str(e),
                     "timestamp": datetime.now().isoformat(),
                 }
+                # Track individual sample errors
+                self.track_sample_error(
+                    sample_id=sample,
+                    error=str(e),
+                    stage="batch_processing"
+                )
+            
             self.failed_samples.extend(batch_samples)
+            
+            # Track batch error
+            self.track_batch_error(
+                batch_num=batch_num + 1,
+                error=str(e),
+                samples=batch_samples,
+                stage="batch_processing"
+            )
+            
             return {"success": False, "message": str(e)}
 
     def extract_raw_metadata(self, sample_id: str, sandbox_id: str) -> None:
@@ -899,6 +942,185 @@ class BatchSamplesProcessor:
 
         logger.info(f"Processing summary: {summary}")
 
+    def track_batch_error(self, batch_num: int, error: str, samples: List[str], stage: str = "unknown") -> None:
+        """
+        Track an error that occurred during batch processing.
+        
+        Parameters
+        ----------
+        batch_num : int
+            Batch number where error occurred
+        error : str
+            Error message
+        samples : List[str]
+            List of samples in the batch
+        stage : str
+            Processing stage where error occurred
+        """
+        if batch_num not in self.batch_errors:
+            self.batch_errors[batch_num] = []
+        
+        error_info = {
+            "error": error,
+            "samples": samples,
+            "stage": stage,
+            "timestamp": datetime.now().isoformat()
+        }
+        self.batch_errors[batch_num].append(error_info)
+        
+        # Update error summary
+        self.error_summary["failed_batches"] += 1
+        self.error_summary["failed_samples"] += len(samples)
+        
+        # Track error type
+        error_type = type(error).__name__ if hasattr(error, '__class__') else "Unknown"
+        if error_type not in self.error_summary["error_types"]:
+            self.error_summary["error_types"][error_type] = 0
+        self.error_summary["error_types"][error_type] += 1
+        
+        # Track stage failures
+        if stage not in self.error_summary["stage_failures"]:
+            self.error_summary["stage_failures"][stage] = 0
+        self.error_summary["stage_failures"][stage] += 1
+
+    def track_target_field_error(self, target_field: str, error: str, samples: List[str], stage: str = "unknown") -> None:
+        """
+        Track an error that occurred during target field processing.
+        
+        Parameters
+        ----------
+        target_field : str
+            Target field that failed
+        error : str
+            Error message
+        samples : List[str]
+            List of samples affected
+        stage : str
+            Processing stage where error occurred
+        """
+        if target_field not in self.target_field_errors:
+            self.target_field_errors[target_field] = []
+        
+        error_info = {
+            "error": error,
+            "samples": samples,
+            "stage": stage,
+            "timestamp": datetime.now().isoformat()
+        }
+        self.target_field_errors[target_field].append(error_info)
+        
+        # Update error summary
+        self.error_summary["failed_target_fields"] += 1
+
+    def track_sample_error(self, sample_id: str, error: str, stage: str = "unknown") -> None:
+        """
+        Track an error that occurred for a specific sample.
+        
+        Parameters
+        ----------
+        sample_id : str
+            Sample ID that failed
+        error : str
+            Error message
+        stage : str
+            Processing stage where error occurred
+        """
+        if sample_id not in self.sample_errors:
+            self.sample_errors[sample_id] = []
+        
+        error_info = {
+            "error": error,
+            "stage": stage,
+            "timestamp": datetime.now().isoformat()
+        }
+        self.sample_errors[sample_id].append(error_info)
+
+    def track_stage_error(self, stage: str, error: str, affected_items: List[str]) -> None:
+        """
+        Track an error that occurred during a specific processing stage.
+        
+        Parameters
+        ----------
+        stage : str
+            Processing stage that failed
+        error : str
+            Error message
+        affected_items : List[str]
+            List of items affected by the error
+        """
+        if stage not in self.stage_errors:
+            self.stage_errors[stage] = []
+        
+        error_info = {
+            "error": error,
+            "affected_items": affected_items,
+            "timestamp": datetime.now().isoformat()
+        }
+        self.stage_errors[stage].append(error_info)
+
+    def generate_error_summary(self) -> Dict[str, Any]:
+        """
+        Generate a comprehensive error summary.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Complete error summary with statistics and details
+        """
+        # Update summary statistics
+        self.error_summary["total_batches"] = len(self.batch_errors)
+        self.error_summary["total_samples"] = len(self.sample_tracking)
+        self.error_summary["total_target_fields"] = len(self.target_field_errors)
+        
+        # Calculate success rates
+        if self.error_summary["total_batches"] > 0:
+            self.error_summary["batch_success_rate"] = (
+                (self.error_summary["total_batches"] - self.error_summary["failed_batches"]) 
+                / self.error_summary["total_batches"]
+            )
+        
+        if self.error_summary["total_samples"] > 0:
+            self.error_summary["sample_success_rate"] = (
+                (self.error_summary["total_samples"] - self.error_summary["failed_samples"]) 
+                / self.error_summary["total_samples"]
+            )
+        
+        # Add detailed error information
+        self.error_summary["batch_errors"] = self.batch_errors
+        self.error_summary["target_field_errors"] = self.target_field_errors
+        self.error_summary["sample_errors"] = self.sample_errors
+        self.error_summary["stage_errors"] = self.stage_errors
+        
+        return self.error_summary
+
+    def save_error_summary(self) -> None:
+        """
+        Save the error summary to a JSON file.
+        """
+        error_summary = self.generate_error_summary()
+        
+        with open(self.batch_dir / "error_summary.json", "w") as f:
+            json.dump(error_summary, f, indent=2)
+        
+        logger.info(f"Error summary saved to {self.batch_dir / 'error_summary.json'}")
+        
+        # Also save individual error files for easier analysis
+        if self.batch_errors:
+            with open(self.batch_dir / "batch_errors.json", "w") as f:
+                json.dump(self.batch_errors, f, indent=2)
+        
+        if self.target_field_errors:
+            with open(self.batch_dir / "target_field_errors.json", "w") as f:
+                json.dump(self.target_field_errors, f, indent=2)
+        
+        if self.sample_errors:
+            with open(self.batch_dir / "sample_errors.json", "w") as f:
+                json.dump(self.sample_errors, f, indent=2)
+        
+        if self.stage_errors:
+            with open(self.batch_dir / "stage_errors.json", "w") as f:
+                json.dump(self.stage_errors, f, indent=2)
+
     async def run(self) -> None:
         """
         Run the complete batch samples processing workflow.
@@ -945,6 +1167,7 @@ class BatchSamplesProcessor:
             # Step 4: Generate outputs
             self.generate_comprehensive_csv()
             self.save_tracking_data()
+            self.save_error_summary()  # Save error summary
 
             end_time = time.time()
             total_time = end_time - start_time
@@ -958,6 +1181,13 @@ class BatchSamplesProcessor:
 
         except Exception as e:
             logger.error(f"Error in batch processing workflow: {e}")
+            # Track workflow-level error
+            self.track_stage_error(
+                stage="batch_workflow",
+                error=str(e),
+                affected_items=[f"batch_{i+1}" for i in range(len(self.sample_tracking) // self.batch_size + 1)]
+            )
+            self.save_error_summary()  # Save error summary even on failure
             raise
 
 

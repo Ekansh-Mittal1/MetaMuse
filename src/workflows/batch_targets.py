@@ -36,7 +36,7 @@ TARGET_FIELD_CONFIG = {
     # Fields requiring all 3 stages (Data Intake -> Curation -> Normalization)
     "full_pipeline": ["disease", "tissue", "organ"],
     # Fields requiring 2 stages (Data Intake -> Curation)
-    "curation_only": ["cell_line", "developmental_stage", "ethnicity", "gender", "age"],
+    "curation_only": ["cell_line", "developmental_stage", "ethnicity", "gender", "age", "sample_type"],
     # Fields requiring only Data Intake (direct extraction)
     "direct_only": {
         "Organism": "platform_organism",
@@ -56,6 +56,7 @@ async def run_batch_targets_workflow(
     max_turns: int = 100,
     enable_parallel_execution: bool = True,
     target_fields: list = None,
+    error_tracker=None,  # Callback function for error tracking
 ) -> Dict[str, Any]:
     """
     Run the complete batch targets workflow for selected metadata fields.
@@ -125,17 +126,43 @@ async def run_batch_targets_workflow(
         # ====================================================================
         print("🗂️  STAGE 1: DATA INTAKE")
 
-        data_intake_output = run_data_intake_workflow(
-            input_text=input_text,
-            session_id=session_id,
-            sandbox_dir=sandbox_dir,
-            workflow_type="complete",
-        )
+        try:
+            data_intake_output = run_data_intake_workflow(
+                input_text=input_text,
+                session_id=session_id,
+                sandbox_dir=sandbox_dir,
+                workflow_type="complete",
+            )
 
-        if not data_intake_output.success:
-            raise RuntimeError(f"Data intake failed: {data_intake_output.message}")
+            if not data_intake_output.success:
+                error_msg = f"Data intake failed: {data_intake_output.message}"
+                print(f"❌ {error_msg}")
+                
+                # Track error if error_tracker is provided
+                if error_tracker and hasattr(error_tracker, 'track_stage_error'):
+                    error_tracker.track_stage_error(
+                        stage="data_intake",
+                        error=data_intake_output.message,
+                        affected_items=["all_samples"]
+                    )
+                
+                raise RuntimeError(error_msg)
 
-        print("✅ Data intake completed")
+            print("✅ Data intake completed")
+
+        except Exception as e:
+            error_msg = f"Data intake workflow failed: {str(e)}"
+            print(f"❌ {error_msg}")
+            
+            # Track error if error_tracker is provided
+            if error_tracker and hasattr(error_tracker, 'track_stage_error'):
+                error_tracker.track_stage_error(
+                    stage="data_intake",
+                    error=str(e),
+                    affected_items=["all_samples"]
+                )
+            
+            raise RuntimeError(error_msg)
 
         sample_ids = data_intake_output.sample_ids_for_curation
         if not sample_ids:
@@ -239,7 +266,18 @@ async def run_batch_targets_workflow(
                 return target_field, curator_output
 
             except Exception as e:
-                print(f"❌ Curation failed for {target_field}: {str(e)}")
+                error_msg = f"Curation failed for {target_field}: {str(e)}"
+                print(f"❌ {error_msg}")
+                
+                # Track error if error_tracker is provided
+                if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
+                    error_tracker.track_target_field_error(
+                        target_field=target_field,
+                        error=str(e),
+                        samples=sample_ids,
+                        stage="curation"
+                    )
+                
                 return target_field, None
 
         # Create parallel curation tasks
@@ -270,12 +308,27 @@ async def run_batch_targets_workflow(
         for result in curation_task_results:
             if isinstance(result, Exception):
                 print(f"❌ Curation task failed with exception: {result}")
+                # Track error if error_tracker is provided
+                if error_tracker and hasattr(error_tracker, 'track_stage_error'):
+                    error_tracker.track_stage_error(
+                        stage="curation",
+                        error=str(result),
+                        affected_items=["all_target_fields"]
+                    )
                 continue
 
             target_field, curator_output = result
 
             if curator_output is None:
                 print(f"⚠️  Curation failed for {target_field}: No output returned")
+                # Track error if error_tracker is provided
+                if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
+                    error_tracker.track_target_field_error(
+                        target_field=target_field,
+                        error="No curator output returned",
+                        samples=sample_ids,
+                        stage="curation"
+                    )
                 continue
 
             # curator_output is now a CuratorOutput object, not a dict
@@ -286,6 +339,14 @@ async def run_batch_targets_workflow(
                 print(
                     f"⚠️  Curation failed for {target_field}: No curation results returned"
                 )
+                # Track error if error_tracker is provided
+                if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
+                    error_tracker.track_target_field_error(
+                        target_field=target_field,
+                        error="No curation results returned",
+                        samples=sample_ids,
+                        stage="curation"
+                    )
                 continue
 
             # Store curator output for later normalization (use lowercase key for consistency)
@@ -349,6 +410,14 @@ async def run_batch_targets_workflow(
                     print(
                         f"⚠️  No curator output available for normalization of {target_field}"
                     )
+                    # Track error if error_tracker is provided
+                    if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
+                        error_tracker.track_target_field_error(
+                            target_field=target_field,
+                            error="No curator output available for normalization",
+                            samples=sample_ids,
+                            stage="normalization"
+                        )
                     return target_field, None
 
                 normalizer_output = await run_normalizer_agent(
@@ -365,7 +434,18 @@ async def run_batch_targets_workflow(
                 return target_field, normalizer_output
 
             except Exception as e:
-                print(f"❌ Normalization failed for {target_field}: {str(e)}")
+                error_msg = f"Normalization failed for {target_field}: {str(e)}"
+                print(f"❌ {error_msg}")
+                
+                # Track error if error_tracker is provided
+                if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
+                    error_tracker.track_target_field_error(
+                        target_field=target_field,
+                        error=str(e),
+                        samples=sample_ids,
+                        stage="normalization"
+                    )
+                
                 return target_field, None
 
         # Create parallel normalization tasks
@@ -397,12 +477,27 @@ async def run_batch_targets_workflow(
         for result in normalization_task_results:
             if isinstance(result, Exception):
                 print(f"❌ Normalization task failed with exception: {result}")
+                # Track error if error_tracker is provided
+                if error_tracker and hasattr(error_tracker, 'track_stage_error'):
+                    error_tracker.track_stage_error(
+                        stage="normalization",
+                        error=str(result),
+                        affected_items=["all_target_fields"]
+                    )
                 continue
 
             target_field, normalizer_output = result
 
             if normalizer_output is None:
                 print(f"⚠️  Normalization failed for {target_field}: No output returned")
+                # Track error if error_tracker is provided
+                if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
+                    error_tracker.track_target_field_error(
+                        target_field=target_field,
+                        error="No normalizer output returned",
+                        samples=sample_ids,
+                        stage="normalization"
+                    )
                 continue
 
             # normalizer_output is now a BatchNormalizationResult object, not a dict
@@ -413,6 +508,14 @@ async def run_batch_targets_workflow(
                 print(
                     f"⚠️  Normalization failed for {target_field}: No normalization results returned"
                 )
+                # Track error if error_tracker is provided
+                if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
+                    error_tracker.track_target_field_error(
+                        target_field=target_field,
+                        error="No normalization results returned",
+                        samples=sample_ids,
+                        stage="normalization"
+                    )
                 continue
 
             # Save normalization output to target field subdirectory
@@ -555,6 +658,7 @@ async def run_batch_targets_workflow_async(
     max_turns: int = 100,
     enable_parallel_execution: bool = True,
     target_fields: list = None,
+    error_tracker=None,  # Add error_tracker parameter
 ) -> Dict[str, Any]:
     """
     Async wrapper for the batch targets workflow.
@@ -572,4 +676,5 @@ async def run_batch_targets_workflow_async(
         max_turns=max_turns,
         enable_parallel_execution=enable_parallel_execution,
         target_fields=target_fields,
+        error_tracker=error_tracker,  # Pass through error_tracker
     )
