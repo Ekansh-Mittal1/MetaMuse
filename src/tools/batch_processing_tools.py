@@ -59,6 +59,16 @@ def extract_direct_fields_from_data_intake(
         else:
             data = data_intake_output
 
+    # Add null check for curation_packages to prevent crashes
+    curation_packages = data.get("curation_packages", [])
+    if not curation_packages:  # Handles None, empty list, etc.
+        # Use proper logging instead of print
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"⚠️No curation packages found for samples: {sample_ids}")
+        # Return empty results structure instead of crashing
+        return {sample_id: {} for sample_id in sample_ids}
+
     results = {}
 
     # Extract data for each sample
@@ -67,24 +77,29 @@ def extract_direct_fields_from_data_intake(
 
         # Find the curation package for this sample
         curation_package = None
-        for package in data.get("curation_packages", []):
+        for package in curation_packages:
             if package.get("sample_id") == sample_id:
                 curation_package = package
                 break
 
         if not curation_package:
-            print(f"⚠️  No curation package found for sample {sample_id}")
+            # Use proper logging instead of print
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️ No curation package found for sample {sample_id}")
             results[sample_id] = {}
             continue
 
         # Extract organism from platform_organism
         organism_value = None
         series_metadata = curation_package.get("series_metadata", {})
-        if series_metadata:  # Add null check
-            for item in series_metadata.get("content", []):
-                if item.get("key") == "platform_organism":
-                    organism_value = item.get("value")
-                    break
+        if series_metadata and isinstance(series_metadata, dict):  # Add type check
+            content = series_metadata.get("content", [])
+            if isinstance(content, list):  # Ensure content is a list
+                for item in content:
+                    if isinstance(item, dict) and item.get("key") == "platform_organism":
+                        organism_value = item.get("value")
+                        break
 
         if organism_value:
             sample_results["organism"] = {
@@ -95,11 +110,13 @@ def extract_direct_fields_from_data_intake(
 
         # Extract PubMed ID
         pubmed_value = None
-        if series_metadata:  # Add null check
-            for item in series_metadata.get("content", []):
-                if item.get("key") == "pubmed_id":
-                    pubmed_value = item.get("value")
-                    break
+        if series_metadata and isinstance(series_metadata, dict):  # Add type check
+            content = series_metadata.get("content", [])
+            if isinstance(content, list):  # Ensure content is a list
+                for item in content:
+                    if isinstance(item, dict) and item.get("key") == "pubmed_id":
+                        pubmed_value = item.get("value")
+                        break
 
         if pubmed_value:
             sample_results["pubmed_id"] = {
@@ -110,11 +127,13 @@ def extract_direct_fields_from_data_intake(
 
         # Extract platform_id
         platform_id_value = None
-        if series_metadata:  # Add null check
-            for item in series_metadata.get("content", []):
-                if item.get("key") == "platform_id":
-                    platform_id_value = item.get("value")
-                    break
+        if series_metadata and isinstance(series_metadata, dict):  # Add type check
+            content = series_metadata.get("content", [])
+            if isinstance(content, list):  # Ensure content is a list
+                for item in content:
+                    if isinstance(item, dict) and item.get("key") == "platform_id":
+                        platform_id_value = item.get("value")
+                        break
 
         if platform_id_value:
             sample_results["platform_id"] = {
@@ -126,23 +145,46 @@ def extract_direct_fields_from_data_intake(
         # Extract instrument_model
         instrument_value = None
         sample_metadata = curation_package.get("sample_metadata", {})
-        if sample_metadata:  # Add null check
-            for item in sample_metadata.get("content", []):
-                if item.get("key") == "instrument_model":
-                    instrument_value = item.get("value")
-                    break
+        if sample_metadata and isinstance(sample_metadata, dict):  # Add type check
+            content = sample_metadata.get("content", [])
+            if isinstance(content, list):  # Ensure content is a list
+                for item in content:
+                    if isinstance(item, dict) and item.get("key") == "instrument_model":
+                        instrument_value = item.get("value")
+                        break
 
         # If not found in sample metadata, try series metadata
-        if not instrument_value and series_metadata:  # Add null check
-            for item in series_metadata.get("content", []):
-                if item.get("key") == "instrument_model":
-                    instrument_value = item.get("value")
-                    break
+        if not instrument_value and series_metadata and isinstance(series_metadata, dict):  # Add type check
+            content = series_metadata.get("content", [])
+            if isinstance(content, list):  # Ensure content is a list
+                for item in content:
+                    if isinstance(item, dict) and item.get("key") == "instrument_model":
+                        instrument_value = item.get("value")
+                        break
 
         if instrument_value:
             sample_results["instrument_model"] = {
                 "value": instrument_value,
                 "source": "instrument_model",
+                "confidence": 1.0,
+            }
+
+        # Extract series_id from the curation package
+        # Handle both CurationDataPackage objects and dictionaries
+        if hasattr(curation_package, 'series_id'):
+            # It's a CurationDataPackage object
+            series_id_value = curation_package.series_id
+        elif isinstance(curation_package, dict):
+            # It's a dictionary (e.g., from JSON)
+            series_id_value = curation_package.get("series_id")
+        else:
+            # Fallback
+            series_id_value = None
+            
+        if series_id_value:
+            sample_results["series_id"] = {
+                "value": series_id_value,
+                "source": "series_id",
                 "confidence": 1.0,
             }
 
@@ -155,6 +197,7 @@ def extract_curation_candidates(
     curator_output: Union[Dict[str, Any], CuratorOutput, str, Path],
     target_field: str,
     sample_ids: List[str],
+    error_tracker=None,
 ) -> Dict[str, Dict[str, Any]]:
     """
     Extract final candidates from curation output for a specific target field.
@@ -167,6 +210,8 @@ def extract_curation_candidates(
         Target field that was curated (e.g., 'Disease', 'Tissue', 'Cell Line')
     sample_ids : List[str]
         List of sample IDs to extract data for
+    error_tracker : object, optional
+        Error tracker object with methods for tracking missing results
 
     Returns
     -------
@@ -215,31 +260,46 @@ def extract_curation_candidates(
                 break
 
         if not curation_result:
-            print(
-                f"⚠️  No curation result found for sample {sample_id}, target field {target_field}"
-            )
+            # Use proper logging instead of print
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️ No curation result found for sample {sample_id}, target field {target_field}")
+            
+            # Track missing curation result for rerun capability
+            if error_tracker and hasattr(error_tracker, 'track_missing_result'):
+                error_tracker.track_missing_result(
+                    sample_id=sample_id,
+                    target_field=target_field,
+                    result_type="curation",
+                    reason="no_curation_result_in_output"
+                )
+            
             results[sample_id] = sample_results
             continue
 
-        # Combine series and sample candidates
-        all_candidates = []
-
-        # Add series candidates
+        # Extract candidates by source (preserve original breakdown)
         series_candidates = curation_result.get("series_candidates", [])
+        sample_candidates = curation_result.get("sample_candidates", [])
+        abstract_candidates = curation_result.get("abstract_candidates", [])
+
+        # Add source attribution to each candidate
         for candidate in series_candidates:
             candidate["candidate_source"] = "series"
-            all_candidates.append(candidate)
-
-        # Add sample candidates
-        sample_candidates = curation_result.get("sample_candidates", [])
         for candidate in sample_candidates:
             candidate["candidate_source"] = "sample"
-            all_candidates.append(candidate)
+        for candidate in abstract_candidates:
+            candidate["candidate_source"] = "abstract"
 
+        # Combine all candidates for best candidate selection
+        all_candidates = series_candidates + sample_candidates + abstract_candidates
+        
         # Sort candidates by confidence (highest first)
         all_candidates.sort(key=lambda x: x.get("confidence", 0), reverse=True)
 
-        sample_results["candidates"] = all_candidates
+        # Store candidates with source breakdown preserved (no combined list)
+        sample_results["series_candidates"] = series_candidates
+        sample_results["sample_candidates"] = sample_candidates  
+        sample_results["abstract_candidates"] = abstract_candidates
         sample_results["candidate_count"] = len(all_candidates)
 
         # Get best candidate (highest confidence)
@@ -255,6 +315,7 @@ def extract_normalization_results(
     normalizer_output: Union[Dict[str, Any], str, Path],
     target_field: str,
     sample_ids: List[str],
+    error_tracker=None,
 ) -> Dict[str, Dict[str, Any]]:
     """
     Extract normalization results for a specific target field.
@@ -267,6 +328,8 @@ def extract_normalization_results(
         Target field that was normalized (e.g., 'Disease', 'Tissue', 'Organ')
     sample_ids : List[str]
         List of sample IDs to extract data for
+    error_tracker : object, optional
+        Error tracker object with methods for tracking missing results
 
     Returns
     -------
@@ -317,9 +380,20 @@ def extract_normalization_results(
                 break
 
         if not sample_result:
-            print(
-                f"⚠️  No normalization result found for sample {sample_id}, target field {target_field}"
-            )
+            # Use proper logging instead of print
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️ No normalization result found for sample {sample_id}, target field {target_field}")
+            
+            # Track missing normalization result for rerun capability
+            if error_tracker and hasattr(error_tracker, 'track_missing_result'):
+                error_tracker.track_missing_result(
+                    sample_id=sample_id,
+                    target_field=target_field,
+                    result_type="normalization",
+                    reason="no_normalization_result_in_output"
+                )
+            
             results[sample_id] = sample_results
             continue
 
@@ -452,7 +526,6 @@ def save_batch_results(
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
 
-    print(f"📄 Batch results saved to: {output_path}")
     return str(output_path)
 
 

@@ -997,9 +997,6 @@ def get_normalizer_tools(session_dir: str | Path) -> list:
                     min_score=min_score,
                 )
 
-                print(
-                    "✅ [TOOL_CALL] semantic_search_candidates completed successfully"
-                )
                 return result
 
             except Exception as e:

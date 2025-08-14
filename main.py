@@ -66,21 +66,17 @@ if not API_KEY:
 # ---------------------------------------------------------------------------
 # Only the following models are supported. Each entry also defines its context
 # window so that the orchestrator can automatically respect model limits.
-MODEL_CHOICES = ("google/gemini-2.5-flash", "openai/gpt-4o", "openai/gpt-4o-mini")
+MODEL_CHOICES = ("google/gemini-2.5-pro", "google/gemini-2.5-flash", "openai/gpt-4o", "openai/gpt-4o-mini")
 
 # Context window limits for each model
 MODEL_CONTEXT_LIMITS: dict[str, int] = {
-    "google/gemini-2.5-flash": 1_048_576,  # Significantly increased context window
+    "google/gemini-2.5-pro": 2_097_152,  # 2M tokens context window for Pro
+    "google/gemini-2.5-flash": 1_048_576,  # 1M tokens context window for Flash
     "openai/gpt-4o": 128_000,
     "openai/gpt-4o-mini": 128_000,
 }
 
-# Maximum response tokens for each model (increased for complex JSON outputs)
-MODEL_RESPONSE_LIMITS: dict[str, int] = {
-    "google/gemini-2.5-flash": 65_536,  # Significantly increased for large curator outputs
-    "openai/gpt-4o": 65_536,  # Significantly increased for large outputs
-    "openai/gpt-4o-mini": 65_536,  # Significantly increased for large outputs
-}
+
 
 # Disable tracing for OpenRouter
 set_tracing_disabled(disabled=True)
@@ -156,9 +152,6 @@ async def run_workflow(
 
     # Create model provider
     model_provider = CustomModelProvider(model_name)
-    max_response_tokens = MODEL_RESPONSE_LIMITS.get(
-        model_name, 16_384
-    )  # High default for complex JSON output
 
     # Handle batch_targets workflow specially (bypasses orchestrator)
     if workflow_name == "batch_targets":
@@ -195,7 +188,6 @@ async def run_workflow(
             session_id=session_id,
             sandbox_dir="sandbox",
             model_provider=model_provider,
-            max_tokens=max_response_tokens,
             max_turns=max_turns,
             target_fields=target_fields,
         )
@@ -215,12 +207,13 @@ async def run_workflow(
         print("🎯 Starting batch samples workflow")
 
         # Parse parameters from input_data
-        # Format: "sample_count=100 batch_size=5 output_dir=batch target_fields=disease,tissue"
+        # Format: "sample_count=100 batch_size=5 output_dir=batch target_fields=disease,tissue sample_type_filter=primary_sample"
         sample_count = 100  # Default
         batch_size = 5  # Default
         output_dir = "batch"  # Default
         age_file = "Age.txt"  # Default
         target_fields = None  # Default
+        sample_type_filter = None  # Default
 
         # Parse input parameters
         if input_data:
@@ -238,6 +231,8 @@ async def run_workflow(
                         age_file = value
                     elif key == "target_fields":
                         target_fields = [field.strip() for field in value.split(",")]
+                    elif key == "sample_type_filter":
+                        sample_type_filter = value
 
         try:
             output_path = await run_batch_samples_workflow(
@@ -246,8 +241,8 @@ async def run_workflow(
                 output_dir=output_dir,
                 age_file=age_file,
                 model_provider=model_provider,
-                max_tokens=max_response_tokens,
                 target_fields=target_fields,
+                sample_type_filter=sample_type_filter,
             )
 
             print("✅ Batch samples workflow completed successfully!")
@@ -307,7 +302,6 @@ async def run_workflow(
             session_id=session_id,
             sandbox_dir="sandbox",
             model_provider=model_provider,
-            max_tokens=max_response_tokens,
             max_turns=max_turns,
         )
 
@@ -337,7 +331,6 @@ async def run_workflow(
         result = await test_normalizer_agent(
             test_session_dir=test_session_dir,
             model_provider=model_provider,
-            max_tokens=max_response_tokens,
             max_turns=max_turns,
         )
 
@@ -367,7 +360,6 @@ async def run_workflow(
     orchestrator = SimpleOrchestrator(
         session_id=session_id,
         model_provider=model_provider,
-        provider_max_tokens=max_response_tokens,
     )
 
     # Select workflow function
@@ -536,6 +528,8 @@ Examples:
   python main.py batch_targets "GSM1000981,GSM1000984"
   python main.py batch_samples "sample_count=100 batch_size=5"
   python main.py batch_samples "sample_count=50 batch_size=3 output_dir=my_batch"
+  python main.py batch_samples "sample_count=50 batch_size=5 sample_type_filter=primary_sample"
+  python main.py batch_samples "sample_count=30 batch_size=3 sample_type_filter=cell_line"
   python main.py test_normalizer "any_input"
   python main.py --list-workflows
         """,

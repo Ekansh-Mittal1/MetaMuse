@@ -435,7 +435,7 @@ def semantic_search_candidates_impl(
     """
 
     # Check for enum target fields that don't need normalization
-    if target_field.lower() in ["sampletype", "sample_type"]:
+    if target_field.lower() in ["sampletype", "sample_type", "assay_type"]:
         raise NormalizationError(
             f"Target field '{target_field}' is an enum field and does not require normalization. "
             f"This field should be processed by the curator agent only."

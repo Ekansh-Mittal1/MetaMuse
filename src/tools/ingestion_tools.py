@@ -749,10 +749,6 @@ class NCBIClient:
                 filtered_count += 1
 
         # Log filtering results if fields were filtered
-        if filtered_count > 0:
-            print(
-                f"🔧 Filtered {filtered_count} non-standard fields from {record_type} attributes"
-            )
 
         return filtered_attributes
 
@@ -1142,7 +1138,7 @@ def extract_series_id_from_gsm_metadata(gsm_metadata_file: str) -> Dict[str, Any
         raise RuntimeError(f"Error extracting Series ID from {gsm_metadata_file}: {e}")
 
 
-def _get_series_subdirectory(session_dir: str, series_id: str) -> Path:
+def _get_series_subdirectory(session_dir: str, series_id: str, create_directory: bool = True) -> Path:
     """
     Get or create a subdirectory for a specific series ID within the session directory.
 
@@ -1152,6 +1148,8 @@ def _get_series_subdirectory(session_dir: str, series_id: str) -> Path:
         The session directory path
     series_id : str
         The series ID (e.g., "GSE41588")
+    create_directory : bool
+        Whether to create the directory if it doesn't exist
 
     Returns
     -------
@@ -1159,12 +1157,13 @@ def _get_series_subdirectory(session_dir: str, series_id: str) -> Path:
         Path to the series subdirectory
     """
     series_dir = Path(session_dir) / series_id
-    series_dir.mkdir(parents=True, exist_ok=True)
+    if create_directory:
+        series_dir.mkdir(parents=True, exist_ok=True)
     return series_dir
 
 
 def extract_gsm_metadata_impl(
-    gsm_id: str, session_dir: str, email: str = None, api_key: str = None
+    gsm_id: str, session_dir: str, email: str = None, api_key: str = None, create_series_directories: bool = True
 ) -> str:
     """
     Extract metadata for a GEO Sample (GSM) record.
@@ -1224,14 +1223,11 @@ def extract_gsm_metadata_impl(
         else:
             # Use the first valid series ID for directory organization
             primary_series_id = valid_series_ids[0]
-            series_dir = _get_series_subdirectory(session_dir, primary_series_id)
+            series_dir = _get_series_subdirectory(session_dir, primary_series_id, create_series_directories)
             output_file = series_dir / f"{gsm_id}_metadata.json"
             # If there are multiple series IDs, add a note to the metadata
             if len(valid_series_ids) > 1:
                 metadata["attributes"]["all_series_ids"] = ", ".join(valid_series_ids)
-                print(
-                    f"📝 Sample {gsm_id} belongs to multiple series: {', '.join(valid_series_ids)}"
-                )
 
     # Save metadata
     with open(output_file, "w") as f:
@@ -1241,7 +1237,7 @@ def extract_gsm_metadata_impl(
 
 
 def extract_gse_metadata_impl(
-    gse_id: str, session_dir: str, email: str = None, api_key: str = None
+    gse_id: str, session_dir: str, email: str = None, api_key: str = None, create_series_directories: bool = True
 ) -> str:
     """
     Extract metadata for a GEO Series (GSE) record.
@@ -1271,7 +1267,7 @@ def extract_gse_metadata_impl(
     metadata = get_gse_metadata(gse_id)
 
     # Create series subdirectory and save there
-    series_dir = _get_series_subdirectory(session_dir, gse_id.upper())
+    series_dir = _get_series_subdirectory(session_dir, gse_id.upper(), create_series_directories)
     output_file = series_dir / f"{gse_id}_metadata.json"
 
     # Save metadata
@@ -1312,7 +1308,7 @@ def extract_series_matrix_metadata_impl(
     metadata = get_gse_series_matrix(gse_id)
 
     # Create series subdirectory and save there
-    series_dir = _get_series_subdirectory(session_dir, gse_id.upper())
+    series_dir = _get_series_subdirectory(session_dir, gse_id.upper(), create_series_directories)
     output_file = series_dir / f"{gse_id}_series_matrix.json"
 
     # Save metadata
@@ -1348,6 +1344,7 @@ def extract_paper_abstract_impl(
     email: str = None,
     api_key: str = None,
     source_gse_file: str = None,
+    create_series_directories: bool = True,
 ) -> str:
     """
     Extract paper abstract and metadata for a given PMID.
@@ -1388,7 +1385,7 @@ def extract_paper_abstract_impl(
         source_path = Path(source_gse_file)
         if source_path.name.startswith("GSE") and "_metadata.json" in source_path.name:
             series_id = source_path.name.replace("_metadata.json", "")
-            series_dir = _get_series_subdirectory(session_dir, series_id)
+            series_dir = _get_series_subdirectory(session_dir, series_id, create_series_directories)
             output_file = series_dir / f"PMID_{pmid}_metadata.json"
 
         else:

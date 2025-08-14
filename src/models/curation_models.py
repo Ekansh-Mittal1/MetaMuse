@@ -23,12 +23,20 @@ class SampleType(str, Enum):
     UNKNOWN = "unknown"
 
 
+class AssayType(str, Enum):
+    """Enum for assay type classification."""
+    SINGLE_CELL = "single_cell"
+    BULK = "bulk"
+    UNKNOWN = "unknown"
+
+
 class CurationDataPackage(BaseModel):
     """Complete package of cleaned metadata for one sample from all sources."""
 
     model_config = ConfigDict(extra="forbid")
 
     sample_id: str = Field(..., description="Primary sample ID being curated")
+    series_id: Optional[str] = Field(None, description="Series ID associated with this sample")
     series_metadata: Optional[CleanedSeriesMetadata] = Field(
         None, description="Cleaned series metadata"
     )
@@ -61,6 +69,20 @@ class SampleTypeExtractedCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     value: SampleType = Field(..., description="Extracted candidate value (primary_sample, cell_line, or unknown)")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0-1)")
+    source: str = Field(..., description="Source type (series/sample/abstract)")
+    context: str = Field(..., description="Direct context from source where candidate was found")
+    rationale: str = Field(
+        ..., description="Explicit reasoning for why this candidate was extracted"
+    )
+
+
+class AssayTypeExtractedCandidate(BaseModel):
+    """A single extracted candidate from metadata for AssayType target field (enum value)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: AssayType = Field(..., description="Extracted candidate value (single_cell, bulk, or unknown)")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0-1)")
     source: str = Field(..., description="Source type (series/sample/abstract)")
     context: str = Field(..., description="Direct context from source where candidate was found")
@@ -163,6 +185,62 @@ class SampleTypeCurationResult(BaseModel):
 
     # Final result - top 3 candidates across all sources (for reference)
     final_candidates: List[SampleTypeExtractedCandidate] = Field(
+        default_factory=list,
+        description="Top 3 candidates ranked by confidence across all sources",
+    )
+
+    reconciliation_needed: bool = Field(
+        False, description="Whether manual reconciliation is needed"
+    )
+    reconciliation_reason: Optional[str] = Field(
+        None, description="Reason for manual reconciliation"
+    )
+
+    # Processing metadata
+    sources_processed: List[str] = Field(
+        default_factory=list, description="Sources that were processed"
+    )
+    processing_notes: List[str] = Field(
+        default_factory=list, description="Processing notes and warnings"
+    )
+
+
+class AssayTypeCurationResult(BaseModel):
+    """Result of curation for AssayType target field (enum output)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Tool identification
+    tool_name: str = Field(
+        default="Unknown Tool", description="Name of the tool that produced this output"
+    )
+
+    sample_id: str = Field(..., description="Sample ID that was curated")
+    target_field: str = Field(
+        default="AssayType", description="Target metadata field (AssayType)"
+    )
+
+    # Enum result
+    assay_type: AssayType = Field(
+        ..., description="Assay type classification (single_cell, bulk, or unknown)"
+    )
+    confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Confidence in the assay type classification"
+    )
+
+    # Supporting evidence
+    series_candidates: List[AssayTypeExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from series metadata"
+    )
+    sample_candidates: List[AssayTypeExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from sample metadata"
+    )
+    abstract_candidates: List[AssayTypeExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from abstract metadata"
+    )
+
+    # Final result - top 3 candidates across all sources (for reference)
+    final_candidates: List[AssayTypeExtractedCandidate] = Field(
         default_factory=list,
         description="Top 3 candidates ranked by confidence across all sources",
     )

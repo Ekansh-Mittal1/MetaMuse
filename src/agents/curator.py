@@ -46,6 +46,9 @@ def get_curator_output_type_for_field(target_field: str):
     if target_field.lower() in ["sampletype", "sample_type"]:
         from src.models.agent_outputs import SampleTypeCuratorOutput
         return SampleTypeCuratorOutput
+    elif target_field.lower() in ["assaytype", "assay_type"]:
+        from src.models.agent_outputs import AssayTypeCuratorOutput
+        return AssayTypeCuratorOutput
     from src.models.agent_outputs import CuratorOutput
     return CuratorOutput
 
@@ -252,6 +255,8 @@ def create_curator_agent(
                 "Cell_Line": "cell_line.md",
                 "CellLine": "cell_line.md",
                 "SampleType": "sample_type.md",
+                "AssayType": "assay_type.md",
+                "assay_type": "assay_type.md",
             }
 
             template_filename = template_mapping.get(
@@ -320,7 +325,7 @@ async def run_curator_agent(
     session_id: str = None,
     sandbox_dir: str = None,
     model_provider=None,
-    max_tokens: int = 65536,
+    max_tokens: int = None,
     max_turns: int = 100,
     verbose_output: bool = False,
 ) -> Union[CuratorOutput, SampleTypeCuratorOutput]:
@@ -355,6 +360,12 @@ async def run_curator_agent(
 
         # Prepare input data for the curator
         sample_ids = data_intake_output.sample_ids_for_curation
+        if not sample_ids:
+            error_msg = "No sample IDs available for curation in data_intake_output"
+            print(f"❌ {error_msg}")
+            print(f"🔍 DEBUG: data_intake_output attributes: {dir(data_intake_output)}")
+            raise ValueError(error_msg)
+            
         input_data = f"target_field:{target_field} {' '.join(sample_ids)}"
 
         # Create the curator agent without handoffs (decoupled)
@@ -376,6 +387,8 @@ async def run_curator_agent(
                 pkg.model_dump() for pkg in data_intake_output.curation_packages
             ]
             curation_packages_json = json.dumps(curation_packages_data, indent=2)
+        else:
+            print(f"⚠️  WARNING: No curation packages found in data_intake_output")
 
         curator_message = (
             f"Please curate metadata for the target field '{target_field}' using the following curation packages:\n\n"
@@ -407,9 +420,13 @@ async def run_curator_agent(
 
         # Extract the final result with strict output
         final_result = None
+        stream_events_processed = 0
+        raw_response_content = ""
 
         try:
             async for event in result.stream_events():
+                stream_events_processed += 1
+                
                 # Handle raw response events (token-by-token streaming)
                 if event.type == "raw_response_event":
                     # Check if this is a text delta event with actual content
@@ -422,27 +439,60 @@ async def run_curator_agent(
                         # Stream tokens naturally like ChatGPT
                         if verbose_output:
                             print(event.data.delta, end="", flush=True)
+                        raw_response_content += event.data.delta
                     continue
 
                 # Handle agent response events (final result)
                 elif event.type == "agent_response_event":
-                    print(f"\n✅ Found agent response event: {type(event.result)}")
                     final_result = event.result
                     break
 
         except Exception as stream_error:
             print(f"\n❌ Stream error: {stream_error}")
+            print(f"🔍 DEBUG: Stream error type: {type(stream_error)}")
+            print(f"🔍 DEBUG: Stream error traceback:")
+            import traceback
+            traceback.print_exc()
+            print(f"🔍 DEBUG: Raw response content collected: {raw_response_content[:500]}...")
 
         try:
-            final_result = result.final_output
+            if final_result is None:
+                final_result = result.final_output
         except Exception as e:
             print(f"❌ Could not get final_output: {e}")
+            print(f"🔍 DEBUG: final_output error type: {type(e)}")
+            print(f"🔍 DEBUG: final_output error traceback:")
+            import traceback
+            traceback.print_exc()
+            print(f"🔍 DEBUG: Stream events processed: {stream_events_processed}")
+            print(f"🔍 DEBUG: Raw response content: {raw_response_content[:1000]}...")
             raise RuntimeError("No result received from curator agent")
 
-        # Validate that we got a CuratorOutput or SampleTypeCuratorOutput
-        from src.models.agent_outputs import CuratorOutput, SampleTypeCuratorOutput
-        if not isinstance(final_result, (CuratorOutput, SampleTypeCuratorOutput)):
-            raise RuntimeError(f"Expected CuratorOutput or SampleTypeCuratorOutput, got {type(final_result)}")
+        # Validate that we got a CuratorOutput, SampleTypeCuratorOutput, or AssayTypeCuratorOutput
+        from src.models.agent_outputs import CuratorOutput, SampleTypeCuratorOutput, AssayTypeCuratorOutput
+        
+        if not isinstance(final_result, (CuratorOutput, SampleTypeCuratorOutput, AssayTypeCuratorOutput)):
+            error_msg = f"Expected CuratorOutput, SampleTypeCuratorOutput, or AssayTypeCuratorOutput, got {type(final_result)}"
+            print(f"❌ {error_msg}")
+            print(f"🔍 DEBUG: Final result content: {final_result}")
+            print(f"🔍 DEBUG: Raw response content: {raw_response_content[:1000]}...")
+            raise RuntimeError(error_msg)
+
+        # Check if the result has the expected structure
+        if not hasattr(final_result, "curation_results"):
+            error_msg = f"CuratorOutput missing 'curation_results' attribute"
+            print(f"❌ {error_msg}")
+            print(f"🔍 DEBUG: Available attributes: {dir(final_result)}")
+            print(f"🔍 DEBUG: Final result content: {final_result}")
+            raise RuntimeError(error_msg)
+            
+        if not final_result.curation_results:
+            error_msg = f"CuratorOutput has empty 'curation_results'"
+            print(f"❌ {error_msg}")
+            print(f"🔍 DEBUG: curation_results: {final_result.curation_results}")
+            print(f"🔍 DEBUG: Final result content: {final_result}")
+            print(f"🔍 DEBUG: Raw response content: {raw_response_content[:1000]}...")
+            raise RuntimeError(error_msg)
 
         # FIX: Ensure session_directory is correct (LLM sometimes mixes session ID with GSM sample ID)
         correct_session_dir = str(Path(existing_session_dir).absolute())
@@ -456,6 +506,8 @@ async def run_curator_agent(
 
     except Exception as e:
         print(f"❌ run_curator_agent error: {str(e)}")
+        print(f"🔍 DEBUG: Error type: {type(e)}")
+        print(f"🔍 DEBUG: Error occurred in run_curator_agent for target_field='{target_field}'")
         import traceback
 
         print("🔍 run_curator_agent traceback:")

@@ -17,7 +17,7 @@ from .metadata_models import (
 )
 
 # Import CurationDataPackage for LinkerOutput
-from .curation_models import CurationDataPackage, CurationResult, SampleTypeCurationResult
+from .curation_models import CurationDataPackage, CurationResult, SampleTypeCurationResult, AssayTypeCurationResult
 
 
 class IngestionOutput(BaseModel):
@@ -192,8 +192,10 @@ class CuratorOutput(BaseModel):
     @classmethod
     def validate_average_confidence(cls, v):
         """Handle 'Not applicable' string by converting to None."""
-        if isinstance(v, str) and v.lower() in ["not applicable", "n/a", "none"]:
-            return None
+        if isinstance(v, str):
+            # Handle various "not applicable" variations
+            if any(phrase in v.lower() for phrase in ["not applicable", "n/a", "none", "no candidates", "candidates were found"]):
+                return None
         return v
 
     # Processing summary
@@ -236,6 +238,75 @@ class SampleTypeCuratorOutput(BaseModel):
     )
     cell_line_samples_count: int = Field(
         ..., ge=0, description="Number of samples classified as cell lines"
+    )
+    unknown_samples_count: int = Field(
+        ..., ge=0, description="Number of samples classified as unknown"
+    )
+    samples_needing_review: int = Field(
+        ..., ge=0, description="Samples requiring manual review"
+    )
+
+    # File management
+    files_created: List[str] = Field(
+        default_factory=list, description="Files created during curation"
+    )
+    curation_results_file: Optional[str] = Field(
+        None, description="Path to detailed curation results file"
+    )
+
+    # Quality metrics
+    average_confidence: Optional[float] = Field(
+        None, ge=0.0, le=1.0, description="Average confidence across all curations"
+    )
+
+    @field_validator("average_confidence", mode="before")
+    @classmethod
+    def validate_average_confidence(cls, v):
+        """Handle 'Not applicable' string by converting to None."""
+        if isinstance(v, str) and v.lower() in ["not applicable", "n/a", "none"]:
+            return None
+        return v
+
+    # Processing summary
+    warnings: List[str] = Field(default_factory=list, description="Warnings generated")
+
+
+class AssayTypeCuratorOutput(BaseModel):
+    """Structured output from CuratorAgent for AssayType target field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Execution summary
+    success: bool = Field(..., description="Whether curation completed successfully")
+    message: str = Field(..., description="Summary of curation results")
+    execution_time_seconds: float = Field(
+        ..., ge=0, description="Time taken for execution"
+    )
+
+    # Input tracking
+    sample_ids_requested: List[str] = Field(
+        ..., description="Sample IDs requested for curation"
+    )
+    target_field: str = Field(
+        default="AssayType", description="Target metadata field that was curated"
+    )
+    session_directory: str = Field(..., description="Session directory used")
+
+    # Output data - full AssayTypeCurationResult objects with complete information
+    curation_results: Optional[List[AssayTypeCurationResult]] = Field(
+        default=None,
+        description="Detailed curation results with full AssayTypeCurationResult objects including enum classification and confidence scores",
+    )
+
+    # Summary statistics
+    total_samples_processed: int = Field(
+        ..., ge=0, description="Total samples processed"
+    )
+    single_cell_samples_count: int = Field(
+        ..., ge=0, description="Number of samples classified as single cell"
+    )
+    bulk_samples_count: int = Field(
+        ..., ge=0, description="Number of samples classified as bulk"
     )
     unknown_samples_count: int = Field(
         ..., ge=0, description="Number of samples classified as unknown"

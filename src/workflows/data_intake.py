@@ -62,7 +62,7 @@ class DataIntakeWorkflow:
     without using the agents SDK, providing the same results with deterministic behavior.
     """
 
-    def __init__(self, session_id: str, sandbox_dir: str = "sandbox"):
+    def __init__(self, session_id: str, sandbox_dir: str = "sandbox", create_series_directories: bool = True):
         """
         Initialize the data intake workflow.
 
@@ -72,13 +72,21 @@ class DataIntakeWorkflow:
             The unique session identifier
         sandbox_dir : str
             Base sandbox directory
+        create_series_directories : bool
+            Whether to create GSE* series directories during processing
         """
         import time
 
         self.session_id = session_id
         self.sandbox_dir = sandbox_dir
-        self.session_dir = Path(sandbox_dir) / session_id
-        self.session_dir.mkdir(parents=True, exist_ok=True)
+        self.create_series_directories = create_series_directories
+        
+        # For unified discovery structure, use sandbox_dir directly
+        if session_id == "discovery":
+            self.session_dir = Path(sandbox_dir)
+        else:
+            self.session_dir = Path(sandbox_dir) / session_id
+            self.session_dir.mkdir(parents=True, exist_ok=True)
         self._start_time = time.time()
 
         # Validate required environment variables
@@ -389,7 +397,7 @@ class DataIntakeWorkflow:
             # Step 1: Extract GSM metadata
 
             gsm_file = extract_gsm_metadata_impl(
-                gsm_id, str(self.session_dir), self.email, self.api_key
+                gsm_id, str(self.session_dir), self.email, self.api_key, self.create_series_directories
             )
             files_created.append(gsm_file)
             workflow_data["gsm_metadata_file"] = gsm_file
@@ -412,7 +420,7 @@ class DataIntakeWorkflow:
             # Step 3: Extract GSE metadata
 
             gse_file = extract_gse_metadata_impl(
-                series_id, str(self.session_dir), self.email, self.api_key
+                series_id, str(self.session_dir), self.email, self.api_key, self.create_series_directories
             )
             files_created.append(gse_file)
             workflow_data["gse_metadata_file"] = gse_file
@@ -431,7 +439,7 @@ class DataIntakeWorkflow:
 
                 try:
                     paper_file = extract_paper_abstract_impl(
-                        pmid, str(self.session_dir), self.email, self.api_key, gse_file
+                        pmid, str(self.session_dir), self.email, self.api_key, gse_file, self.create_series_directories
                     )
                     files_created.append(paper_file)
                     workflow_data["paper_metadata_file"] = paper_file
@@ -441,10 +449,7 @@ class DataIntakeWorkflow:
                     )
                     print("⚠️  Continuing workflow without paper abstract...")
                     workflow_data["paper_extraction_error"] = str(e)
-            else:
-                print(
-                    f"Step 5: No PMID found for {series_id}, skipping paper extraction"
-                )
+
 
             # Step 6: Create series-sample mapping
 
@@ -508,7 +513,7 @@ class DataIntakeWorkflow:
 
                 try:
                     paper_file = extract_paper_abstract_impl(
-                        pmid, str(self.session_dir), self.email, self.api_key, gse_file
+                        pmid, str(self.session_dir), self.email, self.api_key, gse_file, self.create_series_directories
                     )
                     files_created.append(paper_file)
                     workflow_data["paper_metadata_file"] = paper_file
@@ -565,7 +570,7 @@ class DataIntakeWorkflow:
 
             try:
                 paper_file = extract_paper_abstract_impl(
-                    pmid, str(self.session_dir), self.email, self.api_key
+                    pmid, str(self.session_dir), self.email, self.api_key, None, self.create_series_directories
                 )
                 files_created.append(paper_file)
                 workflow_data["paper_metadata_file"] = paper_file
@@ -996,6 +1001,7 @@ def run_data_intake_workflow(
     sandbox_dir: str = "sandbox",
     fields_to_remove: List[str] = None,
     workflow_type: str = "complete",
+    create_series_directories: bool = True,
 ) -> LinkerOutput:
     """
     Run the data intake workflow.
@@ -1031,7 +1037,7 @@ def run_data_intake_workflow(
         prefix = pipeline_prefixes.get(workflow_type, "di_unknown")
         session_id = f"{prefix}_{str(uuid.uuid4())}"
 
-    workflow = DataIntakeWorkflow(session_id, sandbox_dir)
+    workflow = DataIntakeWorkflow(session_id, sandbox_dir, create_series_directories=create_series_directories)
 
     if workflow_type == "ingestion":
         return workflow.run_ingestion_workflow(input_text)
@@ -1047,7 +1053,7 @@ def run_data_intake_workflow(
             message=f"Invalid workflow type: {workflow_type}",
             execution_time_seconds=0.0,
             sample_ids_requested=[],
-            session_directory=str(Path(sandbox_dir) / session_id) if session_id else "",
+            session_directory=str(Path(sandbox_dir) if session_id == "discovery" else Path(sandbox_dir) / session_id) if session_id else "",
             files_created=[],
             successfully_linked=[],
             failed_linking=[],

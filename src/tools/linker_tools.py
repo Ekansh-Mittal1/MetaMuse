@@ -567,8 +567,10 @@ class LinkerTools:
             # Create cleaned series metadata
             series_metadata_file = series_dir / f"{series_id}_metadata.json"
             if series_metadata_file.exists():
+                # Add sample_id to fields to remove specifically for series metadata
+                series_fields_to_remove = fields_to_remove + ["sample_id"] if fields_to_remove else ["sample_id"]
                 series_metadata = self._create_cleaned_series_metadata(
-                    series_metadata_file, fields_to_remove
+                    series_metadata_file, series_fields_to_remove
                 )
 
             # Create cleaned sample metadata
@@ -589,6 +591,7 @@ class LinkerTools:
             # Create the curation data package
             curation_package = CurationDataPackage(
                 sample_id=sample_id,
+                series_id=series_id,
                 series_metadata=series_metadata,
                 sample_metadata=sample_metadata,
                 abstract_metadata=abstract_metadata,
