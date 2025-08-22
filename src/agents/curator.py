@@ -282,9 +282,9 @@ def create_curator_agent(
             print(f"⚠️  Could not load extraction template for {target_field}: {e}")
             extraction_template = "# Generic Extraction Template\nExtract relevant candidates for the target field."
 
-        # Use standalone prompt - data passed directly in input
+        # Use optimized prompt - more context-aware and sample-specific
         base_instructions = load_prompt(
-            "curator_agent_standalone.md", session_dir=str(session_dir)
+            "curator_agent_optimized.md", session_dir=str(session_dir)
         )
 
         instructions = (
@@ -497,9 +497,6 @@ async def run_curator_agent(
         # FIX: Ensure session_directory is correct (LLM sometimes mixes session ID with GSM sample ID)
         correct_session_dir = str(Path(existing_session_dir).absolute())
         if final_result.session_directory != correct_session_dir:
-            print(
-                f"🔧 Correcting session_directory: {final_result.session_directory} -> {correct_session_dir}"
-            )
             final_result.session_directory = correct_session_dir
 
         return final_result

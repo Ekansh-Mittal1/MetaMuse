@@ -29,6 +29,20 @@ from src.tools.ingestion_tools import (
     create_series_sample_mapping_impl,
 )
 
+# Import the new SQLite-based tools
+from src.tools.sqlite_ingestion_tools import (
+    extract_gsm_metadata_sqlite_impl,
+    extract_gse_metadata_sqlite_impl,
+    extract_paper_abstract_sqlite_impl,
+    extract_pubmed_id_from_gse_metadata_sqlite_impl,
+    extract_series_id_from_gsm_metadata_sqlite_impl,
+    validate_geo_inputs_sqlite_impl,
+    create_series_sample_mapping_sqlite_impl,
+    search_geo_sqlite_impl,
+    get_database_info_sqlite_impl,
+    download_geometadb_impl,
+)
+
 from src.tools.linker_tools import (
     load_mapping_file_impl,
     find_sample_directory_impl,
@@ -95,107 +109,83 @@ def get_session_tools(session_dir: str | Path) -> list:
 
         @function_tool
         def extract_gsm_metadata(
-            gsm_id: str, email: str = None, api_key: str = None
+            gsm_id: str, db_path: str = "GEOmetadb.sqlite"
         ) -> str:
             """
-            Extract metadata for a GEO Sample (GSM) record.
+            Extract metadata for a GEO Sample (GSM) record using local SQLite database.
 
             This tool retrieves comprehensive metadata for a specific GEO sample,
             including sample characteristics, experimental protocols, and associated
-            information.
+            information from the local GEOmetadb database.
 
             Parameters
             ----------
             gsm_id : str
                 Gene Expression Omnibus sample ID (e.g., "GSM1019742").
-            email : str, optional
-                Email address for NCBI E-Utils identification.
-                If not provided, uses session default.
-            api_key : str, optional
-                NCBI API key for higher rate limits.
-                If not provided, uses session default.
+            db_path : str, optional
+                Path to the GEOmetadb SQLite database.
+                If not provided, uses default "GEOmetadb.sqlite".
 
             Returns
             -------
             str
                 Path to the saved metadata file.
             """
-            # Use session defaults if not provided
-            if email is None:
-                email = default_email
-            if api_key is None:
-                api_key = default_api_key
-
-            return extract_gsm_metadata_impl(gsm_id, session_dir, email, api_key)
+            return extract_gsm_metadata_sqlite_impl(gsm_id, session_dir, db_path)
 
         @function_tool
         def extract_gse_metadata(
-            gse_id: str, email: str = None, api_key: str = None
+            gse_id: str, db_path: str = "GEOmetadb.sqlite"
         ) -> str:
             """
-            Extract metadata for a GEO Series (GSE) record.
+            Extract metadata for a GEO Series (GSE) record using local SQLite database.
 
             This tool retrieves comprehensive metadata for a specific GEO series,
             including series characteristics, experimental design, and associated
-            information.
+            information from the local GEOmetadb database.
 
             Parameters
             ----------
             gse_id : str
                 Gene Expression Omnibus series ID (e.g., "GSE41588").
-            email : str, optional
-                Email address for NCBI E-Utils identification.
-                If not provided, uses session default.
-            api_key : str, optional
-                NCBI API key for higher rate limits.
-                If not provided, uses session default.
+            db_path : str, optional
+                Path to the GEOmetadb SQLite database.
+                If not provided, uses default "GEOmetadb.sqlite".
 
             Returns
             -------
             str
                 Path to the saved metadata file.
             """
-            # Use session defaults if not provided
-            if email is None:
-                email = default_email
-            if api_key is None:
-                api_key = default_api_key
-
-            return extract_gse_metadata_impl(gse_id, session_dir, email, api_key)
+            return extract_gse_metadata_sqlite_impl(gse_id, session_dir, db_path)
 
         @function_tool
         def extract_paper_abstract(
-            pmid: str, email: str = None, api_key: str = None
+            pmid: str, db_path: str = "GEOmetadb.sqlite"
         ) -> str:
             """
-            Extract abstract and metadata for a PubMed paper.
+            Extract abstract and metadata for a PubMed paper using local SQLite database.
 
             This tool retrieves the abstract, title, authors, and other metadata
-            for a specific PubMed paper using its PMID.
+            for a specific PubMed paper using its PMID from the local GEOmetadb database.
+
+            Note: The GEOmetadb may not contain full PubMed abstracts. This tool
+            provides basic paper information if available in the database.
 
             Parameters
             ----------
             pmid : str
                 PubMed ID (e.g., "23902433").
-            email : str, optional
-                Email address for NCBI E-Utils identification.
-                If not provided, uses session default.
-            api_key : str, optional
-                NCBI API key for higher rate limits.
-                If not provided, uses session default.
+            db_path : str, optional
+                Path to the GEOmetadb SQLite database.
+                If not provided, uses default "GEOmetadb.sqlite".
 
             Returns
             -------
             str
                 Path to the saved abstract metadata file.
             """
-            # Use session defaults if not provided
-            if email is None:
-                email = default_email
-            if api_key is None:
-                api_key = default_api_key
-
-            return extract_paper_abstract_impl(pmid, session_dir, email, api_key)
+            return extract_paper_abstract_sqlite_impl(pmid, session_dir, db_path)
 
         @function_tool
         def extract_pubmed_id_from_gse_metadata(gse_metadata_file: str) -> str:
@@ -215,7 +205,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             str
                 The extracted PubMed ID or an error message.
             """
-            return extract_pubmed_id_from_gse_metadata_impl(gse_metadata_file)
+            return extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file)
 
         @function_tool
         def extract_series_id_from_gsm_metadata(gsm_metadata_file: str) -> str:
@@ -235,7 +225,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             str
                 The extracted series ID or an error message.
             """
-            return extract_series_id_from_gsm_metadata_impl(gsm_metadata_file)
+            return extract_series_id_from_gsm_metadata_sqlite_impl(gsm_metadata_file)
 
         @function_tool
         def validate_geo_inputs(
@@ -248,7 +238,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             Validate GEO and PubMed inputs for proper format.
 
             This tool validates that provided IDs follow the correct format
-            and patterns expected by NCBI services.
+            and patterns expected by the system.
 
             Parameters
             ----------
@@ -266,23 +256,29 @@ def get_session_tools(session_dir: str | Path) -> list:
             str
                 JSON string with validation results.
             """
-            return validate_geo_inputs_impl(gsm_id, gse_id, pmid, target_field)
+            return validate_geo_inputs_sqlite_impl(gsm_id, gse_id, pmid, target_field)
 
         @function_tool
-        def create_series_sample_mapping() -> str:
+        def create_series_sample_mapping(db_path: str = "GEOmetadb.sqlite") -> str:
             """
-            Create a mapping between series and samples in the session directory.
+            Create a mapping between series and samples using the local database.
 
             This tool scans the session directory for GEO metadata files and
             creates a mapping structure showing the relationship between
-            series (GSE) and samples (GSM).
+            series (GSE) and samples (GSM) using the local GEOmetadb database.
+
+            Parameters
+            ----------
+            db_path : str, optional
+                Path to the GEOmetadb SQLite database.
+                If not provided, uses default "GEOmetadb.sqlite".
 
             Returns
             -------
             str
                 JSON string with the series-sample mapping.
             """
-            return create_series_sample_mapping_impl(session_dir)
+            return create_series_sample_mapping_sqlite_impl(session_dir, db_path)
 
         @function_tool
         def load_mapping_file() -> str:
@@ -298,6 +294,80 @@ def get_session_tools(session_dir: str | Path) -> list:
                 JSON string containing the mapping information.
             """
             return load_mapping_file_impl(session_dir)
+
+        @function_tool
+        def search_geo_sqlite(
+            query: str, search_type: str = "all", limit: int = 100, db_path: str = "GEOmetadb.sqlite"
+        ) -> str:
+            """
+            Search GEO database using local SQLite database.
+
+            This tool provides search functionality across GSE, GSM, and GPL records
+            using SQL LIKE queries on the local database.
+
+            Parameters
+            ----------
+            query : str
+                Search query string.
+            search_type : str
+                Type of search: 'all', 'gse', 'gsm', 'gpl'.
+            limit : int
+                Maximum number of results to return.
+            db_path : str, optional
+                Path to the GEOmetadb SQLite database.
+                If not provided, uses default "GEOmetadb.sqlite".
+
+            Returns
+            -------
+            str
+                JSON string with search results.
+            """
+            return search_geo_sqlite_impl(query, search_type, limit, db_path)
+
+        @function_tool
+        def get_database_info(db_path: str = "GEOmetadb.sqlite") -> str:
+            """
+            Get information about the local GEOmetadb database.
+
+            This tool provides database statistics, table information, and
+            other useful metadata about the local SQLite database.
+
+            Parameters
+            ----------
+            db_path : str, optional
+                Path to the GEOmetadb SQLite database.
+                If not provided, uses default "GEOmetadb.sqlite".
+
+            Returns
+            -------
+            str
+                JSON string with database information.
+            """
+            return get_database_info_sqlite_impl(db_path)
+
+        @function_tool
+        def download_geometadb(db_path: str = "GEOmetadb.sqlite", force: bool = False) -> str:
+            """
+            Download the GEOmetadb SQLite database.
+
+            This tool downloads the latest version of the GEOmetadb database
+            from the official source and extracts it for local use.
+
+            Parameters
+            ----------
+            db_path : str, optional
+                Path where the database should be saved.
+                If not provided, uses default "GEOmetadb.sqlite".
+            force : bool, optional
+                Force download even if database already exists.
+                Default is False.
+
+            Returns
+            -------
+            str
+                Success or error message.
+            """
+            return download_geometadb_impl(db_path, force)
 
         @function_tool
         def find_sample_directory(sample_id: str) -> str:

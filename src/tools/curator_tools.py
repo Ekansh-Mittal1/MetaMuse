@@ -483,19 +483,14 @@ def get_data_intake_context_impl() -> Dict[str, Any]:
             # DEBUG: Show what data is being returned
             result = curator_module._data_intake_output.model_dump()
             print(
-                f"🔍 DEBUG: Data intake contains {len(result.get('curation_packages', []))} packages"
             )
             if result.get("curation_packages"):
                 package = result["curation_packages"][0]
-                print(f"🔍 DEBUG: Sample ID: {package.get('sample_id', 'Unknown')}")
                 print(
-                    f"🔍 DEBUG: Has sample metadata: {package.get('sample_metadata') is not None}"
                 )
                 print(
-                    f"🔍 DEBUG: Has series metadata: {package.get('series_metadata') is not None}"
                 )
                 print(
-                    f"🔍 DEBUG: Has abstract metadata: {package.get('abstract_metadata') is not None}"
                 )
 
             # Convert the LinkerOutput to a dictionary and return as JSON
@@ -527,7 +522,6 @@ def get_data_intake_context_impl() -> Dict[str, Any]:
 
     except Exception as e:
         print(
-            f"🔍 DEBUG: Error in get_data_intake_context: {type(e).__name__}: {str(e)}"
         )
         return {
             "success": False,
@@ -555,8 +549,6 @@ def serialize_agent_output_impl(output_type: str) -> Dict[str, Any]:
         Dictionary with serialization result and status
     """
     print(f"🔧 TOOL: serialize_agent_output - output_type: {output_type}")
-    print(f"🔍 DEBUG: Received output_type: {repr(output_type)}")
-    print("🔍 DEBUG: Expected types: ['ingestion', 'linker', 'curator', 'json', 'csv']")
 
     try:
         if output_type.lower() in ["ingestion", "linker", "curator"]:
@@ -576,7 +568,6 @@ def serialize_agent_output_impl(output_type: str) -> Dict[str, Any]:
                 "notes": "Output has been processed and is available in the session directory",
             }
         else:
-            print(f"🔍 DEBUG: output_type '{output_type}' not in supported types")
             return {
                 "success": False,
                 "message": f"Unknown output type: {output_type}",
@@ -594,7 +585,6 @@ def serialize_agent_output_impl(output_type: str) -> Dict[str, Any]:
             }
     except Exception as e:
         print(
-            f"🔍 DEBUG: Error in serialize_agent_output: {type(e).__name__}: {str(e)}"
         )
         return {
             "success": False,
@@ -622,7 +612,6 @@ def set_testing_session_impl() -> Dict[str, Any]:
             "timestamp": str(datetime.now()),
         }
     except Exception as e:
-        print(f"🔍 DEBUG: Error in set_testing_session: {type(e).__name__}: {str(e)}")
         traceback.print_exc()
 
         return {

@@ -207,13 +207,17 @@ async def run_workflow(
         print("🎯 Starting batch samples workflow")
 
         # Parse parameters from input_data
-        # Format: "sample_count=100 batch_size=5 output_dir=batch target_fields=disease,tissue sample_type_filter=primary_sample"
+        # Format: "sample_count=100 batch_size=5 output_dir=batch target_fields=disease,tissue sample_type_filter=primary_sample batch_name=my_batch output_format=csv"
+        # batch_name: Custom name for the batch directory (optional, creates 'batch_[name]_[timestamp]', otherwise 'batch_[timestamp]')
+        # output_format: Output format for batch results (optional, 'parquet' or 'csv', default: 'parquet')
         sample_count = 100  # Default
         batch_size = 5  # Default
         output_dir = "batch"  # Default
         age_file = "Age.txt"  # Default
         target_fields = None  # Default
         sample_type_filter = None  # Default
+        batch_name = None  # Default
+        output_format = "parquet"  # Default
 
         # Parse input parameters
         if input_data:
@@ -233,6 +237,10 @@ async def run_workflow(
                         target_fields = [field.strip() for field in value.split(",")]
                     elif key == "sample_type_filter":
                         sample_type_filter = value
+                    elif key == "batch_name":
+                        batch_name = value
+                    elif key == "output_format":
+                        output_format = value
 
         try:
             output_path = await run_batch_samples_workflow(
@@ -243,6 +251,8 @@ async def run_workflow(
                 model_provider=model_provider,
                 target_fields=target_fields,
                 sample_type_filter=sample_type_filter,
+                batch_name=batch_name,
+                output_format=output_format,
             )
 
             print("✅ Batch samples workflow completed successfully!")
@@ -317,6 +327,74 @@ async def run_workflow(
         else:
             print(
                 f"❌ Deterministic workflow failed: {result.get('error', 'Unknown error')}"
+            )
+
+        return result
+
+    # Handle deterministic SQL workflow specially (bypasses orchestrator)
+    if workflow_name == "deterministic_sql":
+        from src.workflows.deterministic_sql import run_deterministic_sql_workflow_sync
+
+        # Create session ID for deterministic SQL workflow
+        session_id = f"det_sql_{str(uuid4())}"
+
+        # Extract target field from input if specified
+        target_field = "Disease"  # Default
+        input_lower = input_data.lower()
+
+        # Support multiple formats: "target_field:" and "target_field ="
+        if "target_field:" in input_lower:
+            # Find the position in the original string (case insensitive)
+            pos = input_lower.find("target_field:")
+            before = input_data[:pos].strip()
+            after = input_data[pos + len("target_field:"):].strip()
+            if after:
+                target_field = after.split()[0].strip()
+                input_data = before
+        elif "target_field =" in input_lower:
+            # Find the position in the original string (case insensitive)
+            pos = input_lower.find("target_field =")
+            before = input_data[:pos].strip()
+            after = input_data[pos + len("target_field =") :].strip()
+            if after:
+                target_field = after.split()[0].strip()
+                input_data = before
+        elif "target_field=" in input_lower:
+            # Find the position in the original string (case insensitive)
+            pos = input_lower.find("target_field=")
+            before = input_data[:pos].strip()
+            after = input_data[pos + len("target_field=") :].strip()
+            if after:
+                target_field = after.split()[0].strip()
+                input_data = before
+
+        # Normalize target field to snake_case format for consistency
+        target_field = target_field.lower().replace(" ", "_")
+
+        print(f"🎯 Parsed target field: {target_field}")
+        print(f"📝 Cleaned input: {input_data}")
+
+        result = run_deterministic_sql_workflow_sync(
+            input_text=input_data,
+            target_field=target_field,
+            session_id=session_id,
+            sandbox_dir="sandbox",
+            model_provider=model_provider,
+            max_turns=max_turns,
+        )
+
+        # Print results
+        if result.get("success"):
+            print("✅ Deterministic SQL workflow completed successfully!")
+            print(f"📁 Session directory: {result['session_directory']}")
+            print(f"🎯 Target field: {result['target_field']}")
+            print(f"📊 Summary: {result['summary']}")
+            print(f"📄 Files created: {len(result.get('files_created', []))}")
+            for file_path in result.get("files_created", []):
+                print(f"   📄 {Path(file_path).name}")
+        else:
+            print(
+                f"❌ Deterministic SQL workflow failed: {result.get('error', 'Unknown error')}"
             )
 
         return result
@@ -500,6 +578,8 @@ def list_workflows():
         "enhanced_hybrid_pipeline": "Enhanced hybrid pipeline: Deterministic data_intake + CuratorAgent + NormalizerAgent",
         "enhanced_full_pipeline": "Enhanced full pipeline: IngestionAgent → LinkerAgent → CuratorAgent → NormalizerAgent",
         "curation": "Single-agent metadata curation pipeline for extracting specific fields",
+        "deterministic": "Deterministic workflow: data_intake → curator → normalizer",
+        "deterministic_sql": "Deterministic SQL workflow: data_intake_sql → curator → normalizer",
         "batch_targets": "Batch processing pipeline for all metadata fields (Disease, Tissue, Organ, Cell Line, Ethnicity, Developmental Stage, Gender/Sex, Organism, PubMed ID, Instrument)",
     }
 
@@ -524,6 +604,7 @@ Examples:
   python main.py enhanced_full_pipeline "GSM1000981 target_field Disease"
   python main.py curation "session directory sandbox/test-session target_field Disease samples GSM1000981,GSM1000984"
   python main.py deterministic "GSM1000981 target_field:disease"
+  python main.py deterministic_sql "GSM1000981 target_field:disease"
   python main.py batch_targets "GSM1000981"
   python main.py batch_targets "GSM1000981,GSM1000984"
   python main.py batch_samples "sample_count=100 batch_size=5"
@@ -549,6 +630,7 @@ Examples:
             "curation",
             "structured_pipeline",
             "deterministic",
+            "deterministic_sql",
             "test_normalizer",
             "batch_targets",
             "batch_samples",
@@ -561,8 +643,8 @@ Examples:
     parser.add_argument(
         "--model",
         choices=MODEL_CHOICES,
-        default="google/gemini-2.5-flash",
-        help="Model to use for processing (default: google/gemini-2.5-flash)",
+        default="google/gemini-2.5-pro",
+        help="Model to use for processing (default: google/gemini-2.5-pro)",
     )
 
     parser.add_argument(

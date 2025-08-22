@@ -224,7 +224,13 @@ z_src_OLD/
 
 # Data
 sample_characteristics.tsv
+data/
+archs4_samples/
+
+# models
+
 
 # Normalization data and indexes
 src/normalization/semantic_indexes/
 src/normalization/dictionaries/
+src/normalization/model_cache/

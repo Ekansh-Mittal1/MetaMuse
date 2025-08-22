@@ -11,13 +11,28 @@ The workflow uses different processing stages based on field requirements:
 4. Unified: Normalization (Disease, Organ, Tissue)
 
 Final output is a comprehensive JSON file with all extracted metadata.
+
+RETRY LOGIC:
+- All curation and normalization operations now include automatic retry logic
+- Retries occur when operations return NoneType (indicating failure)
+- Uses exponential backoff with configurable delays
+- Maximum of 3 retry attempts per operation
+- Comprehensive logging of retry attempts and failures
+- Error tracking integration for monitoring and debugging
+
+THREE-MODEL OPTIMIZATION:
+- Sample Type Curation: Gemini 2.5 Flash for faster, simple sample type determination
+- Conditional Curation: Gemini 2.5 Pro for higher quality, complex field-specific reasoning
+- Normalization: Gemini 2.5 Flash for faster, cost-effective standardization
+- Automatic model selection based on operation type and complexity
+- Maintains retry logic with operation-specific models
 """
 
 import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple, Optional
 from uuid import uuid4
 
 from src.workflows.data_intake import run_data_intake_workflow
@@ -35,6 +50,158 @@ from src.tools.batch_processing_tools import (
 from pydantic import BaseModel
 from typing import Optional
 
+# Add retry configuration constants
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # seconds
+RETRY_BACKOFF_MULTIPLIER = 2
+
+# Dual-model configuration for optimal performance
+SAMPLE_TYPE_CURATION_MODEL = "google/gemini-2.5-flash"  # Faster for simple sample type determination
+CONDITIONAL_CURATION_MODEL = "google/gemini-2.5-pro"    # Higher quality for complex field-specific curation
+NORMALIZATION_MODEL = "google/gemini-2.5-flash"         # Faster and more cost-effective for straightforward tasks
+
+# Configuration loaded silently - models will be selected automatically based on operation type
+
+
+def create_model_provider_for_operation(operation_type: str, base_model_provider=None):
+    """
+    Create a model provider optimized for the specific operation type.
+    
+    Parameters
+    ----------
+    operation_type : str
+        Type of operation ('sample_type_curation', 'conditional_curation', or 'normalization')
+    base_model_provider : ModelProvider, optional
+        Base model provider to use as template
+        
+    Returns
+    -------
+    ModelProvider
+        Model provider configured for the specific operation
+    """
+    from agents import ModelProvider
+    
+    if operation_type.lower() == "sample_type_curation":
+        model_name = SAMPLE_TYPE_CURATION_MODEL
+    elif operation_type.lower() == "conditional_curation":
+        model_name = CONDITIONAL_CURATION_MODEL
+    elif operation_type.lower() == "normalization":
+        model_name = NORMALIZATION_MODEL
+    else:
+        # Default to conditional curation model for unknown operations
+        model_name = CONDITIONAL_CURATION_MODEL
+    
+    # If we have a base model provider, create a new one with the specific model
+    if base_model_provider and hasattr(base_model_provider, 'default_model'):
+        # Create a new provider with the operation-specific model
+        # Use the base provider's class to create a new instance
+        return type(base_model_provider)(default_model=model_name)
+    else:
+        # Create a new provider from scratch using the base provider's class
+        if base_model_provider:
+            return type(base_model_provider)(default_model=model_name)
+        else:
+            # Fallback: create a simple model provider
+            from agents import ModelProvider
+            return ModelProvider(default_model=model_name)
+
+
+async def retry_operation_with_backoff(
+    operation_func,
+    operation_name: str,
+    target_field: str,
+    sample_ids: List[str],
+    max_retries: int = MAX_RETRIES,
+    base_delay: float = RETRY_DELAY,
+    backoff_multiplier: float = RETRY_BACKOFF_MULTIPLIER,
+    error_tracker=None,
+    model_provider=None,
+    **kwargs
+) -> Tuple[str, Any]:
+    """
+    Retry an operation with exponential backoff when it returns None.
+    
+    Parameters
+    ----------
+    operation_func : callable
+        The async function to retry
+    operation_name : str
+        Name of the operation for logging (e.g., "curation", "normalization")
+    target_field : str
+        The target field being processed
+    sample_ids : List[str]
+        List of sample IDs being processed
+    max_retries : int
+        Maximum number of retry attempts
+    base_delay : float
+        Base delay between retries in seconds
+    backoff_multiplier : float
+        Multiplier for exponential backoff
+    error_tracker : object, optional
+        Error tracker for logging failures
+    **kwargs
+        Additional arguments to pass to operation_func
+        
+    Returns
+    -------
+    Tuple[str, Any]
+        Tuple of (target_field, result) where result is the operation output or None if all retries failed
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries + 1):
+        try:
+            result = await operation_func(**kwargs)
+            
+            if result is not None:
+                # Only show retry success if it wasn't the first attempt
+                if attempt > 0:
+                    print(f"✅ {operation_name.capitalize()} succeeded for {target_field} on attempt {attempt + 1}")
+                return target_field, result
+            else:
+                # Only show retry messages if we're actually retrying
+                if attempt < max_retries:
+                    delay = base_delay * (backoff_multiplier ** attempt)
+                    print(f"⚠️  {operation_name.capitalize()} returned None for {target_field}, retrying in {delay:.1f} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    print(f"❌ {operation_name.capitalize()} failed for {target_field} after {max_retries + 1} attempts")
+                    
+                    # Log the failure
+                    if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
+                        error_tracker.track_target_field_error(
+                            target_field=target_field,
+                            error=f"{operation_name} returned None after {max_retries + 1} attempts",
+                            samples=sample_ids,
+                            stage=f"{operation_name}_retry_exhausted"
+                        )
+                    
+                    return target_field, None
+                    
+        except Exception as e:
+            last_exception = e
+            # Only show retry messages if we're actually retrying
+            if attempt < max_retries:
+                delay = base_delay * (backoff_multiplier ** attempt)
+                print(f"❌ {operation_name.capitalize()} failed for {target_field}: {str(e)}, retrying in {delay:.1f} seconds...")
+                await asyncio.sleep(delay)
+            else:
+                print(f"❌ {operation_name.capitalize()} failed for {target_field} after {max_retries + 1} attempts")
+                print(f"🔍 Final error: {str(e)}")
+                
+                # Log the failure
+                if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
+                    error_tracker.track_target_field_error(
+                        target_field=target_field,
+                        error=str(e),
+                        samples=sample_ids,
+                        stage=f"{operation_name}_retry_exhausted"
+                    )
+                
+                return target_field, None
+    
+    # This should never be reached, but just in case
+    return target_field, None
 
 
 # Define target field processing requirements
@@ -66,7 +233,7 @@ TARGET_FIELD_CONFIG = {
     
     # Fields requiring only Data Intake (direct extraction) - unchanged
     "direct_only": {
-        "Organism": "platform_organism",
+        "Organism": "organism_ch1",
         "PubMed ID": "pubmed_id",
         "Platform ID": "platform_id",
         "Instrument": "instrument_model",
@@ -325,38 +492,30 @@ async def run_batch_targets_workflow(
         )
 
         async def run_single_curation(target_field: str):
-            """Run curation for a single target field."""
-            try:
+            """Run curation for a single target field with retry logic."""
+            # Create sample type curation-specific model provider
+            curation_model_provider = create_model_provider_for_operation("sample_type_curation", model_provider)
+            
+            async def _run_curation():
                 curator_output = await run_curator_agent(
                     data_intake_output=data_intake_output,
                     target_field=target_field,
                     session_id=session_id,
                     sandbox_dir=sandbox_dir,
-                    model_provider=model_provider,
+                    model_provider=curation_model_provider,
                     max_tokens=max_tokens,
                     max_turns=max_turns,
                     verbose_output=False,
                 )
-                return target_field, curator_output
-
-            except Exception as e:
-                error_msg = f"Initial curation failed for {target_field}: {str(e)}"
-                print(f"❌ {error_msg}")
-                print(f"🔍 DEBUG: Exception type: {type(e)}")
-                print(f"🔍 DEBUG: Exception traceback:")
-                import traceback
-                traceback.print_exc()
-                print(f"🔍 DEBUG: Failed for target_field: {target_field}")
-                
-                if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
-                    error_tracker.track_target_field_error(
-                        target_field=target_field,
-                        error=str(e),
-                        samples=sample_ids,
-                        stage="initial_curation"
-                    )
-                
-                return target_field, None
+                return curator_output
+            
+            return await retry_operation_with_backoff(
+                operation_func=_run_curation,
+                operation_name="curation",
+                target_field=target_field,
+                sample_ids=sample_ids,
+                error_tracker=error_tracker
+            )
 
         # Run initial curation in parallel
         curation_start_time = time.time()
@@ -480,8 +639,11 @@ async def run_batch_targets_workflow(
                 print(f"  🎯 Conditional curation for {sample_type}: {curation_fields}")
 
                 async def run_conditional_curation(target_field: str, samples: List[str]):
-                    """Run conditional curation for a single target field and sample type group."""
-                    try:
+                    """Run conditional curation for a single target field and sample type group with retry logic."""
+                    # Create conditional curation-specific model provider
+                    curation_model_provider = create_model_provider_for_operation("conditional_curation", model_provider)
+                    
+                    async def _run_conditional_curation():
                         # Filter curation packages for this sample type's samples
                         filtered_curation_packages = []
                         if data_intake_output.curation_packages:
@@ -507,31 +669,20 @@ async def run_batch_targets_workflow(
                             target_field=target_field,
                             session_id=f"{session_id}_{sample_type}",
                             sandbox_dir=sandbox_dir,
-                            model_provider=model_provider,
+                            model_provider=curation_model_provider,
                             max_tokens=max_tokens,
                             max_turns=max_turns,
                             verbose_output=False,
                         )
-                        return target_field, curator_output
-
-                    except Exception as e:
-                        error_msg = f"Conditional curation failed for {target_field} ({sample_type}): {str(e)}"
-                        print(f"❌ {error_msg}")
-                        print(f"🔍 DEBUG: Exception type: {type(e)}")
-                        print(f"🔍 DEBUG: Exception traceback:")
-                        import traceback
-                        traceback.print_exc()
-                        print(f"🔍 DEBUG: Failed for samples: {samples}")
-                        
-                        if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
-                            error_tracker.track_target_field_error(
-                                target_field=target_field,
-                                error=str(e),
-                                samples=samples,
-                                stage=f"conditional_curation_{sample_type}"
-                            )
-                        
-                        return target_field, None
+                        return curator_output
+                    
+                    return await retry_operation_with_backoff(
+                        operation_func=_run_conditional_curation,
+                        operation_name="curation",
+                        target_field=target_field,
+                        sample_ids=samples,
+                        error_tracker=error_tracker
+                    )
 
                 # Run conditional curation in parallel
                 conditional_curation_tasks = [
@@ -688,12 +839,15 @@ async def run_batch_targets_workflow(
                 print(f"   - Curator output type: {type(curator_output)}")
                 print(f"   - Curator output success: {getattr(curator_output, 'success', 'N/A')}")
 
+                # Create normalization-specific model provider
+                normalization_model_provider = create_model_provider_for_operation("normalization", model_provider)
+                
                 normalizer_output = await run_normalizer_agent(
                     curator_output=curator_output,
                     target_field=target_field,
                     session_id=session_id,
                     sandbox_dir=sandbox_dir,
-                    model_provider=model_provider,
+                    model_provider=normalization_model_provider,
                     max_tokens=max_tokens,
                     max_turns=max_turns,
                     verbose_output=False,
@@ -1049,40 +1203,30 @@ async def run_initial_processing(
         )
 
         async def run_single_curation(target_field: str):
-            """Run curation for a single target field."""
-            try:
-                print(f"🔍 DEBUG: Starting initial curation for {target_field}")
+            """Run curation for a single target field with retry logic."""
+            # Create sample type curation-specific model provider
+            curation_model_provider = create_model_provider_for_operation("sample_type_curation", model_provider)
+            
+            async def _run_curation():
                 curator_output = await run_curator_agent(
                     data_intake_output=data_intake_output,
                     target_field=target_field,
                     session_id=session_id,
                     sandbox_dir=sandbox_dir,
-                    model_provider=model_provider,
+                    model_provider=curation_model_provider,
                     max_tokens=max_tokens,
                     max_turns=max_turns,
                     verbose_output=False,
                 )
-                print(f"🔍 DEBUG: Initial curation completed successfully for {target_field}")
-                return target_field, curator_output
-
-            except Exception as e:
-                error_msg = f"Initial curation failed for {target_field}: {str(e)}"
-                print(f"❌ {error_msg}")
-                print(f"🔍 DEBUG: Exception type: {type(e)}")
-                print(f"🔍 DEBUG: Exception traceback:")
-                import traceback
-                traceback.print_exc()
-                print(f"🔍 DEBUG: Failed for target_field: {target_field}")
-                
-                if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
-                    error_tracker.track_target_field_error(
-                        target_field=target_field,
-                        error=str(e),
-                        samples=sample_ids,
-                        stage="initial_curation"
-                    )
-                
-                return target_field, None
+                return curator_output
+            
+            return await retry_operation_with_backoff(
+                operation_func=_run_curation,
+                operation_name="curation",
+                target_field=target_field,
+                sample_ids=sample_ids,
+                error_tracker=error_tracker
+            )
 
         # Run initial curation in parallel
         curation_start_time = time.time()
@@ -1168,7 +1312,6 @@ async def run_initial_processing(
 
 
         end_time = time.time()
-        print(f"✅ Initial processing completed in {end_time - start_time:.2f} seconds")
 
         return InitialProcessingResult(
             success=True,
@@ -1285,35 +1428,30 @@ async def run_conditional_processing(
                 )
                 
                 async def run_conditional_curation(target_field: str):
-                    """Run conditional curation for a single target field."""
-                    try:
-
+                    """Run conditional curation for a single target field with retry logic."""
+                    # Create conditional curation-specific model provider
+                    curation_model_provider = create_model_provider_for_operation("conditional_curation", model_provider)
+                    
+                    async def _run_conditional_curation():
                         curator_output = await run_curator_agent(
                             data_intake_output=filtered_linker_output,
                             target_field=target_field,
                             session_id=initial_result.session_id,
                             sandbox_dir=Path(session_directory).parent,
-                            model_provider=model_provider,
+                            model_provider=curation_model_provider,
                             max_tokens=max_tokens,
                             max_turns=max_turns,
                             verbose_output=False,
                         )
-
-                        return target_field, curator_output
-
-                    except Exception as e:
-                        error_msg = f"Conditional curation failed for {target_field} in {sample_type}: {str(e)}"
-                        print(f"❌ {error_msg}")
-                        
-                        if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
-                            error_tracker.track_target_field_error(
-                                target_field=target_field,
-                                error=str(e),
-                                samples=sample_ids,
-                                stage="conditional_curation"
-                            )
-                        
-                        return target_field, None
+                        return curator_output
+                    
+                    return await retry_operation_with_backoff(
+                        operation_func=_run_conditional_curation,
+                        operation_name="curation",
+                        target_field=target_field,
+                        sample_ids=sample_ids,
+                        error_tracker=error_tracker
+                    )
                 
                 # Run conditional curation tasks
                 conditional_curation_tasks = [run_conditional_curation(field) for field in curation_fields]
@@ -1483,8 +1621,11 @@ async def run_unified_normalization(
         if available_normalization_fields:
             
             async def run_single_normalization(target_field: str):
-                """Run normalization for a single target field."""
-                try:
+                """Run normalization for a single target field with retry logic."""
+                # Create normalization-specific model provider
+                normalization_model_provider = create_model_provider_for_operation("normalization", model_provider)
+                
+                async def _run_normalization():
                     field_key = target_field.lower()
                     curator_output = all_curator_outputs[field_key]
                     
@@ -1495,26 +1636,20 @@ async def run_unified_normalization(
                         target_field=target_field,
                         session_id=initial_result.session_id,
                         sandbox_dir=Path(session_directory).parent,
-                        model_provider=model_provider,
+                        model_provider=normalization_model_provider,
                         max_tokens=max_tokens,
                         max_turns=max_turns,
                         verbose_output=False,
                     )
-                    return target_field, normalizer_output
+                    return normalizer_output
                 
-                except Exception as e:
-                    error_msg = f"Unified normalization failed for {target_field}: {str(e)}"
-                    print(f"❌ {error_msg}")
-                    
-                    if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
-                        error_tracker.track_target_field_error(
-                            target_field=target_field,
-                            error=str(e),
-                            samples=initial_result.sample_ids,
-                            stage="unified_normalization"
-                        )
-                    
-                    return target_field, None
+                return await retry_operation_with_backoff(
+                    operation_func=_run_normalization,
+                    operation_name="normalization",
+                    target_field=target_field,
+                    sample_ids=initial_result.sample_ids,
+                    error_tracker=error_tracker
+                )
             
             # Run normalization tasks in parallel
             normalization_tasks = [run_single_normalization(field) for field in available_normalization_fields]

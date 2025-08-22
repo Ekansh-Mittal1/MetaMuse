@@ -15,7 +15,7 @@ from .common import KeyValue
 GSM_STANDARD_FIELDS = {
     # Core required fields
     "title",
-    "geo_accession",
+    "gsm",
     # Status and dates
     "status",
     "submission_date",
@@ -25,47 +25,41 @@ GSM_STANDARD_FIELDS = {
     "channel_count",
     "source_name_ch1",
     "organism_ch1",
-    "taxid_ch1",
     "characteristics_ch1",
     # Protocols
     "treatment_protocol_ch1",
-    "growth_protocol_ch1",
     "extract_protocol_ch1",
+    "label_protocol_ch1",
     # Technical details
     "molecule_ch1",
+    "label_ch1",
     "description",
     "data_processing",
-    "platform_id",
-    "instrument_model",
-    "library_selection",
-    "library_source",
-    "library_strategy",
-    # Contact information
-    "contact_name",
-    "contact_email",
-    "contact_laboratory",
-    "contact_department",
-    "contact_institute",
-    "contact_address",
-    "contact_city",
-    "contact_state",
-    "contact_country",
-    "contact_phone",
-    "contact_fax",
-    "contact_zip_postal_code",
-    "contact_zip/postal_code",
+    # Channel 2 information (for dual-channel experiments)
+    "source_name_ch2",
+    "organism_ch2",
+    "characteristics_ch2",
+    "molecule_ch2",
+    "label_ch2",
+    "treatment_protocol_ch2",
+    "extract_protocol_ch2",
+    "label_protocol_ch2",
+    # Hybridization and other protocols
+    "hyb_protocol",
+    # Contact information (single field in actual database)
+    "contact",
+    # Additional files and data
+    "supplementary_file",
+    "data_row_count",
     # Additional standard fields
     "all_series_ids",
     "relation",
-    "supplementary_file_1",
     "series_id",
-    "data_row_count",
 }
 
 GSE_STANDARD_FIELDS = {
     # Core required fields
     "title",
-    "geo_accession",
     # Status and dates
     "status",
     "submission_date",
@@ -80,20 +74,14 @@ GSE_STANDARD_FIELDS = {
     "contributor",
     # Sample information
     "sample_id",
-    # Contact information
-    "contact_name",
-    "contact_email",
-    "contact_laboratory",
-    "contact_department",
-    "contact_institute",
-    "contact_address",
-    "contact_city",
-    "contact_state",
-    "contact_country",
-    "contact_phone",
-    "contact_fax",
-    "contact_zip_postal_code",
-    "contact_zip/postal_code",
+    # Contact information (single field in actual database)
+    "contact",
+    # Additional fields that may appear in GSE data
+    "web_link",
+    "repeats",
+    "repeats_sample_list",
+    "variable",
+    "variable_description",
     # Platform and organism info
     "platform_id",
     "platform_organism",
@@ -128,8 +116,8 @@ class GSMAttributes(BaseModel):
 
     # Core required fields
     title: str = Field(..., description="Sample title")
-    geo_accession: str = Field(
-        ..., pattern=r"^GSM\d+$", description="GEO sample accession"
+    geo_accession: Optional[str] = Field(
+        None, pattern=r"^GSM\d+$", description="GEO sample accession"
     )
 
     # Status and dates (often removed during cleaning)
@@ -144,7 +132,6 @@ class GSMAttributes(BaseModel):
         None, description="Source name for channel 1"
     )
     organism_ch1: Optional[str] = Field(None, description="Organism for channel 1")
-    taxid_ch1: Optional[str] = Field(None, description="Taxonomy ID for channel 1")
     characteristics_ch1: Optional[str] = Field(
         None, description="Sample characteristics"
     )
@@ -153,41 +140,34 @@ class GSMAttributes(BaseModel):
     treatment_protocol_ch1: Optional[str] = Field(
         None, description="Treatment protocol"
     )
-    growth_protocol_ch1: Optional[str] = Field(None, description="Growth protocol")
     extract_protocol_ch1: Optional[str] = Field(None, description="Extraction protocol")
+    label_protocol_ch1: Optional[str] = Field(None, description="Label protocol")
 
     # Technical details
     molecule_ch1: Optional[str] = Field(None, description="Molecule type")
+    label_ch1: Optional[str] = Field(None, description="Label for channel 1")
     description: Optional[str] = Field(None, description="Sample description")
     data_processing: Optional[str] = Field(None, description="Data processing steps")
-    platform_id: Optional[str] = Field(None, description="Platform ID")
-    instrument_model: Optional[str] = Field(None, description="Instrument model")
-    library_selection: Optional[str] = Field(
-        None, description="Library selection method"
-    )
-    library_source: Optional[str] = Field(None, description="Library source")
-    library_strategy: Optional[str] = Field(None, description="Library strategy")
-
-    # Contact information (often removed during cleaning)
-    contact_name: Optional[str] = Field(None, description="Contact name")
-    contact_email: Optional[str] = Field(None, description="Contact email")
-    contact_laboratory: Optional[str] = Field(None, description="Contact laboratory")
-    contact_department: Optional[str] = Field(None, description="Contact department")
-    contact_institute: Optional[str] = Field(None, description="Contact institute")
-    contact_address: Optional[str] = Field(None, description="Contact address")
-    contact_city: Optional[str] = Field(None, description="Contact city")
-    contact_state: Optional[str] = Field(None, description="Contact state")
-    contact_country: Optional[str] = Field(None, description="Contact country")
-    contact_phone: Optional[str] = Field(None, description="Contact phone")
-    contact_fax: Optional[str] = Field(None, description="Contact fax")
-    contact_zip_postal_code: Optional[str] = Field(
-        None, description="Contact zip/postal code"
-    )
-    contact_zip_postal_code: Optional[str] = Field(
-        None,
-        alias="contact_zip/postal_code",
-        description="Contact zip/postal code (with slash)",
-    )
+    
+    # Channel 2 information (for dual-channel experiments)
+    source_name_ch2: Optional[str] = Field(None, description="Source name for channel 2")
+    organism_ch2: Optional[str] = Field(None, description="Organism for channel 2")
+    characteristics_ch2: Optional[str] = Field(None, description="Characteristics for channel 2")
+    molecule_ch2: Optional[str] = Field(None, description="Molecule type for channel 2")
+    label_ch2: Optional[str] = Field(None, description="Label for channel 2")
+    treatment_protocol_ch2: Optional[str] = Field(None, description="Treatment protocol for channel 2")
+    extract_protocol_ch2: Optional[str] = Field(None, description="Extraction protocol for channel 2")
+    label_protocol_ch2: Optional[str] = Field(None, description="Label protocol for channel 2")
+    
+    # Hybridization and other protocols
+    hyb_protocol: Optional[str] = Field(None, description="Hybridization protocol")
+    
+    # Contact information (single field in actual database)
+    contact: Optional[str] = Field(None, description="Contact information")
+    
+    # Additional files and data
+    supplementary_file: Optional[str] = Field(None, description="Supplementary files")
+    data_row_count: Optional[str] = Field(None, description="Data row count")
 
     # Additional fields for multi-series samples
     all_series_ids: Optional[str] = Field(
@@ -226,8 +206,8 @@ class GSEAttributes(BaseModel):
 
     # Core required fields
     title: str = Field(..., description="Series title")
-    geo_accession: str = Field(
-        ..., pattern=r"^GSE\d+$", description="GEO series accession"
+    geo_accession: Optional[str] = Field(
+        None, pattern=r"^GSE\d+$", description="GEO series accession"
     )
 
     # Status and dates (often removed during cleaning)
@@ -250,29 +230,16 @@ class GSEAttributes(BaseModel):
     # Sample information
     sample_id: Optional[str] = Field(None, description="Comma-separated sample IDs")
 
-    # Contact information (often removed during cleaning)
-    contact_name: Optional[str] = Field(None, description="Contact name")
-    contact_email: Optional[str] = Field(None, description="Contact email")
-    contact_laboratory: Optional[str] = Field(None, description="Contact laboratory")
-    contact_department: Optional[str] = Field(None, description="Contact department")
-    contact_institute: Optional[str] = Field(None, description="Contact institute")
-    contact_address: Optional[str] = Field(None, description="Contact address")
-    contact_city: Optional[str] = Field(None, description="Contact city")
-    contact_state: Optional[str] = Field(None, description="Contact state")
-    contact_country: Optional[str] = Field(None, description="Contact country")
-    contact_phone: Optional[str] = Field(None, description="Contact phone")
-    contact_fax: Optional[str] = Field(None, description="Contact fax")
-    contact_zip_postal_code: Optional[str] = Field(
-        None, description="Contact zip/postal code"
-    )
-    contact_zip_postal_code: Optional[str] = Field(
-        None,
-        alias="contact_zip/postal_code",
-        description="Contact zip/postal code (with slash)",
-    )
-
+    # Contact information (single field in actual database)
+    contact: Optional[str] = Field(None, description="Contact information")
+    
     # Additional fields that may appear in GSE data
     supplementary_file: Optional[str] = Field(None, description="Supplementary file")
+    web_link: Optional[str] = Field(None, description="Web link")
+    repeats: Optional[str] = Field(None, description="Repeats information")
+    repeats_sample_list: Optional[str] = Field(None, description="Repeats sample list")
+    variable: Optional[str] = Field(None, description="Variable information")
+    variable_description: Optional[str] = Field(None, description="Variable description")
     platform_id: Optional[str] = Field(None, description="Platform ID")
     platform_organism: Optional[str] = Field(None, description="Platform organism")
     platform_taxid: Optional[str] = Field(None, description="Platform taxonomy ID")

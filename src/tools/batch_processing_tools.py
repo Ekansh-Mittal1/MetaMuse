@@ -19,7 +19,7 @@ def extract_direct_fields_from_data_intake(
     """
     Extract direct fields from data intake output that don't require curation/normalization.
 
-    These fields are: Organism (platform_organism), PubMed ID (pubmed_id),
+    These fields are: Organism (organism_ch1), PubMed ID (pubmed_id),
     Instrument (platform_id + instrument_model).
 
     Parameters
@@ -38,7 +38,7 @@ def extract_direct_fields_from_data_intake(
     -------
     {
         "GSM1006725": {
-            "organism": {"value": "Homo sapiens", "source": "platform_organism"},
+            "organism": {"value": "Homo sapiens", "source": "organism_ch1"},
             "pubmed_id": {"value": "23382218", "source": "pubmed_id"},
             "platform_id": {"value": "GPL11154", "source": "platform_id"},
             "instrument_model": {"value": "Illumina HiSeq 2000", "source": "instrument_model"}
@@ -90,23 +90,26 @@ def extract_direct_fields_from_data_intake(
             results[sample_id] = {}
             continue
 
-        # Extract organism from platform_organism
+        # Extract organism from organism_ch1 (sample metadata)
         organism_value = None
-        series_metadata = curation_package.get("series_metadata", {})
-        if series_metadata and isinstance(series_metadata, dict):  # Add type check
-            content = series_metadata.get("content", [])
+        sample_metadata = curation_package.get("sample_metadata", {})
+        if sample_metadata and isinstance(sample_metadata, dict):  # Add type check
+            content = sample_metadata.get("content", [])
             if isinstance(content, list):  # Ensure content is a list
                 for item in content:
-                    if isinstance(item, dict) and item.get("key") == "platform_organism":
+                    if isinstance(item, dict) and item.get("key") == "organism_ch1":
                         organism_value = item.get("value")
                         break
 
         if organism_value:
             sample_results["organism"] = {
                 "value": organism_value,
-                "source": "platform_organism",
+                "source": "organism_ch1",
                 "confidence": 1.0,
             }
+
+        # Get series_metadata for other fields that need it
+        series_metadata = curation_package.get("series_metadata", {})
 
         # Extract PubMed ID
         pubmed_value = None

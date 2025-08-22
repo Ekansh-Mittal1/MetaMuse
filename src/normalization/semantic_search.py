@@ -23,6 +23,7 @@ class OntologySemanticSearch:
         self,
         dictionary_path,
         model_name="cambridgeltl/SapBERT-from-PubMedBERT-fulltext",
+        use_local_cache_only=True,
     ):
         """
         Initialize the semantic search system.
@@ -30,9 +31,11 @@ class OntologySemanticSearch:
         Args:
             dictionary_path (str): Path to the JSON dictionary file
             model_name (str): Name of the sentence transformer model to use
+            use_local_cache_only (bool): If True, only use locally cached models. If False, download from Hugging Face.
         """
         self.dictionary_path = dictionary_path
         self.model_name = model_name
+        self.use_local_cache_only = use_local_cache_only
         self.tokenizer = None
         self.model = None
         self.index = None
@@ -69,15 +72,81 @@ class OntologySemanticSearch:
 
     def _initialize_model(self):
         """Initialize the sentence transformer model on GPU."""
-
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.model = AutoModel.from_pretrained(self.model_name)
+        
+        # Set up cache directory relative to this file
+        cache_dir = Path(__file__).parent / "model_cache"
+        cache_dir.mkdir(exist_ok=True)
+        
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name,
+                cache_dir=str(cache_dir),
+                local_files_only=self.use_local_cache_only
+            )
+            self.model = AutoModel.from_pretrained(
+                self.model_name,
+                cache_dir=str(cache_dir),
+                local_files_only=self.use_local_cache_only
+            )
+        except Exception as e:
+            if self.use_local_cache_only:
+                raise RuntimeError(
+                    f"Failed to load model from local cache. Please run the pre-download script first.\n"
+                    f"Error: {e}\n"
+                    f"Cache directory: {cache_dir}"
+                ) from e
+            else:
+                # Fallback to downloading if local cache fails
+                print(f"⚠️  Local cache failed, downloading model: {e}")
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_name,
+                    cache_dir=str(cache_dir)
+                )
+                self.model = AutoModel.from_pretrained(
+                    self.model_name,
+                    cache_dir=str(cache_dir)
+                )
 
         # Move model to GPU
         self.model = self.model.to(self.device)
 
         # Set model to evaluation mode
         self.model.eval()
+    
+    def is_model_cached(self):
+        """Check if the model is available in the local cache."""
+        cache_dir = Path(__file__).parent / "model_cache"
+        model_dir = cache_dir / "models--cambridgeltl--SapBERT-from-PubMedBERT-fulltext"
+        return model_dir.exists()
+    
+    def get_cache_info(self):
+        """Get information about the model cache."""
+        cache_dir = Path(__file__).parent / "model_cache"
+        model_dir = cache_dir / "models--cambridgeltl--SapBERT-from-PubMedBERT-fulltext"
+        
+        if not model_dir.exists():
+            return {
+                "cached": False,
+                "cache_dir": str(cache_dir),
+                "model_dir": str(model_dir),
+                "size": "N/A"
+            }
+        
+        # Calculate cache size
+        total_size = 0
+        file_count = 0
+        for file_path in model_dir.rglob("*"):
+            if file_path.is_file():
+                total_size += file_path.stat().st_size
+                file_count += 1
+        
+        return {
+            "cached": True,
+            "cache_dir": str(cache_dir),
+            "model_dir": str(model_dir),
+            "size_mb": round(total_size / (1024 * 1024), 2),
+            "file_count": file_count
+        }
 
     def encode(self, text):
         """

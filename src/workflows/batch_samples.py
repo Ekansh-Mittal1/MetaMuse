@@ -69,6 +69,8 @@ class BatchSamplesProcessor:
         max_tokens: int = None,
         target_fields: list = None,
         sample_type_filter: str = None,
+        batch_name: str = None,
+        output_format: str = "parquet",
     ):
         """
         Initialize the batch samples processor.
@@ -94,6 +96,11 @@ class BatchSamplesProcessor:
         sample_type_filter : str, optional
             Filter to process only specific sample type. If None, processes all sample types.
             Available types: primary_sample, cell_line, unknown
+        batch_name : str, optional
+            Custom name for the batch directory. If provided, creates 'batch_[name]_[timestamp]',
+            otherwise creates 'batch_[timestamp]'. Cannot contain invalid characters or reserved names.
+        output_format : str, optional
+            Output format for batch results. Options: 'parquet' (default) or 'csv'.
         """
         self.output_dir = Path(output_dir)
         self.sample_count = sample_count
@@ -103,6 +110,25 @@ class BatchSamplesProcessor:
         self.max_tokens = max_tokens
         self.target_fields = target_fields
         self.sample_type_filter = sample_type_filter
+        self.batch_name = batch_name
+        self.output_format = output_format
+        
+        # Validate output_format
+        if self.output_format not in ["parquet", "csv"]:
+            raise ValueError(f"Invalid output_format: {self.output_format}. Must be 'parquet' or 'csv'")
+        
+        # Validate batch_name if provided
+        if self.batch_name:
+            import re
+            # Check for invalid characters
+            invalid_chars = r'[<>:"/\\|?*]'
+            if re.search(invalid_chars, self.batch_name):
+                raise ValueError(f"Invalid batch_name: {self.batch_name}. Cannot contain characters: < > : \" / \\ | ? *")
+            
+            # Check for reserved Windows names
+            reserved_names = ['CON', 'PRN', 'AUX', 'NUL'] + [f'COM{i}' for i in range(1, 10)] + [f'LPT{i}' for i in range(1, 10)]
+            if self.batch_name.upper() in reserved_names:
+                raise ValueError(f"Invalid batch_name: {self.batch_name}. Cannot use reserved Windows names: {reserved_names}")
         
         # Validate sample_type_filter if provided
         if self.sample_type_filter and self.sample_type_filter not in ["primary_sample", "cell_line", "unknown"]:
@@ -110,7 +136,12 @@ class BatchSamplesProcessor:
 
         # Create timestamped output directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.batch_dir = self.output_dir / f"batch_{timestamp}"
+        if self.batch_name:
+            self.batch_dir = self.output_dir / f"batch_{self.batch_name}_{timestamp}"
+            logger.info(f"🎯 Using custom batch name with timestamp: batch_{self.batch_name}_{timestamp}")
+        else:
+            self.batch_dir = self.output_dir / f"batch_{timestamp}"
+            logger.info(f"🕒 Using timestamp-based batch name: batch_{timestamp}")
         self.batch_dir.mkdir(parents=True, exist_ok=True)
         
         # Create unified discovery directory structure
@@ -301,8 +332,7 @@ class BatchSamplesProcessor:
         cached_initial_results = {}
         
         # Process each discovery batch
-        for batch_num, batch_samples in enumerate(discovery_batches, 1):
-            logger.info(f"🔍 Processing discovery batch {batch_num}/{len(discovery_batches)}: {batch_samples}")
+        for batch_num, batch_samples in enumerate(tqdm(discovery_batches, desc="Discovering sample types"), 1):
             
             try:
                 # Prepare input for initial processing
@@ -505,8 +535,6 @@ class BatchSamplesProcessor:
         Dict[str, Any]
             Batch processing results
         """
-        logger.info(f"🎯 Processing {sample_type} batch {batch_num}/{total_batches} with samples: {batch_samples}")
-
         batch_start_time = time.time()
 
         try:
@@ -617,6 +645,7 @@ class BatchSamplesProcessor:
                         if sample_id and sample_id in batch_samples_in_discovery_batch:
                             # Create linked data entry using sample_id as key
                             combined_linked_data[sample_id] = {
+                                "series_id": package.get("series_id"),  # Include series_id
                                 "series_metadata": package.get("series_metadata", {}),
                                 "sample_metadata": package.get("sample_metadata", {}),
                                 "abstract_metadata": package.get("abstract_metadata", {})
@@ -658,6 +687,7 @@ class BatchSamplesProcessor:
                     # Create CurationDataPackage from the metadata structure
                     curation_package = {
                         "sample_id": sample_id,
+                        "series_id": metadata.get("series_id"),  # Include series_id
                         "series_metadata": metadata.get("series_metadata"),
                         "sample_metadata": metadata.get("sample_metadata"),
                         "abstract_metadata": metadata.get("abstract_metadata")
@@ -673,6 +703,7 @@ class BatchSamplesProcessor:
                             logger.warning(f"⚠️  Creating empty curation package for sample {sample_id}")
                             curation_packages.append({
                                 "sample_id": sample_id,
+                                "series_id": None,  # Include series_id (None for missing)
                                 "series_metadata": {},
                                 "sample_metadata": {},
                                 "abstract_metadata": {}
@@ -786,7 +817,6 @@ class BatchSamplesProcessor:
                 }
 
             # Run unified normalization for all relevant fields
-            logger.info("🔬 Running unified normalization...")
             normalization_data = await run_unified_normalization(
                 initial_result=initial_result,
                 conditional_result=conditional_result,
@@ -938,7 +968,6 @@ class BatchSamplesProcessor:
                     "timestamp": datetime.now().isoformat(),
                 }
 
-            logger.info(f"✅ {sample_type} batch {batch_num}/{total_batches} completed successfully in {processing_time:.2f}s")
             self.processed_samples.extend(batch_samples)
 
             # Create result structure
@@ -1443,28 +1472,27 @@ class BatchSamplesProcessor:
                     logger.warning(f"Error reading normalization data for {field}: {e}")
                     continue
 
-    def generate_comprehensive_csv(self) -> None:
+    def generate_comprehensive_results(self) -> None:
         """
-        Generate comprehensive parquet file with all curated and normalized data.
+        Generate comprehensive results file with all curated and normalized data.
         """
-        logger.info("Generating comprehensive results parquet file")
-
-        parquet_file = self.batch_dir / "comprehensive_batch_results.parquet"
+        if self.output_format == "csv":
+            logger.info("Generating comprehensive results CSV file")
+            output_file = self.batch_dir / "comprehensive_batch_results.csv"
+        else:
+            logger.info("Generating comprehensive results parquet file")
+            output_file = self.batch_dir / "comprehensive_batch_results.parquet"
 
         # Define comprehensive CSV columns
         columns = [
             # Sample identification
             "sample_id",
-            "sandbox_id",
             "batch_num",
             "processing_status",
             "processing_time",
             "error_message",
             # Direct fields
             "organism",
-            "pubmed_id",
-            "platform_id",
-            "instrument",
             "series_id",
             # Disease (full pipeline: curation + normalization)
             "disease_final_candidate",
@@ -1541,6 +1569,11 @@ class BatchSamplesProcessor:
             "reconciliation_reason",
             "total_candidates_found",
             "processing_timestamp",
+            # Metadata fields moved to rightmost side
+            "sandbox_id",
+            "pubmed_id",
+            "platform_id",
+            "instrument",
         ]
 
         # Collect all data rows
@@ -1571,24 +1604,35 @@ class BatchSamplesProcessor:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
         
         try:
-            df.to_parquet(parquet_file, index=False)
+            if self.output_format == "csv":
+                df.to_csv(output_file, index=False)
+                logger.info(f"Generated comprehensive CSV file: {output_file}")
+            else:
+                df.to_parquet(output_file, index=False)
+                logger.info(f"Generated comprehensive parquet file: {output_file}")
         except Exception as e:
-            logger.error(f"Failed to save parquet file: {e}")
-            # Try to save as CSV as fallback
-            csv_file = parquet_file.with_suffix('.csv')
-            df.to_csv(csv_file, index=False)
-            logger.info(f"Saved as CSV instead: {csv_file}")
+            logger.error(f"Failed to save {self.output_format} file: {e}")
+            # Try to save as the other format as fallback
+            if self.output_format == "csv":
+                fallback_file = output_file.with_suffix('.parquet')
+                df.to_parquet(fallback_file, index=False)
+                logger.info(f"Saved as parquet instead: {fallback_file}")
+            else:
+                fallback_file = output_file.with_suffix('.csv')
+                df.to_csv(fallback_file, index=False)
+                logger.info(f"Saved as CSV instead: {fallback_file}")
             raise
 
-        logger.info(f"Generated comprehensive parquet file: {parquet_file}")
-
-    def generate_streamlined_csv(self) -> None:
+    def generate_streamlined_results(self) -> None:
         """
-        Generate streamlined parquet file with only key columns for analysis.
+        Generate streamlined results file with only key columns for analysis.
         """
-        logger.info("Generating streamlined results parquet file")
-
-        parquet_file = self.batch_dir / "batch_results.parquet"
+        if self.output_format == "csv":
+            logger.info("Generating streamlined results CSV file")
+            output_file = self.batch_dir / "batch_results.csv"
+        else:
+            logger.info("Generating streamlined results parquet file")
+            output_file = self.batch_dir / "batch_results.parquet"
 
         # Define streamlined CSV columns - only essential data
         columns = [
@@ -1596,14 +1640,9 @@ class BatchSamplesProcessor:
             "sample_id",
             "sample_type", 
             "batch_num",
-            "sandbox_id",
             # Direct extraction fields
             "organism",
-            "pubmed_id", 
-            "platform_id",
-            "instrument",
             "series_id",
-            "treatment",
             # Target fields - final candidates only
             "disease_final_candidate",
             "tissue_final_candidate", 
@@ -1622,6 +1661,11 @@ class BatchSamplesProcessor:
             "tissue_normalized_id",
             "organ_normalized_term", 
             "organ_normalized_id",
+            # Metadata fields moved to rightmost side
+            "sandbox_id",
+            "pubmed_id", 
+            "platform_id",
+            "instrument",
         ]
 
         # Collect all data rows
@@ -1643,16 +1687,24 @@ class BatchSamplesProcessor:
         logger.info(f"DataFrame dtypes: {df.dtypes.to_dict()}")
         
         try:
-            df.to_parquet(parquet_file, index=False)
+            if self.output_format == "csv":
+                df.to_csv(output_file, index=False)
+                logger.info(f"Generated streamlined CSV file: {output_file}")
+            else:
+                df.to_parquet(output_file, index=False)
+                logger.info(f"Generated streamlined parquet file: {output_file}")
         except Exception as e:
-            logger.error(f"Failed to save parquet file: {e}")
-            # Try to save as CSV as fallback
-            csv_file = parquet_file.with_suffix('.csv')
-            df.to_csv(csv_file, index=False)
-            logger.info(f"Saved as CSV instead: {csv_file}")
+            logger.error(f"Failed to save {self.output_format} file: {e}")
+            # Try to save as the other format as fallback
+            if self.output_format == "csv":
+                fallback_file = output_file.with_suffix('.parquet')
+                df.to_parquet(fallback_file, index=False)
+                logger.info(f"Saved as parquet instead: {fallback_file}")
+            else:
+                fallback_file = output_file.with_suffix('.csv')
+                df.to_csv(fallback_file, index=False)
+                logger.info(f"Saved as CSV instead: {fallback_file}")
             raise
-
-        logger.info(f"Generated streamlined parquet file: {parquet_file}")
 
     def _create_streamlined_csv_row(
         self, sample_id: str, tracking_info: Dict[str, Any], columns: List[str]
@@ -2627,11 +2679,11 @@ class BatchSamplesProcessor:
             # Generate sample type-specific CSVs
             self.generate_sample_type_csvs(sample_type_mapping)
             
-            # Generate streamlined CSV (main output)
-            self.generate_streamlined_csv()
+            # Generate streamlined results (main output)
+            self.generate_streamlined_results()
             
-            # Generate comprehensive CSV (detailed output)
-            self.generate_comprehensive_csv()
+            # Generate comprehensive results (detailed output)
+            self.generate_comprehensive_results()
             
             # Save consolidated output files (replaces individual JSON files)
             self.save_tracking_data()  # For logging only
@@ -2687,6 +2739,8 @@ async def run_batch_samples_workflow(
     max_tokens: int = None,
     target_fields: list = None,
     sample_type_filter: str = None,
+    batch_name: str = None,
+    output_format: str = "parquet",
 ) -> str:
     """
     Run the batch samples workflow.
@@ -2709,9 +2763,14 @@ async def run_batch_samples_workflow(
             List of target fields to process. If None, processes all available fields.
             Available fields: disease, tissue, organ, cell_line, developmental_stage,
             ethnicity, gender, age, organism, pubmed_id, platform_id, instrument
-        sample_type_filter : str, optional
+                    sample_type_filter : str, optional
             Filter to process only specific sample type. If None, processes all sample types.
             Available types: primary_sample, cell_line, unknown
+        batch_name : str, optional
+            Custom name for the batch directory. If provided, creates 'batch_[name]_[timestamp]',
+            otherwise creates 'batch_[timestamp]'.
+        output_format : str, optional
+            Output format for batch results. Options: 'parquet' (default) or 'csv'.
 
         Returns
         -------
@@ -2727,6 +2786,8 @@ async def run_batch_samples_workflow(
         max_tokens=max_tokens,
         target_fields=target_fields,
         sample_type_filter=sample_type_filter,
+        batch_name=batch_name,
+        output_format=output_format,
     )
 
     await processor.run()
@@ -2749,6 +2810,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--age-file", type=str, default="Age.txt", help="Path to Age.txt file"
     )
+    parser.add_argument(
+        "--batch-name", type=str, default=None, help="Custom name for batch directory"
+    )
+    parser.add_argument(
+        "--output-format", type=str, default="parquet", choices=["parquet", "csv"], 
+        help="Output format for batch results (default: parquet)"
+    )
 
     args = parser.parse_args()
 
@@ -2758,5 +2826,7 @@ if __name__ == "__main__":
             batch_size=args.batch_size,
             output_dir=args.output_dir,
             age_file=args.age_file,
+            batch_name=args.batch_name,
+            output_format=args.output_format,
         )
     )

@@ -16,6 +16,7 @@ When extracting Tissue candidates, focus on:
 - **Tissue sources**: biopsy, autopsy, surgical resection, cell culture
 - **Tissue processing**: frozen, paraffin-embedded, fresh, cultured
 - **Anatomical locations**: left/right, anterior/posterior, proximal/distal
+- **Adjacent/normal tissue**: tissue from diseased patients that is itself healthy
 
 ## Extraction Rules
 - Return specific, anatomically relevant tissue terms only
@@ -28,6 +29,29 @@ When extracting Tissue candidates, focus on:
 - **CRITICAL**: STRICTLY adhere to UBERON (Uber Anatomy Ontology) terms and classifications for tissue identification
 - Prefer standardized tissue names from UBERON database over colloquial descriptions
 - **CRITICAL**: For the prenormalized field, provide the exact UBERON ontology term with its ID (e.g., "liver (UBERON:0002107)")
+
+## Special Formatting Rules
+
+### Adjacent Normal/Healthy Tissue from Diseased Patients
+When tissue is taken from a diseased patient but the tissue itself is healthy:
+
+- **Adjacent normal tissue**: Use format "{tissue_name} [adjacent normal tissue]"
+  - Example: Normal liver tissue from cancer patient → "liver [adjacent normal tissue]"
+- **Healthy tissue from diseased patient**: Use format "{tissue_name} [healthy tissue]"  
+  - Example: Healthy skin from psoriasis patient → "skin [healthy tissue]"
+- **Explicit mentions**: When metadata explicitly mentions "adjacent normal", "tumor-adjacent", "normal adjacent", etc.
+  - Example: "adjacent normal breast tissue" → "breast [adjacent normal tissue]"
+
+### When to Apply This Formatting
+Apply this formatting when:
+1. **Patient has a disease** (confirmed from disease field or study context)
+2. **Tissue itself is healthy/normal** (but patient is diseased)
+3. **Any explicit mention** of adjacent, normal, healthy tissue descriptors
+
+### Standard Tissue Extraction
+For diseased tissue or tissue from healthy patients, use standard formatting:
+- "tumor tissue" → "tumor"
+- "normal liver from healthy donor" → "liver"
 
 ## Output Format
 Return a valid JSON object with this exact structure:
@@ -50,6 +74,8 @@ Return a valid JSON object with this exact structure:
 - "brain cortex" → {"value": "brain cortex", "confidence": 0.95, "context": "anatomical region", "prenormalized": "cerebral cortex (UBERON:0000956)"}
 - "epithelial cells" → {"value": "epithelial cells", "confidence": 0.85, "context": "cell type", "prenormalized": "epithelial cell (CL:0000066)"}
 - "heart muscle" → {"value": "heart muscle", "confidence": 0.8, "context": "cardiac tissue", "prenormalized": "cardiac muscle tissue (UBERON:0001133)"}
+- "adjacent normal breast tissue" from cancer patient → {"value": "breast [adjacent normal tissue]", "confidence": 0.9, "context": "adjacent normal tissue from cancer patient", "prenormalized": "breast [adjacent normal tissue] (UBERON:0000310)"}
+- "normal liver" from diseased patient → {"value": "liver [healthy tissue]", "confidence": 0.85, "context": "healthy liver from diseased patient", "prenormalized": "liver [healthy tissue] (UBERON:0002107)"}
 
 ## Important Notes
 - If no tissue candidates are found, return an empty candidates array
