@@ -171,7 +171,9 @@ class PubMedSQLiteManager:
         -------
         bool
             True if database exists and is accessible, False otherwise
-        """
+        """     
+        return False
+
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute("SELECT COUNT(*) FROM articles LIMIT 1")

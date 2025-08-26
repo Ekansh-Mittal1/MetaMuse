@@ -234,3 +234,8 @@ archs4_samples/
 src/normalization/semantic_indexes/
 src/normalization/dictionaries/
 src/normalization/model_cache/
+
+# wget
+.wget-hsts
+
+.bash_history

@@ -1688,7 +1688,6 @@ async def run_unified_normalization(
             print("⚠️  No fields available for normalization")
         
         end_time = time.time()
-        print(f"✅ Normalization completed in {end_time - start_time:.2f} seconds")
         
         return unified_normalization_data
     

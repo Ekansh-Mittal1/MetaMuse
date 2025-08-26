@@ -95,7 +95,7 @@ class DataIntakeSQLWorkflow:
     """
 
     def __init__(self, session_id: str, sandbox_dir: str = "sandbox", 
-                 create_series_directories: bool = True, db_path: str = "GEOmetadb.sqlite"):
+                 create_series_directories: bool = True, db_path: str = "data/GEOmetadb.sqlite"):
         """
         Initialize the SQLite-based data intake workflow.
 
@@ -410,7 +410,6 @@ class DataIntakeSQLWorkflow:
             files_created = []
             workflow_data = {"gsm_id": gsm_id}
 
-            print(f"🔍 Starting GSM workflow for {gsm_id}")
 
             # Step 1: Extract GSM metadata from SQLite
             gsm_file = extract_gsm_metadata_sqlite_impl(
@@ -418,7 +417,6 @@ class DataIntakeSQLWorkflow:
             )
             files_created.append(gsm_file)
             workflow_data["gsm_metadata_file"] = gsm_file
-            print(f"✅ GSM metadata extracted: {gsm_file}")
             
             # If create_series_directories is True, move the GSM file to a series subdirectory
             if self.create_series_directories:
@@ -450,7 +448,6 @@ class DataIntakeSQLWorkflow:
                         workflow_data["gsm_metadata_file"] = gsm_file
                         files_created[-1] = gsm_file  # Update the last added file
                         
-                        print(f"✅ Moved GSM metadata to series directory: {gsm_file}")
                 except Exception as e:
                     print(f"⚠️  Warning: Failed to move GSM file to series directory: {e}")
                     print("⚠️  Continuing with original file location...")
@@ -472,7 +469,6 @@ class DataIntakeSQLWorkflow:
                     errors=[f"Series ID extraction failed for {gsm_id}"],
                 )
             workflow_data["series_id"] = series_id
-            print(f"✅ Series ID extracted: {series_id}")
 
             # Step 3: Extract GSE metadata from SQLite
             gse_file = extract_gse_metadata_sqlite_impl(
@@ -480,7 +476,6 @@ class DataIntakeSQLWorkflow:
             )
             files_created.append(gse_file)
             workflow_data["gse_metadata_file"] = gse_file
-            print(f"✅ GSE metadata extracted: {gse_file}")
             
             # If create_series_directories is True, move the GSE file to a series subdirectory
             if self.create_series_directories:
@@ -498,7 +493,6 @@ class DataIntakeSQLWorkflow:
                     workflow_data["gse_metadata_file"] = gse_file
                     files_created[-1] = gse_file  # Update the last added file
                     
-                    print(f"✅ Moved GSE metadata to series directory: {gse_file}")
                 except Exception as e:
                     print(f"⚠️  Warning: Failed to move GSE file to series directory: {e}")
                     print("⚠️  Continuing with original file location...")
@@ -514,7 +508,6 @@ class DataIntakeSQLWorkflow:
                 pmid = pmid_data.get("pubmed_id")
                 if pmid:
                     workflow_data["pmid"] = pmid
-                    print(f"✅ PubMed ID extracted: {pmid}")
 
                 # Step 5: Extract paper abstract from SQLite
                 try:
@@ -523,7 +516,6 @@ class DataIntakeSQLWorkflow:
                     )
                     files_created.append(paper_file)
                     workflow_data["paper_metadata_file"] = paper_file
-                    print(f"✅ Paper abstract extracted: {paper_file}")
                     
                     # If create_series_directories is True, move the paper file to a series subdirectory
                     if self.create_series_directories:
@@ -538,7 +530,6 @@ class DataIntakeSQLWorkflow:
                             workflow_data["paper_metadata_file"] = paper_file
                             files_created[-1] = paper_file  # Update the last added file
                             
-                            print(f"✅ Moved paper metadata to series directory: {paper_file}")
                         except Exception as e:
                             print(f"⚠️  Warning: Failed to move paper file to series directory: {e}")
                             print("⚠️  Continuing with original file location...")
@@ -554,7 +545,6 @@ class DataIntakeSQLWorkflow:
             mapping_file = create_series_sample_mapping_sqlite_impl(str(self.session_dir), self.db_path)
             files_created.append(mapping_file)
             workflow_data["mapping_file"] = mapping_file
-            print(f"✅ Series-sample mapping created: {mapping_file}")
 
             return WorkflowResult(
                 success=True,
@@ -759,7 +749,6 @@ class DataIntakeSQLWorkflow:
             Linker workflow result
         """
         try:
-            print(f"🔗 Starting linker workflow for {sample_id}")
 
             # Step 1: Load mapping file
             mapping_result = load_mapping_file_impl(str(self.session_dir))
@@ -801,7 +790,6 @@ class DataIntakeSQLWorkflow:
                     errors=[package_result["message"]],
                 )
 
-            print(f"✅ Linker workflow completed for {sample_id}")
 
             return WorkflowResult(
                 success=True,
@@ -841,7 +829,6 @@ class DataIntakeSQLWorkflow:
 
             # Parse GEO IDs
             geo_ids = self._parse_geo_ids(input_text)
-            print(f"📋 Parsed IDs: {len(geo_ids['gsm_ids'])} GSM, {len(geo_ids['gse_ids'])} GSE, {len(geo_ids['pmid_ids'])} PMID")
 
             # Validate inputs
             validation_result = self._validate_inputs(geo_ids)
@@ -929,7 +916,6 @@ class DataIntakeSQLWorkflow:
                 all_results.append(result.data)
                 all_files_created.extend(result.files_created or [])
 
-            print(f"✅ Linker workflow completed successfully")
 
             return WorkflowResult(
                 success=True,
@@ -972,7 +958,6 @@ class DataIntakeSQLWorkflow:
 
             # Parse GEO IDs
             geo_ids = self._parse_geo_ids(input_text)
-            print(f"📋 Parsed IDs: {len(geo_ids['gsm_ids'])} GSM, {len(geo_ids['gse_ids'])} GSE, {len(geo_ids['pmid_ids'])} PMID")
 
             # Validate inputs
             validation_result = self._validate_inputs(geo_ids)
@@ -1151,7 +1136,7 @@ def run_data_intake_sql_workflow(
     fields_to_remove: List[str] = None,
     workflow_type: str = "complete",
     create_series_directories: bool = True,
-    db_path: str = "GEOmetadb.sqlite",
+    db_path: str = "data/GEOmetadb.sqlite",
 ) -> LinkerOutput:
     """
     Run the SQLite-based data intake workflow.
@@ -1302,7 +1287,7 @@ Examples:
   python data_intake_sql.py --input "Extract metadata for GSE41588" --type complete --session my-session --sandbox custom-sandbox
 
   # With custom database path
-  python data_intake_sql.py --input "Extract metadata for GSM1000981" --type complete --db-path /path/to/custom/GEOmetadb.sqlite
+  python data_intake_sql.py --input "Extract metadata for GSM1000981" --type complete --db-path data/GEOmetadb.sqlite
         """,
     )
 
@@ -1341,8 +1326,8 @@ Examples:
 
     parser.add_argument(
         "--db-path",
-        default="GEOmetadb.sqlite",
-        help="Path to the GEOmetadb SQLite database (default: GEOmetadb.sqlite)",
+        default="data/GEOmetadb.sqlite",
+        help="Path to the GEOmetadb SQLite database (default: data/GEOmetadb.sqlite)",
     )
 
     parser.add_argument(

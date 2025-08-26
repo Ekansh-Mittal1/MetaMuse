@@ -1220,7 +1220,6 @@ class BatchSamplesProcessor:
             with open(self.batch_dir / "sample_metadata.json", "w") as f:
                 json.dump(sample_metadata, f, indent=2)
 
-            logger.info("✅ Consolidated output files saved to workflow_summary.json and sample_metadata.json")
 
         except Exception as e:
             logger.error(f"❌ Failed to consolidate output files: {e}")
@@ -1477,10 +1476,8 @@ class BatchSamplesProcessor:
         Generate comprehensive results file with all curated and normalized data.
         """
         if self.output_format == "csv":
-            logger.info("Generating comprehensive results CSV file")
             output_file = self.batch_dir / "comprehensive_batch_results.csv"
         else:
-            logger.info("Generating comprehensive results parquet file")
             output_file = self.batch_dir / "comprehensive_batch_results.parquet"
 
         # Define comprehensive CSV columns
@@ -1591,8 +1588,6 @@ class BatchSamplesProcessor:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
         
         # Log DataFrame info for debugging
-        logger.info(f"DataFrame shape: {df.shape}")
-        logger.info(f"DataFrame dtypes: {df.dtypes.to_dict()}")
         
         # Additional validation for confidence fields
         confidence_columns = [col for col in df.columns if col.endswith("_confidence")]
@@ -1628,10 +1623,8 @@ class BatchSamplesProcessor:
         Generate streamlined results file with only key columns for analysis.
         """
         if self.output_format == "csv":
-            logger.info("Generating streamlined results CSV file")
             output_file = self.batch_dir / "batch_results.csv"
         else:
-            logger.info("Generating streamlined results parquet file")
             output_file = self.batch_dir / "batch_results.parquet"
 
         # Define streamlined CSV columns - only essential data
@@ -1683,8 +1676,6 @@ class BatchSamplesProcessor:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
         
         # Log DataFrame info for debugging
-        logger.info(f"DataFrame shape: {df.shape}")
-        logger.info(f"DataFrame dtypes: {df.dtypes.to_dict()}")
         
         try:
             if self.output_format == "csv":
@@ -2354,8 +2345,6 @@ class BatchSamplesProcessor:
             len(self.stage_errors)
         )
         
-        logger.info(f"Error summary generated with {total_errors} total errors across {len(self.batch_errors)} batches")
-
     def export_failed_items_json(self) -> str:
         """
         Export comprehensive failed items data as JSON for rerun capability.
@@ -2427,7 +2416,6 @@ class BatchSamplesProcessor:
         with open(json_path, 'w') as f:
             json.dump(error_report, f, indent=2, default=str)
         
-        logger.info(f"🔄 Failed items report exported to: {json_path}")
         return str(json_path)
 
     def generate_sample_type_csvs(self, sample_type_mapping: Dict[str, str]) -> None:
@@ -2439,7 +2427,6 @@ class BatchSamplesProcessor:
         sample_type_mapping : Dict[str, str]
             Dictionary mapping sample_id -> sample_type
         """
-        logger.info("📊 Generating sample type-specific CSV files...")
         
         # Group samples by type
         sample_type_groups = {}
@@ -2470,7 +2457,6 @@ class BatchSamplesProcessor:
             if type_data:
                 df = pd.DataFrame(type_data)
                 df.to_parquet(parquet_path, index=False)
-                logger.info(f"   ✅ Created {parquet_filename} with {len(type_data)} samples")
             else:
                 logger.warning(f"   ⚠️  No data available for {sample_type} samples")
 
@@ -2636,7 +2622,6 @@ class BatchSamplesProcessor:
                     if not type_batches:
                         continue
                         
-                    logger.info(f"\n🔄 Processing {sample_type} samples: {len(type_batches)} batches")
                     
                     for batch_num, batch_samples in enumerate(type_batches, 1):                        
                         batch_result = await self.process_sample_type_batch(
@@ -2703,7 +2688,6 @@ class BatchSamplesProcessor:
             end_time = time.time()
             total_time = end_time - start_time
 
-            logger.info(f"✅ Sample type-based batch processing completed in {total_time:.2f} seconds")
             logger.info(f"📈 Successfully processed: {len(self.processed_samples)} samples")
             logger.info(f"❌ Failed samples: {len(self.failed_samples)}")
             logger.info(f"📂 Output directory: {self.batch_dir}")

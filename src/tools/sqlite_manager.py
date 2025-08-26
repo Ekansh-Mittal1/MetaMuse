@@ -25,7 +25,7 @@ class GEOmetadbManager:
     that contains GEO metadata, eliminating the need for network calls to ENTREZ API.
     """
     
-    def __init__(self, db_path: str = "GEOmetadb.sqlite", cache_dir: str = "geo_cache"):
+    def __init__(self, db_path: str = "data/GEOmetadb.sqlite", cache_dir: str = "geo_cache"):
         """
         Initialize the GEOmetadb manager.
         
@@ -510,12 +510,12 @@ class GEOmetadbManager:
 
 
 # Convenience functions for backward compatibility
-def get_geometadb_manager(db_path: str = "GEOmetadb.sqlite") -> GEOmetadbManager:
+def get_geometadb_manager(db_path: str = "data/GEOmetadb.sqlite") -> GEOmetadbManager:
     """Get a GEOmetadb manager instance."""
     return GEOmetadbManager(db_path)
 
 
-def download_geometadb(db_path: str = "GEOmetadb.sqlite", force: bool = False) -> bool:
+def download_geometadb(db_path: str = "data/GEOmetadb.sqlite", force: bool = False) -> bool:
     """Download the GEOmetadb database."""
     with GEOmetadbManager(db_path) as manager:
         return manager.download_database(force_download=force)

@@ -11,13 +11,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import traceback
 
-from .sqlite_manager import GEOmetadbManager, get_geometadb_manager
+from .sqlite_manager import GEOmetadbManager, get_geometadb_manager, download_geometadb
 
 
 def extract_gsm_metadata_sqlite_impl(
     gsm_id: str, 
     session_dir: str, 
-    db_path: str = "GEOmetadb.sqlite"
+    db_path: str = "data/GEOmetadb.sqlite"
 ) -> str:
     """
     Extract metadata for a GEO Sample (GSM) record using local SQLite database.
@@ -48,9 +48,52 @@ def extract_gsm_metadata_sqlite_impl(
             metadata = manager.get_gsm_metadata(gsm_id)
         
         if "error" in metadata:
-            error_msg = f"Failed to extract GSM metadata: {metadata['error']}"
-            print(f"❌ {error_msg}")
-            raise ValueError(error_msg)
+            error_msg = f"Failed to extract GSM metadata from SQLite: {metadata['error']}"
+            print(f"⚠️  {error_msg}")
+            print(f"🔄 Attempting HTTP API fallback for {gsm_id}...")
+            
+            try:
+                # Import and use HTTP-based implementation
+                from src.tools.ingestion_tools import extract_gsm_metadata_impl
+                import os
+                
+                # Get email and API key from environment
+                email = os.getenv("NCBI_EMAIL")
+                api_key = os.getenv("NCBI_API_KEY")
+                
+                if not email:
+                    print(f"❌ NCBI_EMAIL environment variable not set, cannot use HTTP API fallback")
+                    return json.dumps({
+                        "success": False,
+                        "message": f"{error_msg}. HTTP API fallback requires NCBI_EMAIL environment variable.",
+                        "gsm_id": gsm_id
+                    })
+                
+                # Use the HTTP API implementation
+                result_path = extract_gsm_metadata_impl(
+                    gsm_id=gsm_id,
+                    session_dir=session_dir,
+                    email=email,
+                    api_key=api_key
+                )
+                
+                print(f"✅ Successfully extracted GSM metadata via HTTP API fallback: {result_path}")
+                return result_path
+                
+            except ImportError as e:
+                print(f"❌ HTTP API fallback not available: {e}")
+                return json.dumps({
+                    "success": False,
+                    "message": f"{error_msg}. HTTP API fallback not available: {str(e)}",
+                    "gsm_id": gsm_id
+                })
+            except Exception as e:
+                print(f"❌ HTTP API fallback also failed: {e}")
+                return json.dumps({
+                    "success": False,
+                    "message": f"{error_msg}. HTTP API fallback also failed: {str(e)}",
+                    "gsm_id": gsm_id
+                })
         
         # Restructure metadata to match original workflow structure
         # The original workflow uses an 'attributes' wrapper
@@ -83,7 +126,6 @@ def extract_gsm_metadata_sqlite_impl(
         with open(output_file, 'w') as f:
             json.dump(restructured_metadata, f, indent=2, default=str)
         
-        print(f"✅ GSM metadata extracted and saved to {output_file}")
         return str(output_file)
         
     except Exception as e:
@@ -97,7 +139,7 @@ def extract_gsm_metadata_sqlite_impl(
 def extract_gse_metadata_sqlite_impl(
     gse_id: str, 
     session_dir: str, 
-    db_path: str = "GEOmetadb.sqlite"
+    db_path: str = "data/GEOmetadb.sqlite"
 ) -> str:
     """
     Extract metadata for a GEO Series (GSE) record using local SQLite database.
@@ -128,9 +170,52 @@ def extract_gse_metadata_sqlite_impl(
             metadata = manager.get_gse_metadata(gse_id)
         
         if "error" in metadata:
-            error_msg = f"Failed to extract GSE metadata: {metadata['error']}"
-            print(f"❌ {error_msg}")
-            raise ValueError(error_msg)
+            error_msg = f"Failed to extract GSE metadata from SQLite: {metadata['error']}"
+            print(f"⚠️  {error_msg}")
+            print(f"🔄 Attempting HTTP API fallback for {gse_id}...")
+            
+            try:
+                # Import and use HTTP-based implementation
+                from src.tools.ingestion_tools import extract_gse_metadata_impl
+                import os
+                
+                # Get email and API key from environment
+                email = os.getenv("NCBI_EMAIL")
+                api_key = os.getenv("NCBI_API_KEY")
+                
+                if not email:
+                    print(f"❌ NCBI_EMAIL environment variable not set, cannot use HTTP API fallback")
+                    return json.dumps({
+                        "success": False,
+                        "message": f"{error_msg}. HTTP API fallback requires NCBI_EMAIL environment variable.",
+                        "gse_id": gse_id
+                    })
+                
+                # Use the HTTP API implementation
+                result_path = extract_gse_metadata_impl(
+                    gse_id=gse_id,
+                    session_dir=session_dir,
+                    email=email,
+                    api_key=api_key
+                )
+                
+                print(f"✅ Successfully extracted GSE metadata via HTTP API fallback: {result_path}")
+                return result_path
+                
+            except ImportError as e:
+                print(f"❌ HTTP API fallback not available: {e}")
+                return json.dumps({
+                    "success": False,
+                    "message": f"{error_msg}. HTTP API fallback not available: {str(e)}",
+                    "gse_id": gse_id
+                })
+            except Exception as e:
+                print(f"❌ HTTP API fallback also failed: {e}")
+                return json.dumps({
+                    "success": False,
+                    "message": f"{error_msg}. HTTP API fallback also failed: {str(e)}",
+                    "gse_id": gse_id
+                })
         
         # Restructure metadata to match original workflow structure
         # The original workflow uses an 'attributes' wrapper
@@ -163,7 +248,6 @@ def extract_gse_metadata_sqlite_impl(
         with open(output_file, 'w') as f:
             json.dump(restructured_metadata, f, indent=2, default=str)
         
-        print(f"✅ GSE metadata extracted and saved to {output_file}")
         return str(output_file)
         
     except Exception as e:
@@ -175,9 +259,9 @@ def extract_gse_metadata_sqlite_impl(
 
 
 def extract_paper_abstract_sqlite_impl(
-    pmid: str, 
-    session_dir: str, 
-    db_path: str = "GEOmetadb.sqlite"
+    pmid: str,
+    session_dir: str,
+    db_path: str = "data/GEOmetadb.sqlite"
 ) -> str:
     """
     Extract abstract and metadata for a PubMed paper.
@@ -232,7 +316,6 @@ def extract_paper_abstract_sqlite_impl(
                     with open(output_file, 'w') as f:
                         json.dump(restructured_metadata, f, indent=2, default=str)
                     
-                    print(f"✅ PubMed metadata extracted from local database and saved to {output_file}")
                     return str(output_file)
                 else:
                     print(f"⚠️  PMID {pmid} not found in local database, falling back to HTTP API")
@@ -257,9 +340,7 @@ def extract_paper_abstract_sqlite_impl(
         
         if not email:
             raise ValueError("NCBI_EMAIL environment variable is required for PubMed API access")
-            
-        print(f"📋 Using HTTP API for PMID {pmid}")
-        
+                    
         # Use the original HTTP-based implementation
         result_path = extract_paper_abstract_impl(
             pmid=pmid_int,
@@ -268,7 +349,6 @@ def extract_paper_abstract_sqlite_impl(
             api_key=api_key
         )
         
-        print(f"✅ PubMed metadata extracted via HTTP API and saved to {result_path}")
         return result_path
         
     except Exception as e:
@@ -279,12 +359,99 @@ def extract_paper_abstract_sqlite_impl(
         raise ValueError(error_msg)
 
 
+def extract_pubmed_id_from_geo_website(gse_id: str) -> str:
+    """
+    Extract PubMed ID directly from the GEO website.
+    
+    This function makes a direct HTTP request to the GEO website to extract
+    the PubMed ID for a given GSE ID.
+    
+    Parameters
+    ----------
+    gse_id : str
+        The GSE ID to extract PubMed ID for
+        
+    Returns
+    -------
+    str
+        PubMed ID if found, empty string otherwise
+    """
+    try:
+        import requests
+        import re
+        from urllib.parse import urljoin
+        
+        # GEO website URL for the specific GSE
+        geo_url = f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gse_id}"
+        
+        print(f"🌐 Requesting: {geo_url}")
+        
+        # Make HTTP request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(geo_url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        # Parse the HTML content
+        html_content = response.text
+        
+        # Look for PubMed ID patterns in the HTML
+        # Pattern 1: Look for "PubMed ID:" followed by numbers
+        pubmed_patterns = [
+            r'PubMed ID:\s*(\d+)',
+            r'PubMed ID</a>:\s*(\d+)',
+            r'pubmed_id">(\d+)</a>',
+            r'pubmed_id=(\d+)',
+            r'PMID:\s*(\d+)',
+            r'PMID</a>:\s*(\d+)',
+            r'<span class="pubmed_id" id="(\d+)">',
+            r'class="pubmed_id" id="(\d+)"'
+        ]
+        
+        for pattern in pubmed_patterns:
+            match = re.search(pattern, html_content, re.IGNORECASE)
+            if match:
+                pubmed_id = match.group(1)
+                print(f"✅ Found PubMed ID: {pubmed_id}")
+                return pubmed_id
+        
+        # Pattern 2: Look for links to PubMed
+        pubmed_link_patterns = [
+            r'href="https://pubmed\.gov/(\d+)"',
+            r'href="https://pubmed\.gov/\?term=(\d+)"',
+            r'href="https://www\.ncbi\.nlm\.nih\.gov/pubmed/(\d+)"'
+        ]
+        
+        for pattern in pubmed_link_patterns:
+            match = re.search(pattern, html_content, re.IGNORECASE)
+            if match:
+                pubmed_id = match.group(1)
+                print(f"✅ Found PubMed ID from link: {pubmed_id}")
+                return pubmed_id
+        
+        print(f"❌ No PubMed ID found in GEO website HTML for {gse_id}")
+        return ""
+        
+    except ImportError:
+        print(f"❌ requests module not available for direct GEO website requests")
+        return ""
+    except requests.RequestException as e:
+        print(f"❌ HTTP request failed for {gse_id}: {e}")
+        return ""
+    except Exception as e:
+        print(f"❌ Error extracting PubMed ID from GEO website for {gse_id}: {e}")
+        return ""
+
+
 def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> str:
     """
-    Extract PubMed ID from a GSE metadata file.
+    Extract PubMed ID from a GSE metadata file with HTTP API fallback.
     
-    This function parses a GSE metadata JSON file and extracts the associated
-    PubMed ID if available.
+    This function first tries to extract PubMed ID from the local metadata file.
+    If no PubMed ID is found, it falls back to making an HTTP request to
+    extract the PubMed ID directly from the GEO series.
     
     Parameters
     ----------
@@ -296,6 +463,8 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
     str
         JSON string with the extracted PubMed ID or error information.
     """
+    import os  # Import os at the top of the function
+    
     try:
         with open(gse_metadata_file, 'r') as f:
             metadata = json.load(f)
@@ -306,18 +475,91 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
             # Fallback to old structure
             pubmed_id = metadata.get('pubmed_id', '')
         
+        # If we found a PubMed ID in the local metadata, return it
         if pubmed_id:
             result = {
                 "success": True,
                 "pubmed_id": str(pubmed_id),
-                "message": f"PubMed ID extracted: {pubmed_id}"
+                "message": f"PubMed ID extracted from local metadata: {pubmed_id}"
             }
+            return json.dumps(result, indent=2)
+        
+        # No PubMed ID found locally, try HTTP API fallback
+        gse_id = metadata.get('gse_id', '')
+        if not gse_id:
+            # Try to extract GSE ID from the file path if not in metadata
+            file_path = os.path.basename(gse_metadata_file)
+            if file_path.endswith('_metadata.json'):
+                gse_id = file_path.replace('_metadata.json', '')
+        
+        if gse_id:
+            print(f"⚠️  No PubMed ID found in local metadata for {gse_id}, trying HTTP API fallback...")
+            
+            try:
+                # Try direct HTTP request to GEO website first
+                print(f"🌐 Making direct HTTP request to GEO website for {gse_id}...")
+                direct_pubmed_id = extract_pubmed_id_from_geo_website(gse_id)
+                
+                if direct_pubmed_id:
+                    result = {
+                        "success": True,
+                        "pubmed_id": direct_pubmed_id,
+                        "message": f"PubMed ID extracted via direct GEO website request: {direct_pubmed_id}",
+                        "source": "geo_website_direct"
+                    }
+                    print(f"✅ Successfully extracted PubMed ID {direct_pubmed_id} via direct GEO website request for {gse_id}")
+                else:
+                    # Fallback to HTTP API implementation
+                    print(f"⚠️  Direct GEO website request failed, trying HTTP API fallback...")
+                    from src.tools.ingestion_tools import extract_pubmed_id_from_gse_metadata_impl
+                    
+                    # Call the HTTP API implementation
+                    # Extract session_dir from the metadata file path
+                    session_dir = os.path.dirname(os.path.dirname(gse_metadata_file))  # Go up two levels to get session dir
+                    http_result = extract_pubmed_id_from_gse_metadata_impl(gse_metadata_file, session_dir)
+                    http_data = json.loads(http_result)
+                    
+                    if http_data.get("success", False) and http_data.get("pubmed_id"):
+                        result = {
+                            "success": True,
+                            "pubmed_id": http_data["pubmed_id"],
+                            "message": f"PubMed ID extracted via HTTP API fallback: {http_data['pubmed_id']}",
+                            "source": "http_api_fallback"
+                        }
+                        print(f"✅ Successfully extracted PubMed ID {http_data['pubmed_id']} via HTTP API for {gse_id}")
+                    else:
+                        result = {
+                            "success": False,
+                            "pubmed_id": None,
+                            "message": f"Both direct GEO website request and HTTP API fallback failed. Direct: No PubMed ID found, HTTP API: {http_data.get('message', 'Unknown error')}",
+                            "source": "both_failed"
+                        }
+                        print(f"❌ Both fallback methods failed for {gse_id}")
+                
+            except ImportError as e:
+                result = {
+                    "success": False,
+                    "pubmed_id": None,
+                    "message": f"HTTP API fallback not available: {str(e)}",
+                    "source": "import_error"
+                }
+                print(f"❌ HTTP API fallback not available: {str(e)}")
+            except Exception as e:
+                result = {
+                    "success": False,
+                    "pubmed_id": None,
+                    "message": f"Fallback error: {str(e)}",
+                    "source": "fallback_error"
+                }
+                print(f"❌ Fallback error for {gse_id}: {str(e)}")
         else:
             result = {
                 "success": False,
                 "pubmed_id": None,
-                "message": "No PubMed ID found in GSE metadata"
+                "message": "Could not determine GSE ID for HTTP API fallback",
+                "source": "gse_id_not_found"
             }
+            print(f"❌ Could not determine GSE ID for HTTP API fallback")
             
         return json.dumps(result, indent=2)
             
@@ -326,12 +568,22 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
         print(f"❌ {error_msg}")
         print("🔍 Full traceback:")
         traceback.print_exc()
-        result = {
-            "success": False,
-            "pubmed_id": None,
-            "message": error_msg
-        }
-        return json.dumps(result, indent=2)
+        
+        # Try HTTP API fallback even on file reading errors
+        try:
+            print(f"🔄 Attempting HTTP API fallback due to file reading error...")
+            from src.tools.ingestion_tools import extract_pubmed_id_from_gse_metadata_impl
+            # Extract session_dir from the metadata file path
+            session_dir = os.path.dirname(os.path.dirname(gse_metadata_file))  # Go up two levels to get session dir
+            return extract_pubmed_id_from_gse_metadata_impl(gse_metadata_file, session_dir)
+        except Exception as fallback_error:
+            result = {
+                "success": False,
+                "pubmed_id": None,
+                "message": f"Both local extraction and HTTP API fallback failed. Local error: {str(e)}, Fallback error: {str(fallback_error)}",
+                "source": "both_failed"
+            }
+            return json.dumps(result, indent=2)
 
 
 def extract_series_id_from_gsm_metadata_sqlite_impl(gsm_metadata_file: str) -> str:
@@ -465,7 +717,7 @@ def validate_geo_inputs_sqlite_impl(
 
 def create_series_sample_mapping_sqlite_impl(
     session_dir: str,
-    db_path: str = "GEOmetadb.sqlite"
+    db_path: str = "data/GEOmetadb.sqlite"
 ) -> str:
     """
     Create a mapping between series and samples using the local database.
@@ -554,7 +806,6 @@ def create_series_sample_mapping_sqlite_impl(
         with open(mapping_file, 'w') as f:
             json.dump(mapping_result, f, indent=2, default=str)
         
-        print(f"✅ Series-sample mapping created and saved to {mapping_file}")
         return json.dumps(mapping_result, indent=2, default=str)
         
     except Exception as e:
@@ -574,7 +825,7 @@ def search_geo_sqlite_impl(
     query: str,
     search_type: str = "all",
     limit: int = 100,
-    db_path: str = "GEOmetadb.sqlite"
+    db_path: str = "data/GEOmetadb.sqlite"
 ) -> str:
     """
     Search GEO database using local SQLite database.
@@ -627,7 +878,7 @@ def search_geo_sqlite_impl(
         }, indent=2)
 
 
-def get_database_info_sqlite_impl(db_path: str = "GEOmetadb.sqlite") -> str:
+def get_database_info_sqlite_impl(db_path: str = "data/GEOmetadb.sqlite") -> str:
     """
     Get information about the local GEOmetadb database.
     
@@ -658,7 +909,7 @@ def get_database_info_sqlite_impl(db_path: str = "GEOmetadb.sqlite") -> str:
         return json.dumps({"error": error_msg}, indent=2)
 
 
-def download_geometadb_impl(db_path: str = "GEOmetadb.sqlite", force: bool = False) -> str:
+def download_geometadb_impl(db_path: str = "data/GEOmetadb.sqlite", force: bool = False) -> str:
     """
     Download the GEOmetadb SQLite database.
     

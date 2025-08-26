@@ -109,7 +109,7 @@ def get_session_tools(session_dir: str | Path) -> list:
 
         @function_tool
         def extract_gsm_metadata(
-            gsm_id: str, db_path: str = "GEOmetadb.sqlite"
+            gsm_id: str, db_path: str = "data/GEOmetadb.sqlite"
         ) -> str:
             """
             Extract metadata for a GEO Sample (GSM) record using local SQLite database.
@@ -135,7 +135,7 @@ def get_session_tools(session_dir: str | Path) -> list:
 
         @function_tool
         def extract_gse_metadata(
-            gse_id: str, db_path: str = "GEOmetadb.sqlite"
+            gse_id: str, db_path: str = "data/GEOmetadb.sqlite"
         ) -> str:
             """
             Extract metadata for a GEO Series (GSE) record using local SQLite database.
@@ -161,7 +161,7 @@ def get_session_tools(session_dir: str | Path) -> list:
 
         @function_tool
         def extract_paper_abstract(
-            pmid: str, db_path: str = "GEOmetadb.sqlite"
+            pmid: str, db_path: str = "data/GEOmetadb.sqlite"
         ) -> str:
             """
             Extract abstract and metadata for a PubMed paper using local SQLite database.
@@ -259,7 +259,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             return validate_geo_inputs_sqlite_impl(gsm_id, gse_id, pmid, target_field)
 
         @function_tool
-        def create_series_sample_mapping(db_path: str = "GEOmetadb.sqlite") -> str:
+        def create_series_sample_mapping(db_path: str = "data/GEOmetadb.sqlite") -> str:
             """
             Create a mapping between series and samples using the local database.
 
@@ -297,7 +297,7 @@ def get_session_tools(session_dir: str | Path) -> list:
 
         @function_tool
         def search_geo_sqlite(
-            query: str, search_type: str = "all", limit: int = 100, db_path: str = "GEOmetadb.sqlite"
+            query: str, search_type: str = "all", limit: int = 100, db_path: str = "data/GEOmetadb.sqlite"
         ) -> str:
             """
             Search GEO database using local SQLite database.
@@ -325,7 +325,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             return search_geo_sqlite_impl(query, search_type, limit, db_path)
 
         @function_tool
-        def get_database_info(db_path: str = "GEOmetadb.sqlite") -> str:
+        def get_database_info(db_path: str = "data/GEOmetadb.sqlite") -> str:
             """
             Get information about the local GEOmetadb database.
 
@@ -346,7 +346,7 @@ def get_session_tools(session_dir: str | Path) -> list:
             return get_database_info_sqlite_impl(db_path)
 
         @function_tool
-        def download_geometadb(db_path: str = "GEOmetadb.sqlite", force: bool = False) -> str:
+        def download_geometadb(db_path: str = "data/GEOmetadb.sqlite", force: bool = False) -> str:
             """
             Download the GEOmetadb SQLite database.
 
