@@ -151,6 +151,7 @@ def extract_gse_metadata_sqlite_impl(
     ----------
     gse_id : str
         Gene Expression Omnibus series ID (e.g., "GSE41588").
+        Can also be a comma-separated list of GSE IDs (e.g., "GSE247592, GSE247593").
     session_dir : str
         Directory to save the extracted metadata.
     db_path : str
@@ -159,9 +160,67 @@ def extract_gse_metadata_sqlite_impl(
     Returns
     -------
     str
-        Path to the saved metadata file.
+        Path to the saved metadata file, or JSON error message if multiple GSE IDs detected.
     """
     try:
+        # Check if the input contains multiple GSE IDs (comma-separated)
+        if ',' in gse_id:
+            gse_ids = [gid.strip() for gid in gse_id.split(',') if gid.strip()]
+            # Validate that all are valid GSE IDs
+            valid_gse_ids = []
+            invalid_gse_ids = []
+            for gid in gse_ids:
+                if gid.upper().startswith("GSE") and gid[3:].isdigit():
+                    valid_gse_ids.append(gid)
+                else:
+                    invalid_gse_ids.append(gid)
+            
+            if invalid_gse_ids:
+                error_msg = f"Invalid GSE ID format(s): {', '.join(invalid_gse_ids)}"
+                print(f"❌ {error_msg}")
+                return json.dumps({
+                    "success": False,
+                    "message": f"{error_msg}. All GSE IDs must start with 'GSE' followed by numbers.",
+                    "gse_id": gse_id,
+                    "valid_gse_ids": valid_gse_ids,
+                    "invalid_gse_ids": invalid_gse_ids
+                })
+            
+            if len(valid_gse_ids) > 1:
+                error_msg = f"Multiple GSE IDs detected: {gse_id}. This function expects a single GSE ID. Please process each GSE ID individually."
+                print(f"⚠️  {error_msg}")
+                return json.dumps({
+                    "success": False,
+                    "message": error_msg,
+                    "gse_id": gse_id,
+                    "gse_ids": valid_gse_ids,
+                    "source": "multiple_gse_ids"
+                })
+            elif len(valid_gse_ids) == 1:
+                # Only one valid GSE ID, use it
+                gse_id = valid_gse_ids[0]
+                print(f"🔍 Processing single GSE ID from concatenated input: {gse_id}")
+            else:
+                error_msg = f"No valid GSE IDs found in input: {gse_id}"
+                print(f"❌ {error_msg}")
+                return json.dumps({
+                    "success": False,
+                    "message": error_msg,
+                    "gse_id": gse_id,
+                    "source": "no_valid_gse_ids"
+                })
+        
+        # Ensure the GSE ID is properly formatted
+        if not gse_id.upper().startswith("GSE") or not gse_id[3:].isdigit():
+            error_msg = f"Invalid GSE ID format: {gse_id}. Must start with 'GSE' followed by numbers."
+            print(f"❌ {error_msg}")
+            return json.dumps({
+                "success": False,
+                "message": error_msg,
+                "gse_id": gse_id,
+                "source": "invalid_gse_format"
+            })
+        
         session_path = Path(session_dir)
         session_path.mkdir(parents=True, exist_ok=True)
         
@@ -317,11 +376,6 @@ def extract_paper_abstract_sqlite_impl(
                         json.dump(restructured_metadata, f, indent=2, default=str)
                     
                     return str(output_file)
-                else:
-                    print(f"⚠️  PMID {pmid} not found in local database, falling back to HTTP API")
-            else:
-                print(f"⚠️  Local PubMed database not available, falling back to HTTP API for PMID {pmid}")
-                
         except ImportError:
             print(f"⚠️  PubMed SQLite manager not available, falling back to HTTP API for PMID {pmid}")
         except Exception as e:
@@ -383,9 +437,7 @@ def extract_pubmed_id_from_geo_website(gse_id: str) -> str:
         
         # GEO website URL for the specific GSE
         geo_url = f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gse_id}"
-        
-        print(f"🌐 Requesting: {geo_url}")
-        
+                
         # Make HTTP request
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -414,7 +466,6 @@ def extract_pubmed_id_from_geo_website(gse_id: str) -> str:
             match = re.search(pattern, html_content, re.IGNORECASE)
             if match:
                 pubmed_id = match.group(1)
-                print(f"✅ Found PubMed ID: {pubmed_id}")
                 return pubmed_id
         
         # Pattern 2: Look for links to PubMed
@@ -428,10 +479,8 @@ def extract_pubmed_id_from_geo_website(gse_id: str) -> str:
             match = re.search(pattern, html_content, re.IGNORECASE)
             if match:
                 pubmed_id = match.group(1)
-                print(f"✅ Found PubMed ID from link: {pubmed_id}")
                 return pubmed_id
         
-        print(f"❌ No PubMed ID found in GEO website HTML for {gse_id}")
         return ""
         
     except ImportError:
@@ -466,6 +515,63 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
     import os  # Import os at the top of the function
     
     try:
+        # Check if the input is actually a file path or if it's an error message
+        if not os.path.exists(gse_metadata_file):
+            # This might be an error message or multiple GSE IDs
+            if gse_metadata_file.startswith('{') and gse_metadata_file.endswith('}'):
+                # This is a JSON error message, not a file path
+                try:
+                    error_data = json.loads(gse_metadata_file)
+                    if "gse_id" in error_data:
+                        gse_id = error_data["gse_id"]
+                        # Check if this contains multiple GSE IDs
+                        if ',' in gse_id:
+                            gse_ids = [gid.strip() for gid in gse_id.split(',')]
+                            # For multiple GSE IDs, we need to handle them individually
+                            # For now, return an error explaining the issue
+                            result = {
+                                "success": False,
+                                "pubmed_id": None,
+                                "message": f"Multiple GSE IDs detected: {gse_id}. This function expects a single GSE ID. Please process each GSE ID individually.",
+                                "source": "multiple_gse_ids",
+                                "gse_ids": gse_ids
+                            }
+                            return json.dumps(result, indent=2)
+                        else:
+                            # Single GSE ID in error message, try to extract PubMed ID directly
+                            try:
+                                direct_pubmed_id = extract_pubmed_id_from_geo_website(gse_id)
+                                if direct_pubmed_id:
+                                    result = {
+                                        "success": True,
+                                        "pubmed_id": direct_pubmed_id,
+                                        "message": f"PubMed ID extracted via direct GEO website request: {direct_pubmed_id}",
+                                        "source": "geo_website_direct_from_error"
+                                    }
+                                    return json.dumps(result, indent=2)
+                            except Exception as e:
+                                pass
+                        
+                        result = {
+                            "success": False,
+                            "pubmed_id": None,
+                            "message": f"GSE metadata extraction failed: {error_data.get('message', 'Unknown error')}. Cannot extract PubMed ID.",
+                            "source": "gse_extraction_failed"
+                        }
+                        return json.dumps(result, indent=2)
+                except json.JSONDecodeError:
+                    pass
+            
+            # If we get here, it's not a valid file path and not a JSON error message
+            result = {
+                "success": False,
+                "pubmed_id": None,
+                "message": f"Invalid file path or input: {gse_metadata_file}. Expected a valid GSE metadata file path.",
+                "source": "invalid_file_path"
+            }
+            return json.dumps(result, indent=2)
+        
+        # Normal case: file exists, read and process it
         with open(gse_metadata_file, 'r') as f:
             metadata = json.load(f)
         
@@ -493,11 +599,9 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
                 gse_id = file_path.replace('_metadata.json', '')
         
         if gse_id:
-            print(f"⚠️  No PubMed ID found in local metadata for {gse_id}, trying HTTP API fallback...")
             
             try:
                 # Try direct HTTP request to GEO website first
-                print(f"🌐 Making direct HTTP request to GEO website for {gse_id}...")
                 direct_pubmed_id = extract_pubmed_id_from_geo_website(gse_id)
                 
                 if direct_pubmed_id:
@@ -507,10 +611,8 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
                         "message": f"PubMed ID extracted via direct GEO website request: {direct_pubmed_id}",
                         "source": "geo_website_direct"
                     }
-                    print(f"✅ Successfully extracted PubMed ID {direct_pubmed_id} via direct GEO website request for {gse_id}")
                 else:
                     # Fallback to HTTP API implementation
-                    print(f"⚠️  Direct GEO website request failed, trying HTTP API fallback...")
                     from src.tools.ingestion_tools import extract_pubmed_id_from_gse_metadata_impl
                     
                     # Call the HTTP API implementation
@@ -526,7 +628,6 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
                             "message": f"PubMed ID extracted via HTTP API fallback: {http_data['pubmed_id']}",
                             "source": "http_api_fallback"
                         }
-                        print(f"✅ Successfully extracted PubMed ID {http_data['pubmed_id']} via HTTP API for {gse_id}")
                     else:
                         result = {
                             "success": False,
@@ -534,7 +635,6 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
                             "message": f"Both direct GEO website request and HTTP API fallback failed. Direct: No PubMed ID found, HTTP API: {http_data.get('message', 'Unknown error')}",
                             "source": "both_failed"
                         }
-                        print(f"❌ Both fallback methods failed for {gse_id}")
                 
             except ImportError as e:
                 result = {
@@ -562,28 +662,19 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
             print(f"❌ Could not determine GSE ID for HTTP API fallback")
             
         return json.dumps(result, indent=2)
-            
-    except Exception as e:
-        error_msg = f"Error extracting PubMed ID from {gse_metadata_file}: {str(e)}"
-        print(f"❌ {error_msg}")
-        print("🔍 Full traceback:")
-        traceback.print_exc()
         
-        # Try HTTP API fallback even on file reading errors
-        try:
-            print(f"🔄 Attempting HTTP API fallback due to file reading error...")
-            from src.tools.ingestion_tools import extract_pubmed_id_from_gse_metadata_impl
-            # Extract session_dir from the metadata file path
-            session_dir = os.path.dirname(os.path.dirname(gse_metadata_file))  # Go up two levels to get session dir
-            return extract_pubmed_id_from_gse_metadata_impl(gse_metadata_file, session_dir)
-        except Exception as fallback_error:
-            result = {
-                "success": False,
-                "pubmed_id": None,
-                "message": f"Both local extraction and HTTP API fallback failed. Local error: {str(e)}, Fallback error: {str(fallback_error)}",
-                "source": "both_failed"
-            }
-            return json.dumps(result, indent=2)
+    except Exception as e:
+        result = {
+            "success": False,
+            "pubmed_id": None,
+            "message": f"Unexpected error in PubMed ID extraction: {str(e)}",
+            "source": "unexpected_error"
+        }
+        print(f"❌ Error extracting PubMed ID from {gse_metadata_file}: {str(e)}")
+        print("🔍 Full traceback:")
+        import traceback
+        traceback.print_exc()
+        return json.dumps(result, indent=2)
 
 
 def extract_series_id_from_gsm_metadata_sqlite_impl(gsm_metadata_file: str) -> str:

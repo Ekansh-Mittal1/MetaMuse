@@ -172,7 +172,6 @@ class PubMedSQLiteManager:
         bool
             True if database exists and is accessible, False otherwise
         """     
-        return False
 
         try:
             with self.get_connection() as conn:

@@ -40,6 +40,7 @@ from src.workflows.MetaMuse import (
 )
 from src.workflows.batch_targets import run_batch_targets_workflow_async
 from src.workflows.batch_samples import run_batch_samples_workflow
+from src.workflows.batch_samples_efficient import run_efficient_batch_samples_workflow
 
 load_dotenv(override=True)
 
@@ -106,7 +107,7 @@ class CustomModelProvider(ModelProvider):
 
 
 async def run_workflow(
-    workflow_name: str, input_data: str, model_name: str, max_turns: int = 100, **kwargs
+    workflow_name: str, input_data: str, model_name: str, max_turns: int = 100, max_tokens: int = None, **kwargs
 ):
     """
     Run a specific workflow with the given input data.
@@ -213,7 +214,7 @@ async def run_workflow(
         sample_count = 100  # Default
         batch_size = 5  # Default
         output_dir = "batch"  # Default
-        age_file = "Age.txt"  # Default
+        samples_file = "archs4_samples/archs4_gsm_ids.txt"  # Default
         target_fields = None  # Default
         sample_type_filter = None  # Default
         batch_name = None  # Default
@@ -231,8 +232,8 @@ async def run_workflow(
                         batch_size = int(value)
                     elif key == "output_dir":
                         output_dir = value
-                    elif key == "age_file":
-                        age_file = value
+                    elif key == "samples_file":
+                        samples_file = value
                     elif key == "target_fields":
                         target_fields = [field.strip() for field in value.split(",")]
                     elif key == "sample_type_filter":
@@ -247,7 +248,7 @@ async def run_workflow(
                 sample_count=sample_count,
                 batch_size=batch_size,
                 output_dir=output_dir,
-                age_file=age_file,
+                age_file=samples_file,  # Original workflow uses age_file parameter name
                 model_provider=model_provider,
                 target_fields=target_fields,
                 sample_type_filter=sample_type_filter,
@@ -262,6 +263,75 @@ async def run_workflow(
         except Exception as e:
             print(f"❌ Batch samples workflow failed: {e}")
             return {"success": False, "error": str(e)}
+
+    # Handle batch_samples_efficient workflow specially (bypasses orchestrator)
+    if workflow_name == "batch_samples_efficient":
+        print("🎯 Starting efficient batch samples workflow")
+
+        # Parse parameters from input_data (same format as batch_samples)
+        sample_count = 100
+        batch_size = 5
+        output_dir = "batch"
+        samples_file = "archs4_samples/archs4_gsm_ids.txt"
+        target_fields = None
+        sample_type_filter = None
+        batch_name = None
+        output_format = "parquet"
+
+        if input_data:
+            # Parse key=value pairs
+            pairs = input_data.split()
+            for pair in pairs:
+                if "=" in pair:
+                    key, value = pair.split("=", 1)
+                    if key == "sample_count":
+                        sample_count = int(value)
+                    elif key == "batch_size":
+                        batch_size = int(value)
+                    elif key == "output_dir":
+                        output_dir = value
+                    elif key == "samples_file":
+                        samples_file = value
+                    elif key == "target_fields":
+                        target_fields = [f.strip() for f in value.split(",")]
+                    elif key == "sample_type_filter":
+                        sample_type_filter = value
+                    elif key == "batch_name":
+                        batch_name = value
+                    elif key == "output_format":
+                        output_format = value
+
+        try:
+            result = await run_efficient_batch_samples_workflow(
+                sample_count=sample_count,
+                batch_size=batch_size,
+                output_dir=output_dir,
+                samples_file=samples_file,
+                model_provider=model_provider,
+                max_tokens=max_tokens,
+                target_fields=target_fields,
+                sample_type_filter=sample_type_filter,
+                batch_name=batch_name,
+                output_format=output_format,
+            )
+
+            if result["success"]:
+                print("✅ Efficient batch samples workflow completed successfully")
+                print(f"📁 Results saved to: {result['batch_directory']}")
+                print(f"⏱️ Total execution time: {result['total_execution_time_seconds']:.2f} seconds")
+                print(f"📊 Stage results: {result['stage_results']}")
+            else:
+                print(f"❌ Efficient batch samples workflow failed: {result['message']}")
+                if 'error' in result:
+                    print(f"🔍 Error details: {result['error']}")
+
+        except Exception as e:
+            print(f"❌ Efficient batch samples workflow failed with exception: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            result = {"success": False, "error": str(e)}
+
+        return result
 
     # Handle deterministic workflow specially (bypasses orchestrator)
     if workflow_name == "deterministic":
@@ -581,6 +651,7 @@ def list_workflows():
         "deterministic": "Deterministic workflow: data_intake → curator → normalizer",
         "deterministic_sql": "Deterministic SQL workflow: data_intake_sql → curator → normalizer",
         "batch_targets": "Batch processing pipeline for all metadata fields (Disease, Tissue, Organ, Cell Line, Ethnicity, Developmental Stage, Gender/Sex, Organism, PubMed ID, Instrument)",
+        "batch_samples_efficient": "Efficient batch samples workflow using three-stage architecture (Data Intake → Preprocessing → Conditional Processing)",
     }
 
     print("Available workflows:")
@@ -611,6 +682,9 @@ Examples:
   python main.py batch_samples "sample_count=50 batch_size=3 output_dir=my_batch"
   python main.py batch_samples "sample_count=50 batch_size=5 sample_type_filter=primary_sample"
   python main.py batch_samples "sample_count=30 batch_size=3 sample_type_filter=cell_line"
+  python main.py batch_samples_efficient "sample_count=100 batch_size=5"
+  python main.py batch_samples_efficient "sample_count=50 batch_name=test sample_type_filter=primary_sample"
+  python main.py batch_samples_efficient "sample_count=25 target_fields=disease,tissue,organ"
   python main.py test_normalizer "any_input"
   python main.py --list-workflows
         """,
@@ -634,6 +708,7 @@ Examples:
             "test_normalizer",
             "batch_targets",
             "batch_samples",
+            "batch_samples_efficient",
         ],
         help="Workflow to run",
     )
@@ -645,6 +720,12 @@ Examples:
         choices=MODEL_CHOICES,
         default="google/gemini-2.5-pro",
         help="Model to use for processing (default: google/gemini-2.5-pro)",
+    )
+
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        help="Maximum tokens for LLM responses",
     )
 
     parser.add_argument(
@@ -706,7 +787,7 @@ Examples:
         print()
 
     # Run the workflow
-    await run_workflow(args.workflow, args.input, args.model)
+    await run_workflow(args.workflow, args.input, args.model, max_tokens=args.max_tokens)
 
 
 if __name__ == "__main__":

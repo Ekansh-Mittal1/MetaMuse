@@ -22,7 +22,13 @@ python pubmed_ingest.py ingest \
   --db ~/data/pubmed/pubmed.sqlite \
   --dirs ~/data/pubmed/baseline ~/data/pubmed/updatefiles
 
-# 4) Query a PMID locally
+# 4) Create a new filtered database with only specific PubMed IDs
+python pubmed_ingest.py ingest \
+  --db ~/data/pubmed/pubmed_filtered.sqlite \
+  --dirs ~/data/pubmed/baseline ~/data/pubmed/updatefiles \
+  --filter-ids /path/to/pmid_list.txt
+
+# 5) Query a PMID locally
 python pubmed_ingest.py lookup \
   --db ~/data/pubmed/pubmed.sqlite \
   --pmid 12345678
@@ -33,6 +39,7 @@ NOTES
 - Abstracts can have multiple <AbstractText> sections with "Label" attributes; we join them with labels.
 - Authors may be individual names or a <CollectiveName> (e.g., consortia).
 - Run "download --which updates" periodically to stay in sync with PubMed daily changes.
+- When using --filter-ids, a new database will be created containing only the specified PubMed IDs.
 """
 
 from __future__ import annotations
@@ -50,7 +57,7 @@ import urllib.request
 import urllib.error
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Iterable, List, Tuple, Optional, Dict
+from typing import Iterable, List, Tuple, Optional, Dict, Set
 import xml.etree.ElementTree as ET
 
 from tqdm import tqdm
@@ -224,6 +231,28 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
     con.executescript(SCHEMA_SQL)
     return con
 
+def load_pmid_filter(filter_file: Optional[str]) -> Optional[Set[str]]:
+    """
+    Load PubMed IDs from a filter file. Each line should contain one PMID.
+    Returns None if no filter file specified, or a set of PMIDs to include.
+    """
+    if not filter_file:
+        return None
+    
+    filter_path = Path(filter_file)
+    if not filter_path.exists():
+        raise FileNotFoundError(f"Filter file not found: {filter_file}")
+    
+    pmids = set()
+    with open(filter_path, 'r') as f:
+        for line in f:
+            pmid = line.strip()
+            if pmid and pmid.isdigit():
+                pmids.add(pmid)
+    
+    print(f"Loaded {len(pmids)} PubMed IDs from filter file: {filter_file}")
+    return pmids
+
 # -------------------------
 # Parsing PubMed XML (gz) with streaming iterparse
 # -------------------------
@@ -239,142 +268,222 @@ def extract_article_fields(cit: ET.Element) -> Tuple[str, str, str, str, str, Op
     Returns: (pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw, authors_list)
     authors_list: list of dicts with keys (last_name, fore_name, initials, collective_name)
     """
-    # PMID
-    pmid = _text(cit.find("PMID"))
-    art = cit.find("Article")
-    title = _text(art.find("ArticleTitle")) if art is not None else ""
+    try:
+        # PMID
+        pmid = _text(cit.find("PMID"))
+        art = cit.find("Article")
+        title = _text(art.find("ArticleTitle")) if art is not None else ""
 
-    # Abstract (may have multiple AbstractText with Label)
-    abstract = ""
-    if art is not None:
-        abs_el = art.find("Abstract")
-        if abs_el is not None:
-            parts = []
-            for at in abs_el.findall("AbstractText"):
-                label = at.attrib.get("Label")
-                sec = (at.text or "").strip()
-                if label:
-                    parts.append(f"{label}: {sec}")
-                else:
-                    parts.append(sec)
-            abstract = "\n\n".join([p for p in parts if p])
+        # Abstract (may have multiple AbstractText with Label)
+        abstract = ""
+        if art is not None:
+            abs_el = art.find("Abstract")
+            if abs_el is not None:
+                parts = []
+                for at in abs_el.findall("AbstractText"):
+                    label = at.attrib.get("Label")
+                    sec = (at.text or "").strip()
+                    if label:
+                        parts.append(f"{label}: {sec}")
+                    else:
+                        parts.append(sec)
+                abstract = "\n\n".join([p for p in parts if p])
 
-    # Journal info
-    journal = ""
-    iso_abbrev = ""
-    pub_year = None
-    pub_date_raw = ""
-    if art is not None:
-        j = art.find("Journal")
-        if j is not None:
-            jt = j.find("Title")
-            journal = _text(jt)
-            iso = j.find("ISOAbbreviation")
-            iso_abbrev = _text(iso)
-            # Try PubDate (could be Year/Month/Day or MedlineDate text like '1998 Jan-Feb')
-            pub_date = j.find("./JournalIssue/PubDate")
-            if pub_date is not None:
-                year_el = pub_date.find("Year")
-                medline_date = pub_date.find("MedlineDate")
-                if year_el is not None and (year_el.text or "").strip().isdigit():
-                    pub_year = int(year_el.text.strip())
-                elif medline_date is not None:
-                    m = re.search(r"\b(\d{4})\b", (medline_date.text or ""))
-                    if m:
-                        pub_year = int(m.group(1))
-                # Raw string
-                pieces = []
-                for tag in ("Year", "Month", "Day", "MedlineDate"):
-                    el = pub_date.find(tag)
-                    if el is not None and (el.text or "").strip():
-                        pieces.append(el.text.strip())
-                pub_date_raw = " ".join(pieces).strip()
+        # Journal info
+        journal = ""
+        iso_abbrev = ""
+        pub_year = None
+        pub_date_raw = ""
+        if art is not None:
+            j = art.find("Journal")
+            if j is not None:
+                jt = j.find("Title")
+                journal = _text(jt)
+                iso = j.find("ISOAbbreviation")
+                iso_abbrev = _text(iso)
+                # Try PubDate (could be Year/Month/Day or MedlineDate text like '1998 Jan-Feb')
+                pub_date = j.find("./JournalIssue/PubDate")
+                if pub_date is not None:
+                    year_el = pub_date.find("Year")
+                    medline_date = pub_date.find("MedlineDate")
+                    if year_el is not None and (year_el.text or "").strip().isdigit():
+                        pub_year = int(year_el.text.strip())
+                    elif medline_date is not None:
+                        m = re.search(r"\b(\d{4})\b", (medline_date.text or ""))
+                        if m:
+                            pub_year = int(m.group(1))
+                    # Raw string
+                    pieces = []
+                    for tag in ("Year", "Month", "Day", "MedlineDate"):
+                        el = pub_date.find(tag)
+                        if el is not None and (el.text or "").strip():
+                            pieces.append(el.text.strip())
+                    pub_date_raw = " ".join(pieces).strip()
 
-    # Authors
-    authors_list: List[Dict] = []
-    if art is not None:
-        al = art.find("AuthorList")
-        if al is not None:
-            pos = 0
-            for au in al.findall("Author"):
-                pos += 1
-                last_name = _text(au.find("LastName"))
-                fore_name = _text(au.find("ForeName"))
-                initials = _text(au.find("Initials"))
-                collective = _text(au.find("CollectiveName"))
-                authors_list.append({
-                    "position": pos,
-                    "last_name": last_name or None,
-                    "fore_name": fore_name or None,
-                    "initials": initials or None,
-                    "collective_name": collective or None,
-                })
+        # Authors
+        authors_list: List[Dict] = []
+        if art is not None:
+            al = art.find("AuthorList")
+            if al is not None:
+                pos = 0
+                for au in al.findall("Author"):
+                    pos += 1
+                    last_name = _text(au.find("LastName"))
+                    fore_name = _text(au.find("ForeName"))
+                    initials = _text(au.find("Initials"))
+                    collective = _text(au.find("CollectiveName"))
+                    authors_list.append({
+                        "position": pos,
+                        "last_name": last_name or None,
+                        "fore_name": fore_name or None,
+                        "initials": initials or None,
+                        "collective_name": collective or None,
+                    })
 
-    return pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw, authors_list
+        return pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw, authors_list
+        
+    except Exception as e:
+        # Return empty/default values if parsing fails
+        print(f"⚠️  Error parsing article fields: {e}")
+        return "", "", "", "", "", None, "", []
 
-def ingest_gz_xml(db: sqlite3.Connection, gz_path: Path, pbar: tqdm = None, commit_every: int = 2000):
+def ingest_gz_xml(db: sqlite3.Connection, gz_path: Path, pbar: tqdm = None, commit_every: int = 2000, pmid_filter: Optional[Set[str]] = None):
     """
     Stream-parse a PubMed gz XML file and insert/update rows.
+    If pmid_filter is provided, only process articles with PMIDs in the filter set.
     """
     if pbar:
         pbar.set_postfix_str(f"Processing: {gz_path.name}")
     
-    with gzip.open(gz_path, "rb") as f:
-        # Use iterparse on the underlying bytes; we expect top-level elements like <PubmedArticle> or <DeleteCitation>
-        context = ET.iterparse(f, events=("end",))
-        count = 0
-        for event, elem in context:
-            tag = elem.tag
-            if tag == "PubmedArticle":
-                cit = elem.find("MedlineCitation")
-                if cit is not None:
-                    pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw, authors = extract_article_fields(cit)
-                    if pmid:
-                        # Upsert article
-                        db.execute("""
-                            INSERT INTO articles (pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                            ON CONFLICT(pmid) DO UPDATE SET
-                              title=excluded.title,
-                              abstract=excluded.abstract,
-                              journal=excluded.journal,
-                              iso_abbrev=excluded.iso_abbrev,
-                              pub_year=excluded.pub_year,
-                              pub_date_raw=excluded.pub_date_raw
-                        """, (pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw))
-                        # Replace authors
-                        db.execute("DELETE FROM authors WHERE pmid = ?", (pmid,))
-                        for a in authors:
-                            db.execute("""
-                                INSERT INTO authors (pmid, position, last_name, fore_name, initials, collective_name)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            """, (pmid, a["position"], a["last_name"], a["fore_name"], a["initials"], a["collective_name"]))
-                        count += 1
-                # clear to free memory
-                elem.clear()
-            elif tag == "DeleteCitation":
-                # delete citations contain PMID children
-                for pmid_el in elem.findall("PMID"):
-                    pmid = (pmid_el.text or "").strip()
-                    if pmid:
-                        db.execute("DELETE FROM articles WHERE pmid = ?", (pmid,))
-                        db.execute("DELETE FROM authors  WHERE pmid = ?", (pmid,))
-                elem.clear()
+    try:
+        with gzip.open(gz_path, "rb") as f:
+            # Use iterparse on the underlying bytes; we expect top-level elements like <PubmedArticle> or <DeleteCitation>
+            context = ET.iterparse(f, events=("end",))
+            count = 0
+            filtered_count = 0
+            error_count = 0
+            
+            for event, elem in context:
+                try:
+                    tag = elem.tag
+                    if tag == "PubmedArticle":
+                        cit = elem.find("MedlineCitation")
+                        if cit is not None:
+                            pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw, authors = extract_article_fields(cit)
+                            if pmid:
+                                # Check if this PMID should be processed
+                                if pmid_filter is not None and pmid not in pmid_filter:
+                                    elem.clear()
+                                    continue
+                                
+                                filtered_count += 1
+                                # Insert article with upsert logic to handle existing PMIDs
+                                try:
+                                    db.execute("""
+                                        INSERT INTO articles (pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                                        ON CONFLICT(pmid) DO UPDATE SET
+                                          title=excluded.title,
+                                          abstract=excluded.abstract,
+                                          journal=excluded.journal,
+                                          iso_abbrev=excluded.iso_abbrev,
+                                          pub_year=excluded.pub_year,
+                                          pub_date_raw=excluded.pub_date_raw
+                                    """, (pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw))
+                                    
+                                    # Replace authors (delete existing and insert new)
+                                    db.execute("DELETE FROM authors WHERE pmid = ?", (pmid,))
+                                    for a in authors:
+                                        db.execute("""
+                                            INSERT INTO authors (pmid, position, last_name, fore_name, initials, collective_name)
+                                            VALUES (?, ?, ?, ?, ?, ?)
+                                        """, (pmid, a["position"], a["last_name"], a["fore_name"], a["initials"], a["collective_name"]))
+                                    
+                                    count += 1
+                                except sqlite3.Error as e:
+                                    error_count += 1
+                                    print(f"⚠️  Database error processing PMID {pmid} in {gz_path.name}: {e}")
+                                    # Continue processing other records
+                                    continue
+                                    
+                        # clear to free memory
+                        elem.clear()
+                    elif tag == "DeleteCitation":
+                        # delete citations contain PMID children
+                        try:
+                            for pmid_el in elem.findall("PMID"):
+                                pmid = (pmid_el.text or "").strip()
+                                if pmid:
+                                    # Only delete if not filtering or if PMID is in filter
+                                    if pmid_filter is None or pmid in pmid_filter:
+                                        db.execute("DELETE FROM articles WHERE pmid = ?", (pmid,))
+                                        db.execute("DELETE FROM authors  WHERE pmid = ?", (pmid,))
+                        except sqlite3.Error as e:
+                            error_count += 1
+                            print(f"⚠️  Database error processing delete citation in {gz_path.name}: {e}")
+                            # Continue processing other records
+                        elem.clear()
 
-            if count and (count % commit_every == 0):
+                    if count and (count % commit_every == 0):
+                        try:
+                            db.commit()
+                            if pbar:
+                                pbar.set_postfix_str(f"Processing: {gz_path.name} ({count:,} records, {filtered_count:,} filtered, {error_count:,} errors)")
+                        except sqlite3.Error as e:
+                            print(f"⚠️  Commit error in {gz_path.name}: {e}")
+                            # Try to continue with the next batch
+                            continue
+
+                except Exception as e:
+                    error_count += 1
+                    print(f"⚠️  Error processing element in {gz_path.name}: {e}")
+                    # Clear the element and continue with the next one
+                    elem.clear()
+                    continue
+
+            # Final commit
+            try:
                 db.commit()
-                if pbar:
-                    pbar.set_postfix_str(f"Processing: {gz_path.name} ({count:,} records)")
-
-        db.commit()
-        if pbar:
-            pbar.set_postfix_str(f"Completed: {gz_path.name} ({count:,} records)")
-        
-        return count
+            except sqlite3.Error as e:
+                print(f"⚠️  Final commit error in {gz_path.name}: {e}")
+            
+            if pbar:
+                if pmid_filter:
+                    pbar.set_postfix_str(f"Completed: {gz_path.name} ({count:,} records, {filtered_count:,} filtered, {error_count:,} errors from {len(pmid_filter)} total)")
+                else:
+                    pbar.set_postfix_str(f"Completed: {gz_path.name} ({count:,} records, {error_count:,} errors)")
+            
+            return count
+            
+    except Exception as e:
+        print(f"❌ Critical error processing file {gz_path.name}: {e}")
+        print("🔍 Full traceback:")
+        import traceback
+        traceback.print_exc()
+        # Return 0 records processed for this file, but don't crash the script
+        return 0
 
 def ingest_command(args):
-    db = ensure_db(Path(os.path.expanduser(args.db)))
+    db_path = Path(os.path.expanduser(args.db))
+    
+    # Load PMID filter if specified
+    pmid_filter = load_pmid_filter(args.filter_ids)
+    
+    # If filtering, ensure we're creating a new database
+    if pmid_filter and db_path.exists():
+        print(f"⚠️  Warning: Database {db_path} already exists. Creating a new filtered database.")
+        # Remove existing database to start fresh
+        db_path.unlink()
+    elif pmid_filter and not db_path.exists():
+        print(f"🔍 Creating new filtered database: {db_path}")
+    elif not pmid_filter and db_path.exists():
+        print(f"🔍 Adding to existing database: {db_path}")
+    else:
+        print(f"🔍 Creating new database: {db_path}")
+    
+    db = ensure_db(db_path)
     dirs = [Path(os.path.expanduser(d)) for d in args.dirs]
+    
     # Find all *.xml.gz files in provided dirs, sorted by name (baseline first, then updates by lexicographic order)
     all_files: List[Path] = []
     for d in dirs:
@@ -387,16 +496,48 @@ def ingest_command(args):
         sys.exit(2)
 
     print(f"Found {len(all_files)} XML files to ingest")
+    if pmid_filter:
+        print(f"Creating filtered database with {len(pmid_filter)} specific PubMed IDs")
     total_records = 0
+    total_errors = 0
+    failed_files = []
     
     # Use tqdm progress bar for ingestion
     with tqdm(total=len(all_files), desc="Ingesting", unit="file") as pbar:
         for p in all_files:
-            records_processed = ingest_gz_xml(db, p, pbar)
-            total_records += records_processed
-            pbar.update(1)
+            try:
+                records_processed = ingest_gz_xml(db, p, pbar, pmid_filter=pmid_filter)
+                total_records += records_processed
+            except Exception as e:
+                total_errors += 1
+                failed_files.append(p.name)
+                print(f"❌ Error processing file {p.name}: {e}")
+                print("🔍 Full traceback:")
+                import traceback
+                traceback.print_exc()
+                print(f"⚠️  Skipping file {p.name} and continuing with next file...")
+                # Continue with next file instead of crashing
+                continue
+            finally:
+                pbar.update(1)
     
-    print(f"🎉 Ingestion complete! {total_records:,} total records processed from {len(all_files)} files")
+    # Print summary
+    print(f"\n📊 Ingestion Summary:")
+    print(f"   Total files processed: {len(all_files)}")
+    print(f"   Successful files: {len(all_files) - len(failed_files)}")
+    print(f"   Failed files: {len(failed_files)}")
+    print(f"   Total records processed: {total_records:,}")
+    
+    if failed_files:
+        print(f"\n❌ Failed files:")
+        for failed_file in failed_files:
+            print(f"   - {failed_file}")
+    
+    if pmid_filter:
+        print(f"\n🎉 Filtered database creation complete! {total_records:,} filtered records processed from {len(all_files)} files")
+        print(f"📊 Database contains {total_records:,} articles matching the {len(pmid_filter)} specified PubMed IDs")
+    else:
+        print(f"\n🎉 Ingestion complete! {total_records:,} total records processed from {len(all_files)} files")
 
 def lookup_command(args):
     db = sqlite3.connect(str(Path(os.path.expanduser(args.db))))
@@ -436,6 +577,7 @@ def main():
     ap_ing = sub.add_parser("ingest", help="Ingest one or more directories of .xml.gz into a SQLite DB.")
     ap_ing.add_argument("--db", required=True, help="SQLite path to create/use.")
     ap_ing.add_argument("--dirs", nargs="+", required=True, help="Directories containing .xml.gz (baseline first, then updates).")
+    ap_ing.add_argument("--filter-ids", help="Optional file containing PubMed IDs to filter (one per line). Creates a new filtered database.")
     ap_ing.set_defaults(func=ingest_command)
 
     ap_lu = sub.add_parser("lookup", help="Lookup a PMID in the local SQLite DB.")

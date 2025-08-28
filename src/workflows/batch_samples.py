@@ -298,7 +298,7 @@ class BatchSamplesProcessor:
         return batches
 
     async def discover_sample_types(
-        self, samples: List[str], discovery_batch_size: int = 10
+        self, samples: List[str], discovery_batch_size: int = None
     ) -> Dict[str, str]:
         """
         Discover sample types for all samples using initial processing in small batches.
@@ -307,16 +307,20 @@ class BatchSamplesProcessor:
         ----------
         samples : List[str]
             List of GSM samples to discover types for
-        discovery_batch_size : int
-            Batch size for discovery (default: 10)
+        discovery_batch_size : int, optional
+            Batch size for discovery (defaults to self.batch_size)
             
         Returns
         -------
         Dict[str, str]
             Dictionary mapping sample_id -> sample_type
         """
-        
+        # Use instance batch_size if not specified
+        if discovery_batch_size is None:
+            discovery_batch_size = self.batch_size
+            
         logger.info(f"🔍 Starting sample type discovery for {len(samples)} samples")
+        logger.info(f"📋 Using discovery batch size: {discovery_batch_size}")
         
         # Create discovery batches
         discovery_batches = []
@@ -1141,7 +1145,7 @@ class BatchSamplesProcessor:
                     "total_runtime_seconds": time.time() - start_time,
                     "configuration": {
                         "batch_size": self.batch_size,
-                        "discovery_batch_size": 5,
+                        "discovery_batch_size": self.batch_size,
                         "sample_count": len(selected_samples),
                         "model_provider": str(self.model_provider)
                     }
@@ -2533,8 +2537,8 @@ class BatchSamplesProcessor:
             },
             "configuration": {
                 "batch_size": self.batch_size,
-                "discovery_batch_size": 5,  # As used in the workflow
-                "sample_count": len(sample_type_mapping),
+                "discovery_batch_size": self.batch_size,
+                "sample_count": len(selected_samples),
                 "model_provider": str(self.model_provider)
             }
         }
@@ -2576,7 +2580,7 @@ class BatchSamplesProcessor:
             # ================================================================
             # PHASE 2: SAMPLE TYPE DISCOVERY
             # ================================================================
-            sample_type_mapping = await self.discover_sample_types(selected_samples, discovery_batch_size=5)
+            sample_type_mapping = await self.discover_sample_types(selected_samples, discovery_batch_size=self.batch_size)
             
             # Log discovery results
             discovery_stats = {}

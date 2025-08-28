@@ -241,11 +241,6 @@ class GSEAttributes(BaseModel):
     variable: Optional[str] = Field(None, description="Variable information")
     variable_description: Optional[str] = Field(None, description="Variable description")
     platform_id: Optional[str] = Field(None, description="Platform ID")
-    platform_organism: Optional[str] = Field(None, description="Platform organism")
-    platform_taxid: Optional[str] = Field(None, description="Platform taxonomy ID")
-    sample_organism: Optional[str] = Field(None, description="Sample organism")
-    sample_taxid: Optional[str] = Field(None, description="Sample taxonomy ID")
-    relation: Optional[str] = Field(None, description="Related data links")
 
 
 class GSEMetadata(BaseModel):

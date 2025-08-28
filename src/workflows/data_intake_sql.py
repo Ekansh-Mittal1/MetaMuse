@@ -474,6 +474,61 @@ class DataIntakeSQLWorkflow:
             gse_file = extract_gse_metadata_sqlite_impl(
                 series_id, str(self.session_dir), self.db_path
             )
+            
+            # Check if the result is a file path or an error message
+            if gse_file.startswith('{') and gse_file.endswith('}'):
+                # This is a JSON error message, not a file path
+                try:
+                    error_data = json.loads(gse_file)
+                    if not error_data.get("success", True):
+                        error_msg = error_data.get("message", "Unknown error in GSE metadata extraction")
+                        print(f"❌ GSE metadata extraction failed: {error_msg}")
+                        
+                        # Check if this is due to multiple GSE IDs
+                        if error_data.get("source") == "multiple_gse_ids":
+                            gse_ids = error_data.get("gse_ids", [])
+                            print(f"⚠️  Multiple GSE IDs detected: {', '.join(gse_ids)}")
+                            print("🔄 Attempting to process each GSE ID individually...")
+                            
+                            # Try to process the first GSE ID if available
+                            if gse_ids:
+                                first_gse_id = gse_ids[0]
+                                print(f"🔄 Processing first GSE ID: {first_gse_id}")
+                                gse_file = extract_gse_metadata_sqlite_impl(
+                                    first_gse_id, str(self.session_dir), self.db_path
+                                )
+                                
+                                # Check if this attempt succeeded
+                                if gse_file.startswith('{') and gse_file.endswith('}'):
+                                    second_error = json.loads(gse_file)
+                                    if not second_error.get("success", True):
+                                        print(f"❌ Failed to process individual GSE ID {first_gse_id}: {second_error.get('message', 'Unknown error')}")
+                                        return WorkflowResult(
+                                            success=False,
+                                            message=f"Failed to extract GSE metadata: {error_msg}",
+                                            errors=[error_msg],
+                                            data=workflow_data
+                                        )
+                                else:
+                                    print(f"✅ Successfully extracted metadata for individual GSE ID: {first_gse_id}")
+                            else:
+                                return WorkflowResult(
+                                    success=False,
+                                    message=f"Failed to extract GSE metadata: {error_msg}",
+                                    errors=[error_msg],
+                                    data=workflow_data
+                                )
+                        else:
+                            return WorkflowResult(
+                                success=False,
+                                message=f"Failed to extract GSE metadata: {error_msg}",
+                                errors=[error_msg],
+                                data=workflow_data
+                            )
+                except json.JSONDecodeError:
+                    # Not a valid JSON, treat as file path
+                    pass
+            
             files_created.append(gse_file)
             workflow_data["gse_metadata_file"] = gse_file
             
@@ -501,8 +556,6 @@ class DataIntakeSQLWorkflow:
             pmid_result = extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_file)
             pmid_data = json.loads(pmid_result)
             if not pmid_data.get("success", False):
-                print(f"⚠️  Warning: Failed to extract PubMed ID: {pmid_data.get('message', 'Unknown error')}")
-                print("⚠️  Continuing workflow without PubMed ID...")
                 workflow_data["pmid_extraction_error"] = pmid_data.get("message", "Unknown error")
             else:
                 pmid = pmid_data.get("pubmed_id")
@@ -541,7 +594,7 @@ class DataIntakeSQLWorkflow:
                     print("⚠️  Continuing workflow without paper abstract...")
                     workflow_data["paper_extraction_error"] = str(e)
 
-            # Step 6: Create series-sample mapping using SQLite
+            # Step 4: Create series-sample mapping using SQLite
             mapping_file = create_series_sample_mapping_sqlite_impl(str(self.session_dir), self.db_path)
             files_created.append(mapping_file)
             workflow_data["mapping_file"] = mapping_file
@@ -584,6 +637,61 @@ class DataIntakeSQLWorkflow:
             gse_file = extract_gse_metadata_sqlite_impl(
                 gse_id, str(self.session_dir), self.db_path
             )
+            
+            # Check if the result is a file path or an error message
+            if gse_file.startswith('{') and gse_file.endswith('}'):
+                # This is a JSON error message, not a file path
+                try:
+                    error_data = json.loads(gse_file)
+                    if not error_data.get("success", True):
+                        error_msg = error_data.get("message", "Unknown error in GSE metadata extraction")
+                        print(f"❌ GSE metadata extraction failed: {error_msg}")
+                        
+                        # Check if this is due to multiple GSE IDs
+                        if error_data.get("source") == "multiple_gse_ids":
+                            gse_ids = error_data.get("gse_ids", [])
+                            print(f"⚠️  Multiple GSE IDs detected: {', '.join(gse_ids)}")
+                            print("🔄 Attempting to process each GSE ID individually...")
+                            
+                            # Try to process the first GSE ID if available
+                            if gse_ids:
+                                first_gse_id = gse_ids[0]
+                                print(f"🔄 Processing first GSE ID: {first_gse_id}")
+                                gse_file = extract_gse_metadata_sqlite_impl(
+                                    first_gse_id, str(self.session_dir), self.db_path
+                                )
+                                
+                                # Check if this attempt succeeded
+                                if gse_file.startswith('{') and gse_file.endswith('}'):
+                                    second_error = json.loads(gse_file)
+                                    if not second_error.get("success", True):
+                                        print(f"❌ Failed to process individual GSE ID {first_gse_id}: {second_error.get('message', 'Unknown error')}")
+                                        return WorkflowResult(
+                                            success=False,
+                                            message=f"Failed to extract GSE metadata: {error_msg}",
+                                            errors=[error_msg],
+                                            data=workflow_data
+                                        )
+                                else:
+                                    print(f"✅ Successfully extracted metadata for individual GSE ID: {first_gse_id}")
+                            else:
+                                return WorkflowResult(
+                                    success=False,
+                                    message=f"Failed to extract GSE metadata: {error_msg}",
+                                    errors=[error_msg],
+                                    data=workflow_data
+                                )
+                        else:
+                            return WorkflowResult(
+                                success=False,
+                                message=f"Failed to extract GSE metadata: {error_msg}",
+                                errors=[error_msg],
+                                data=workflow_data
+                            )
+                except json.JSONDecodeError:
+                    # Not a valid JSON, treat as file path
+                    pass
+            
             files_created.append(gse_file)
             workflow_data["gse_metadata_file"] = gse_file
             print(f"✅ GSE metadata extracted: {gse_file}")
@@ -656,7 +764,8 @@ class DataIntakeSQLWorkflow:
                         print("⚠️  Continuing workflow without paper abstract...")
                         workflow_data["paper_extraction_error"] = str(e)
                 else:
-                    print("ℹ️  No PubMed ID found in GSE metadata")
+                    # No PMID found, continue without paper abstract
+                    pass
 
             # Step 4: Create series-sample mapping using SQLite
             mapping_file = create_series_sample_mapping_sqlite_impl(str(self.session_dir), self.db_path)
@@ -909,20 +1018,29 @@ class DataIntakeSQLWorkflow:
             all_results = []
             all_files_created = []
 
+            failed_samples = []
             for sample_id in sample_ids:
                 result = self._link_sample_data(sample_id, fields_to_remove)
                 if not result.success:
-                    return result
+                    print(f"⚠️  Failed to process sample {sample_id}: {result.message}")
+                    failed_samples.append(sample_id)
+                    continue  # Continue with other samples instead of failing entire workflow
                 all_results.append(result.data)
                 all_files_created.extend(result.files_created or [])
 
 
+            successful_samples = len(sample_ids) - len(failed_samples)
+            message = f"SQLite linker workflow completed: {successful_samples}/{len(sample_ids)} samples processed successfully"
+            if failed_samples:
+                message += f". Failed samples: {failed_samples}"
+            
             return WorkflowResult(
                 success=True,
-                message=f"SQLite linker workflow completed successfully for {len(sample_ids)} samples",
+                message=message,
                 data={
                     "sample_results": all_results,
-                    "sample_ids": sample_ids,
+                    "sample_ids": [sid for sid in sample_ids if sid not in failed_samples],  # Only include successful samples
+                    "failed_samples": failed_samples,
                     "session_dir": str(self.session_dir),
                 },
                 files_created=all_files_created,

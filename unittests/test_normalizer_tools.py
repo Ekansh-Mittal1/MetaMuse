@@ -322,18 +322,21 @@ class TestNormalizerTools:
             context="Test context",
             rationale="Test rationale",
             prenormalized="test prenormalized",
-            ontology_matches=[],
+            top_ontology_matches=[],
             normalization_confidence=0.8,
         )
 
         result = NormalizationResult(
             sample_id="GSM1000981",
             target_field="Disease",
-            sample_candidates=[candidate],
-            normalized_sample_candidates=[normalized_candidate],
+            original_candidates=["test candidate"],
+            normalized_candidates=[normalized_candidate],
+            normalization_method="semantic_search",
             ontologies_searched=["mondo"],
             normalization_timestamp="2024-01-01T00:00:00",
             normalization_tool_version="1.0.0",
+            normalization_success=True,
+            normalization_confidence=0.8,
         )
 
         output_file = self.session_dir / "test_normalized.json"
@@ -430,13 +433,13 @@ class TestNormalizationModels:
             context="Test context",
             rationale="Test rationale",
             prenormalized="test prenormalized",
-            ontology_matches=[match],
+            top_ontology_matches=[match],
             best_match=match,
             normalization_confidence=0.95,
         )
 
         assert candidate.value == "diabetes"
-        assert len(candidate.ontology_matches) == 1
+        assert len(candidate.top_ontology_matches) == 1
         assert candidate.best_match == match
         assert candidate.normalization_confidence == 0.95
 
@@ -458,29 +461,27 @@ class TestNormalizationModels:
             context="Test context",
             rationale="Test rationale",
             prenormalized="test prenormalized",
-            ontology_matches=[],
+            top_ontology_matches=[],
             normalization_confidence=0.8,
         )
 
         result = NormalizationResult(
             sample_id="GSM1000981",
             target_field="Disease",
-            sample_candidates=[candidate],
-            normalized_sample_candidates=[normalized_candidate],
-            final_normalized_term="diabetes mellitus",
-            final_normalized_id="MONDO:0005015",
-            final_ontology="mondo",
+            original_candidates=["test candidate"],
+            normalized_candidates=[normalized_candidate],
+            normalization_method="semantic_search",
             ontologies_searched=["mondo"],
             normalization_timestamp="2024-01-01T00:00:00",
             normalization_tool_version="1.0.0",
+            normalization_success=True,
+            normalization_confidence=0.8,
         )
 
-        # Test that it has both CurationResult and NormalizationResult fields
-        assert result.sample_id == "GSM1000981"  # From CurationResult
-        assert result.target_field == "Disease"  # From CurationResult
-        assert len(result.sample_candidates) == 1  # From CurationResult
-        assert len(result.normalized_sample_candidates) == 1  # From NormalizationResult
-        assert (
-            result.final_normalized_term == "diabetes mellitus"
-        )  # From NormalizationResult
-        assert result.final_normalized_id == "MONDO:0005015"  # From NormalizationResult
+        # Test that it has the new NormalizationResult structure
+        assert result.sample_id == "GSM1000981"
+        assert result.target_field == "Disease"
+        assert len(result.original_candidates) == 1
+        assert len(result.normalized_candidates) == 1
+        assert result.normalization_success is True
+        assert result.normalization_confidence == 0.8

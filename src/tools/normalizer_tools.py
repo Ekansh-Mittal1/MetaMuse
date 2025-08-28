@@ -254,17 +254,21 @@ def batch_normalize_session_impl(
 
     # Create batch result
     batch_result = BatchNormalizationResult(
-        session_id=os.path.basename(session_dir),
+        sample_results=sample_results,
+        session_directory=session_dir,
         target_field=target_field,
-        total_files_processed=len(candidates_files),
+        total_samples_processed=len(candidates_files),
         successful_normalizations=successful_normalizations,
         failed_normalizations=len(processing_errors),
-        total_candidates_normalized=total_candidates_normalized,
-        processing_errors=processing_errors,
-        sample_results=sample_results,
+        ontologies_searched=ontologies or get_default_ontologies_for_field(target_field),
+        normalization_method="semantic_search",
         normalization_timestamp=datetime.now().isoformat(),
-        ontologies_used=ontologies or get_default_ontologies_for_field(target_field),
-        parameters={"top_k": top_k, "min_score": min_score},
+        normalization_tool_version="1.0.0",
+        processing_summary=[
+            KeyValue(key="top_k", value=str(top_k)),
+            KeyValue(key="min_score", value=str(min_score)),
+            KeyValue(key="total_candidates", value=str(total_candidates_normalized)),
+        ],
     )
 
     # Save batch result
@@ -562,40 +566,62 @@ def semantic_search_candidates_impl(
                 else None
             )
 
-            norm_result = NormalizationResult(
+            # Extract original candidate values from the curation result
+            original_candidates = []
+            if res.series_candidates:
+                original_candidates.extend([c.value for c in res.series_candidates])
+            if res.sample_candidates:
+                original_candidates.extend([c.value for c in res.sample_candidates])
+            if res.abstract_candidates:
+                original_candidates.extend([c.value for c in res.abstract_candidates])
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_original_candidates = []
+            for candidate in original_candidates:
+                if candidate not in seen:
+                    seen.add(candidate)
+                    unique_original_candidates.append(candidate)
+
+            # Create the normalization result with both new and legacy fields
+            normalization_result = NormalizationResult(
                 # Basic identification
                 tool_name="NormalizerAgent",
                 sample_id=res.sample_id,
                 target_field=res.target_field,
-                # Original candidates for reference
-                series_candidates=res.series_candidates,
-                sample_candidates=res.sample_candidates,
-                abstract_candidates=res.abstract_candidates,
-                final_candidates=res.final_candidates,
-                # Legacy fields for backward compatibility
-                final_candidate=final_candidate,
-                final_confidence=final_confidence,
-                # Normalization results
-                final_normalized_candidates=final_normalized_candidates,
-                # Legacy normalized fields for backward compatibility
-                final_normalized_term=final_normalized_term,
-                final_normalized_id=final_normalized_id,
-                final_ontology=final_ontology,
-                # Processing metadata
-                reconciliation_needed=res.reconciliation_needed,
-                reconciliation_reason=res.reconciliation_reason,
-                sources_processed=res.sources_processed,
-                processing_notes=res.processing_notes,
+                
+                # Input candidates (minimal reference to original extraction)
+                original_candidates=unique_original_candidates,
+                
+                # Normalization results - the core output
+                normalized_candidates=final_normalized_candidates,
+                
+                # Best normalization result
+                best_normalized_result=final_normalized_candidates[0] if final_normalized_candidates else None,
+                
                 # Normalization-specific metadata
                 normalization_method="semantic_search",
                 ontologies_searched=ontologies,
                 normalization_timestamp=datetime.now().isoformat(),
                 normalization_tool_version="1.0.0",
+                
+                # Processing metadata
+                sources_processed=res.sources_processed,
+                processing_notes=res.processing_notes,
+                
+                # Quality indicators
+                normalization_success=len(final_normalized_candidates) > 0,
+                normalization_confidence=final_normalized_candidates[0].normalization_confidence if final_normalized_candidates else None,
+                
+                # Legacy fields for backward compatibility (deprecated)
+                final_normalized_term=final_normalized_term,
+                final_normalized_id=final_normalized_id,
+                final_ontology=final_ontology,
             )
 
             # Wrap in SampleResultEntry as expected by BatchNormalizationResult
             sample_entry = SampleResultEntry(
-                sample_id=res.sample_id, result=norm_result
+                sample_id=res.sample_id, result=normalization_result
             )
             sample_results.append(sample_entry)
 
@@ -605,8 +631,13 @@ def semantic_search_candidates_impl(
             sample_results=sample_results,
             session_directory=session_dir,
             target_field=target_field,
-            total_candidates_normalized=len(all_candidates),
+            total_samples_processed=len(all_candidates),
             successful_normalizations=successful_normalizations,
+            failed_normalizations=len(all_candidates) - successful_normalizations,
+            ontologies_searched=ontologies,
+            normalization_method="semantic_search",
+            normalization_timestamp=datetime.now().isoformat(),
+            normalization_tool_version="1.0.0",
             processing_summary=[
                 KeyValue(key="ontologies_used", value=", ".join(ontologies)),
                 KeyValue(key="min_score_threshold", value=str(min_score)),
@@ -776,30 +807,34 @@ def normalize_curation_result(
         tool_name="NormalizerAgent",
         sample_id=curation_result.sample_id,
         target_field=curation_result.target_field,
-        # Original candidates for reference
-        series_candidates=curation_result.series_candidates,
-        sample_candidates=curation_result.sample_candidates,
-        abstract_candidates=curation_result.abstract_candidates,
-        final_candidates=curation_result.final_candidates,
-        # Legacy fields for backward compatibility
-        final_candidate=final_candidate,
-        final_confidence=final_confidence,
-        # Normalization results
-        final_normalized_candidates=final_normalized_candidates,
-        # Legacy normalized fields for backward compatibility
-        final_normalized_term=final_normalized_term,
-        final_normalized_id=final_normalized_id,
-        final_ontology=final_ontology,
-        # Processing metadata
-        reconciliation_needed=curation_result.reconciliation_needed,
-        reconciliation_reason=curation_result.reconciliation_reason,
-        sources_processed=curation_result.sources_processed,
-        processing_notes=curation_result.processing_notes,
+        
+        # Input candidates (minimal reference to original extraction)
+        original_candidates=unique_original_candidates,
+        
+        # Normalization results - the core output
+        normalized_candidates=final_normalized_candidates,
+        
+        # Best normalization result
+        best_normalized_result=final_normalized_candidates[0] if final_normalized_candidates else None,
+        
         # Normalization-specific metadata
         normalization_method=normalization_method,
         ontologies_searched=ontologies_searched,
         normalization_timestamp=datetime.now().isoformat(),
         normalization_tool_version="1.0.0",
+        
+        # Processing metadata
+        sources_processed=curation_result.sources_processed,
+        processing_notes=curation_result.processing_notes,
+        
+        # Quality indicators
+        normalization_success=len(final_normalized_candidates) > 0,
+        normalization_confidence=final_normalized_candidates[0].normalization_confidence if final_normalized_candidates else None,
+        
+        # Legacy fields for backward compatibility (deprecated)
+        final_normalized_term=final_normalized_term,
+        final_normalized_id=final_normalized_id,
+        final_ontology=final_ontology,
     )
 
     return normalization_result
