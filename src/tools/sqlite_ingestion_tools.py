@@ -352,7 +352,6 @@ def extract_paper_abstract_sqlite_impl(
             
             pubmed_manager = PubMedSQLiteManager()
             if pubmed_manager.is_available():
-                print(f"📋 Using local PubMed database for PMID {pmid}")
                 
                 metadata = pubmed_manager.get_pubmed_metadata(pmid)
                 if "error" not in metadata:
@@ -892,7 +891,7 @@ def create_series_sample_mapping_sqlite_impl(
         mapping_result["generated_at"] = str(session_path)
         mapping_result["session_directory"] = str(session_path)
         
-        # Save mapping to file
+        # Save mapping to file (caller decides directory)
         mapping_file = session_path / "series_sample_mapping.json"
         with open(mapping_file, 'w') as f:
             json.dump(mapping_result, f, indent=2, default=str)
@@ -1033,3 +1032,49 @@ def download_geometadb_impl(db_path: str = "data/GEOmetadb.sqlite", force: bool 
         print("🔍 Full traceback:")
         traceback.print_exc()
         return error_msg
+
+def get_pubmed_database_info_sqlite_impl() -> str:
+    """
+    Get information about the local PubMed SQLite database.
+    
+    This function provides database statistics and metadata about the local
+    PubMed SQLite database, similar to the GEOmetadb info function.
+    
+    Returns
+    -------
+    str
+        JSON string with PubMed database information.
+    """
+    try:
+        from src.tools.pubmed_sqlite_manager import PubMedSQLiteManager
+        
+        pubmed_manager = PubMedSQLiteManager()
+        
+        if not pubmed_manager.is_available():
+            return json.dumps({
+                "error": "PubMed database is not available",
+                "expected_path": str(pubmed_manager.db_path),
+                "message": "Please run pubmed_ingest.py to create the database first"
+            }, indent=2)
+        
+        stats = pubmed_manager.get_database_stats()
+        
+        if "error" in stats:
+            return json.dumps({"error": stats["error"]}, indent=2)
+        
+        return json.dumps(stats, indent=2, default=str)
+        
+    except ImportError as e:
+        error_msg = f"PubMed SQLite manager not available: {str(e)}"
+        print(f"❌ {error_msg}")
+        print("🔍 Full traceback:")
+        traceback.print_exc()
+        return json.dumps({"error": error_msg}, indent=2)
+        
+    except Exception as e:
+        error_msg = f"Error getting PubMed database info: {str(e)}"
+        print(f"❌ {error_msg}")
+        print("🔍 Full traceback:")
+        traceback.print_exc()
+        return json.dumps({"error": error_msg}, indent=2)
+

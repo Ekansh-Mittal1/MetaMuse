@@ -43,7 +43,10 @@ class LinkerTools:
             Path to the session directory containing IngestionAgent output
         """
         self.session_dir = Path(session_dir)
-        self.mapping_file = self.session_dir / "series_sample_mapping.json"
+        # Mapping file now expected under preprocessing if session_dir points to batch root
+        preprocessing_mapping = self.session_dir / "preprocessing" / "series_sample_mapping.json"
+        default_mapping = self.session_dir / "series_sample_mapping.json"
+        self.mapping_file = preprocessing_mapping if preprocessing_mapping.exists() else default_mapping
 
     def load_mapping_file(self) -> LinkerResult:
         """

@@ -21,6 +21,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any
 import logging
+try:
+    from tqdm import tqdm
+except Exception:
+    def tqdm(iterable, **kwargs):
+        return iterable
 
 from src.agents.curator import run_curator_agent
 from agents import ModelProvider
@@ -70,24 +75,23 @@ class PreprocessingWorkflow:
         self.model_provider = model_provider
         self.max_tokens = max_tokens
         
-        # Create discovery directory structure (matching original workflow)
-        self.discovery_dir = self.session_directory / "discovery"
-        self.discovery_dir.mkdir(exist_ok=True)
-        
-        # Create subdirectories within discovery (matching original structure)
-        self.discovery_outputs_dir = self.discovery_dir / "outputs"
-        self.discovery_outputs_dir.mkdir(exist_ok=True)
-        
-        self.discovery_raw_data_dir = self.discovery_dir / "raw_data"
-        self.discovery_raw_data_dir.mkdir(exist_ok=True)
+        # New layout: data_intake and preprocessing directories
+        self.data_intake_dir = self.session_directory / "data_intake"
+        self.data_intake_dir.mkdir(exist_ok=True)
+        # Raw data is under data_intake/raw_data
+        self.data_intake_raw_data_dir = self.data_intake_dir / "raw_data"
+        self.data_intake_raw_data_dir.mkdir(exist_ok=True)
         
         # Create preprocessing directory for workflow outputs
         self.preprocessing_dir = self.session_directory / "preprocessing"
         self.preprocessing_dir.mkdir(exist_ok=True)
+        # Outputs directory to store curator outputs for sample type discovery
+        self.outputs_dir = self.preprocessing_dir / "outputs"
+        self.outputs_dir.mkdir(exist_ok=True)
         
         # Output files
-        self.sample_type_mapping_file = self.discovery_dir / "sample_type_mapping.json"  # Put in discovery dir like original
-        self.series_sample_mapping_file = self.discovery_dir / "series_sample_mapping.json"  # Copy from data intake
+        self.sample_type_mapping_file = self.preprocessing_dir / "sample_type_mapping.json"
+        self.series_sample_mapping_file = self.preprocessing_dir / "series_sample_mapping.json"
         self.preprocessing_output_file = self.preprocessing_dir / "preprocessing_output.json"
         
         # Validate sample_type_filter if provided
@@ -116,8 +120,6 @@ class PreprocessingWorkflow:
         if discovery_batch_size is None:
             discovery_batch_size = self.batch_size
             
-        logger.info(f"🔍 Starting sample type discovery for {len(samples)} samples")
-        logger.info(f"📋 Using discovery batch size: {discovery_batch_size}")
         
         # Create batches for discovery
         discovery_batches = []
@@ -125,33 +127,32 @@ class PreprocessingWorkflow:
             batch = samples[i:i + discovery_batch_size]
             discovery_batches.append(batch)
         
-        logger.info(f"📋 Created {len(discovery_batches)} discovery batches")
         
         # Store all sample type mappings and cached results
         all_sample_type_mapping = {}
         cached_initial_results = {}
         
-        # Process discovery batches
-        for batch_num, batch_samples in enumerate(discovery_batches, 1):
+        # Process discovery batches with progress bar
+        for batch_num, batch_samples in enumerate(
+            tqdm(discovery_batches, total=len(discovery_batches), desc="Preprocessing - batches", unit="batch"),
+            1
+        ):
             try:
-                logger.info(f"🔄 Processing discovery batch {batch_num}/{len(discovery_batches)} with {len(batch_samples)} samples")
                 
                 # Run sample type curation using existing data intake output
-                logger.info(f"🔍 DEBUG: Original data_intake_output has {len(self.data_intake_output.curation_packages) if self.data_intake_output.curation_packages else 0} curation packages")
                 
                 # Filter data intake output for this batch
                 batch_data_intake = self._filter_data_intake_for_batch(self.data_intake_output, batch_samples)
-                logger.info(f"🔍 DEBUG: Filtered data_intake_output has {len(batch_data_intake.curation_packages) if batch_data_intake.curation_packages else 0} curation packages")
                 
                 # Create sample type curation-specific model provider (using faster model for sample types)
                 curation_model_provider = self._create_sample_type_model_provider(self.model_provider)
                 
-                # Run curator agent for sample type using discovery directory
+                # Run curator agent for sample type using preprocessing directory (no discovery)
                 curator_result = await run_curator_agent(
                     data_intake_output=batch_data_intake,
                     target_field="sample_type",
-                    session_id="discovery",  # Use unified discovery session like original workflow
-                    sandbox_dir=str(self.discovery_dir),  # Use discovery directory
+                    session_id="preprocessing",  # unified session name for preprocessing
+                    sandbox_dir=str(self.preprocessing_dir),  # use preprocessing directory
                     model_provider=curation_model_provider,
                     max_tokens=self.max_tokens,
                 )
@@ -160,13 +161,25 @@ class PreprocessingWorkflow:
                     # Extract sample type mapping from curator results
                     batch_sample_types = self._extract_sample_types_from_curator_result(curator_result)
                     all_sample_type_mapping.update(batch_sample_types)
+
+                    # Persist full curator output for auditability under preprocessing/outputs
+                    try:
+                        output_path = self.outputs_dir / f"sample_type_curator_output_batch_{batch_num}.json"
+                        with open(output_path, "w") as f:
+                            # curator_result is a Pydantic model; prefer model_dump if available
+                            payload = curator_result.model_dump() if hasattr(curator_result, "model_dump") else (
+                                curator_result if isinstance(curator_result, dict) else {}
+                            )
+                            json.dump(payload, f, indent=2)
+                    except Exception as save_err:
+                        logger.warning(f"Failed to save sample type curator output for batch {batch_num}: {save_err}")
                     
                     # Store cached results per individual sample (matching original workflow structure)
                     for sample_id in batch_samples:
                         sample_type = batch_sample_types.get(sample_id, "failed")
                         cached_initial_results[sample_id] = {
-                            "discovery_session_id": "discovery",  # Use unified discovery session
-                            "session_directory": str(self.discovery_dir),  # Use discovery directory
+                            "discovery_session_id": "preprocessing",
+                            "session_directory": str(self.preprocessing_dir),
                             "sample_type": sample_type,
                             "batch_id": batch_num,
                             "initial_curator_outputs": {}  # Not needed since we're only doing sample type curation
@@ -178,7 +191,6 @@ class PreprocessingWorkflow:
                         sample_type = batch_sample_types.get(sample_id, "failed")
                         batch_distribution[sample_type] = batch_distribution.get(sample_type, 0) + 1
                     
-                    logger.info(f"✅ Discovery batch {batch_num} completed. Sample types: {batch_distribution}")
                     
                 else:
                     logger.error(f"❌ Discovery batch {batch_num} failed: {curator_result.message}")
@@ -194,8 +206,8 @@ class PreprocessingWorkflow:
                 for sample_id in batch_samples:
                     all_sample_type_mapping[sample_id] = "failed"
                     cached_initial_results[sample_id] = {
-                        "discovery_session_id": "discovery",
-                        "session_directory": str(self.session_directory / "discovery"),
+                        "discovery_session_id": "preprocessing",
+                        "session_directory": str(self.preprocessing_dir),
                         "sample_type": "failed",
                         "batch_id": batch_num
                     }
@@ -212,14 +224,12 @@ class PreprocessingWorkflow:
         with open(self.sample_type_mapping_file, "w") as f:
             json.dump(unified_sample_type_mapping, f, indent=2)
         
-        logger.info(f"💾 Saved sample type mapping to {self.sample_type_mapping_file}")
         
         # Log final sample type distribution
         final_distribution = {}
         for sample_type in all_sample_type_mapping.values():
             final_distribution[sample_type] = final_distribution.get(sample_type, 0) + 1
         
-        logger.info(f"🎯 Final sample type distribution: {final_distribution}")
         
         # Report failed samples
         failed_samples = [sid for sid, stype in all_sample_type_mapping.items() if stype == "failed"]
@@ -288,7 +298,6 @@ class PreprocessingWorkflow:
                 type_batches.append(batch)
             
             sample_type_batches[sample_type] = type_batches
-            logger.info(f"📦 Created {len(type_batches)} batches for {sample_type} with {len(type_samples)} samples")
        
         return sample_type_batches
 
@@ -308,11 +317,10 @@ class PreprocessingWorkflow:
         """
         start_time = time.time()
         
-        logger.info(f"🚀 Starting preprocessing workflow for {len(samples)} samples")
         
         try:
-            # Copy GSE directories and metadata from data intake to discovery directory
-            await self._copy_data_intake_to_discovery()
+            # Ensure preprocessing has access to required inputs
+            await self._prepare_preprocessing_inputs()
             
             # Discover sample types
             sample_type_mapping = await self.discover_sample_types(samples)
@@ -345,13 +353,12 @@ class PreprocessingWorkflow:
                 },
                 "session_directory": str(self.session_directory),
                 "preprocessing_directory": str(self.preprocessing_dir),
-                "discovery_directory": str(self.discovery_dir),
                 "output_files": {
                     "sample_type_mapping": str(self.sample_type_mapping_file),
                     "series_sample_mapping": str(self.series_sample_mapping_file),
                     "preprocessing_output": str(self.preprocessing_output_file),
-                    "discovery_outputs": str(self.discovery_outputs_dir),
-                    "discovery_raw_data": str(self.discovery_raw_data_dir)
+                    "raw_data_directory": str(self.data_intake_raw_data_dir),
+                    "curator_outputs_directory": str(self.outputs_dir)
                 },
                 "timestamp": datetime.now().isoformat()
             }
@@ -361,7 +368,7 @@ class PreprocessingWorkflow:
                 json.dump(output, f, indent=2)
             
             logger.info(f"✅ Preprocessing workflow completed in {execution_time:.2f} seconds")
-            logger.info(f"📊 Statistics: {output['statistics']}")
+            logger.info(f"📊 Statistics: {output['statistics']}\n\n")
             
             return output
             
@@ -384,45 +391,42 @@ class PreprocessingWorkflow:
             
             return error_output
 
-    async def _copy_data_intake_to_discovery(self):
+    async def _prepare_preprocessing_inputs(self):
         """
-        Copy GSE directories and metadata files from data intake stage to discovery directory.
-        This replicates the directory structure from the original workflow.
+        Prepare inputs needed for preprocessing by copying or linking required files
+        from data_intake into preprocessing as needed (no discovery directory).
         """
-        import shutil
         
-        logger.info("📁 Copying data intake outputs to discovery directory structure")
         
         # Get the data intake session directory
-        data_intake_session_dir = Path(self.data_intake_output.session_directory)
+        data_intake_session_dir = Path(self.data_intake_output.session_directory) / "data_intake"
         
-        # Copy all GSE directories from data intake to discovery
+        # Copy series_sample_mapping into preprocessing (filtered later when discovered)
         if data_intake_session_dir.exists():
             for item in data_intake_session_dir.iterdir():
-                if item.is_dir() and item.name.startswith("GSE"):
-                    target_dir = self.discovery_dir / item.name
-                    if target_dir.exists():
-                        shutil.rmtree(target_dir)
-                    shutil.copytree(item, target_dir)
-                    logger.info(f"📂 Copied {item.name} to discovery directory")
-                
-                # Copy important files like series_sample_mapping.json
-                elif item.is_file() and item.name in ["series_sample_mapping.json"]:
-                    target_file = self.discovery_dir / item.name
-                    shutil.copy2(item, target_file)
-                    logger.info(f"📄 Copied {item.name} to discovery directory")
-        
-        # Copy outputs and raw_data directories if they exist
-        for dir_name in ["outputs", "raw_data"]:
-            source_dir = data_intake_session_dir / dir_name
-            target_dir = self.discovery_dir / dir_name
-            if source_dir.exists():
-                if target_dir.exists():
-                    shutil.rmtree(target_dir)
-                shutil.copytree(source_dir, target_dir)
-                logger.info(f"📂 Copied {dir_name} directory to discovery")
-        
-        logger.info("✅ Data intake to discovery copy completed")
+                if item.is_file() and item.name in ["series_sample_mapping.json"]:
+                    # Filter mapping to only include selected samples for this run
+                    try:
+                        with open(item, "r") as f:
+                            mapping_data = json.load(f)
+                        # Build filtered mapping
+                        selected = set(self.data_intake_output.sample_ids_for_curation or [])
+                        filtered_mapping = {}
+                        for gse_id, gsm_list in mapping_data.get("mapping", {}).items():
+                            keep = [gsm for gsm in gsm_list if gsm in selected]
+                            if keep:
+                                filtered_mapping[gse_id] = keep
+                        # Rebuild reverse mapping
+                        reverse = {gsm: gse for gse, gsms in filtered_mapping.items() for gsm in gsms}
+                        mapping_data["mapping"] = filtered_mapping
+                        mapping_data["reverse_mapping"] = reverse
+                        mapping_data["total_series"] = len(filtered_mapping)
+                        mapping_data["total_samples"] = sum(len(v) for v in filtered_mapping.values())
+                        # Write to preprocessing directory
+                        with open(self.series_sample_mapping_file, "w") as out:
+                            json.dump(mapping_data, out, indent=2)
+                    except Exception as e:
+                        logger.warning(f"Failed to filter series_sample_mapping.json: {e}")
 
     def _filter_data_intake_for_batch(self, data_intake_output: LinkerOutput, batch_samples: List[str]) -> LinkerOutput:
         """
@@ -483,7 +487,6 @@ class PreprocessingWorkflow:
                     sample_type = str(result.sample_type.value) if hasattr(result.sample_type, 'value') else str(result.sample_type)
                     if sample_id and sample_type:
                         sample_type_mapping[sample_id] = sample_type
-                        logger.info(f"🔍 Extracted sample type: {sample_id} -> {sample_type}")
                         
         except Exception as e:
             logger.warning(f"Error extracting sample types from curator result: {e}")

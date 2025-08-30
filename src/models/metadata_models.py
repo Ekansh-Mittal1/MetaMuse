@@ -148,6 +148,8 @@ class GSMAttributes(BaseModel):
     label_ch1: Optional[str] = Field(None, description="Label for channel 1")
     description: Optional[str] = Field(None, description="Sample description")
     data_processing: Optional[str] = Field(None, description="Data processing steps")
+    # Instrument/platform details
+    instrument_model: Optional[str] = Field(None, description="Instrument model inferred or reported for the sample")
     
     # Channel 2 information (for dual-channel experiments)
     source_name_ch2: Optional[str] = Field(None, description="Source name for channel 2")

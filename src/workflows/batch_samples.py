@@ -145,7 +145,8 @@ class BatchSamplesProcessor:
         self.batch_dir.mkdir(parents=True, exist_ok=True)
         
         # Create unified discovery directory structure
-        self.discovery_dir = self.batch_dir / "discovery"
+        # discovery directory no longer used; use preprocessing instead
+        self.discovery_dir = self.batch_dir / "preprocessing"
         self.discovery_dir.mkdir(parents=True, exist_ok=True)
         
         # Create subdirectories within discovery
@@ -345,7 +346,7 @@ class BatchSamplesProcessor:
                 # Run initial processing to discover sample types using unified discovery directory
                 initial_result = await run_initial_processing(
                     input_text=input_text,
-                    session_id="discovery",  # Use unified discovery session
+                    session_id="preprocessing",
                     sandbox_dir=str(self.discovery_dir),
                     model_provider=self.model_provider,
                     max_tokens=self.max_tokens,
@@ -400,7 +401,7 @@ class BatchSamplesProcessor:
                     all_sample_type_mapping[sample_id] = "failed"
                     # Still cache failed samples for tracking
                     cached_initial_results[sample_id] = {
-                        "discovery_session_id": "discovery",
+                        "discovery_session_id": "preprocessing",
                         "session_directory": str(self.discovery_dir),
                         "sample_type": "failed",
                         "batch_id": batch_num
@@ -1159,7 +1160,7 @@ class BatchSamplesProcessor:
                     "legacy_sample_type_mapping": getattr(self, 'sample_type_mapping', {}),
                     "distribution": {sample_type: sum(1 for mapping in getattr(self, 'unified_sample_type_mapping', {}).values() if mapping.get('sample_type') == sample_type) for sample_type in set(mapping.get('sample_type') for mapping in getattr(self, 'unified_sample_type_mapping', {}).values())},
                     "discovery_structure": {
-                        "discovery_directory": str(self.discovery_dir),
+                        "preprocessing_directory": str(self.discovery_dir),
                         "outputs_directory": str(self.discovery_outputs_dir),
                         "raw_data_directory": str(self.discovery_raw_data_dir),
                         "unified_mapping_file": str(self.discovery_dir / "sample_type_mapping.json")

@@ -23,8 +23,13 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any
 import logging
+try:
+    from tqdm import tqdm
+except Exception:
+    def tqdm(iterable, **kwargs):
+        return iterable
 
 from src.workflows.batch_targets import (
     run_conditional_processing,
@@ -122,11 +127,10 @@ class ConditionalProcessingWorkflow:
         batch_start_time = time.time()
         batch_name = f"{sample_type}_batch_{batch_num}"
         
-        logger.info(f"🔄 Processing {batch_name} ({batch_num}/{total_batches}) with {len(batch_samples)} samples")
         
         try:
             # Create batch directory
-            batch_dir = self.session_directory / batch_name
+            batch_dir = self.conditional_dir / batch_name
             batch_dir.mkdir(exist_ok=True)
             
             # Create data intake output for this batch
@@ -169,17 +173,11 @@ class ConditionalProcessingWorkflow:
             normalization_fields = config["normalization"]
             not_applicable_fields = config.get("not_applicable", [])
             
-            logger.info(f"🎯 Sample type '{sample_type}' configuration:")
-            logger.info(f"   - Curation fields: {curation_fields}")
-            logger.info(f"   - Normalization fields: {normalization_fields}")
-            logger.info(f"   - Not applicable fields: {not_applicable_fields}")
-            
             # Run conditional processing with specialized model
             curation_model_provider = create_model_provider_for_operation(
                 "conditional_curation", self.base_model_provider
             )
             
-            logger.info(f"🧠 Running conditional curation for {batch_name} with {len(curation_fields)} target fields: {curation_fields}")
             
             # Need to create an InitialProcessingResult-like object for conditional processing
             # Since we're bypassing the initial processing, we need to create a mock result
@@ -217,7 +215,6 @@ class ConditionalProcessingWorkflow:
                     "execution_time_seconds": time.time() - batch_start_time,
                 }
             
-            logger.info(f"✅ Conditional curation completed for {batch_name}")
             
             # Run unified normalization with specialized model
             normalization_model_provider = create_model_provider_for_operation(
@@ -228,7 +225,6 @@ class ConditionalProcessingWorkflow:
             fields_to_normalize = normalization_fields
             
             if fields_to_normalize:
-                logger.info(f"🔬 Running normalization for {batch_name} with fields: {fields_to_normalize}")
                 
                 try:
                     normalization_result = await run_unified_normalization(
@@ -242,11 +238,7 @@ class ConditionalProcessingWorkflow:
                     if hasattr(normalization_result, 'success'):
                         if not normalization_result.success:
                             logger.warning(f"⚠️ Normalization failed for {batch_name}: {normalization_result.message}")
-                        else:
-                            logger.info(f"✅ Normalization completed for {batch_name}")
-                    else:
-                        # Assume success if it's a dict or other object
-                        logger.info(f"✅ Normalization completed for {batch_name} (dict result)")
+                        
                         
                 except Exception as e:
                     logger.warning(f"⚠️ Normalization failed for {batch_name} with exception: {str(e)}")
@@ -276,7 +268,6 @@ class ConditionalProcessingWorkflow:
             with open(batch_targets_file, "w") as f:
                 json.dump(batch_output, f, indent=2)
             
-            logger.info(f"✅ Batch {batch_name} completed successfully in {batch_output['execution_time_seconds']:.2f} seconds")
             
             return batch_output
             
@@ -316,11 +307,11 @@ class ConditionalProcessingWorkflow:
         """
         start_time = time.time()
         
-        logger.info(f"🚀 Starting conditional processing workflow")
         
         # Calculate total batches
         total_batches = sum(len(batches) for batches in sample_type_batches.values())
-        logger.info(f"📦 Processing {total_batches} total batches across {len(sample_type_batches)} sample types")
+        # Unified progress bar across all sample types
+        pbar = tqdm(total=total_batches, desc="Conditional - batches", unit="batch")
         
         all_batch_results = []
         successful_batches = 0
@@ -329,11 +320,14 @@ class ConditionalProcessingWorkflow:
         try:
             # Process each sample type
             for sample_type, batches in sample_type_batches.items():
-                logger.info(f"🔍 Processing {len(batches)} batches for sample type: {sample_type}")
-                
-                # Process batches for this sample type
+                # Process batches for this sample type and advance unified progress bar
                 batch_num = 1
                 for batch_samples in batches:
+                    try:
+                        pbar.set_description(f"Conditional - {sample_type}")
+                        pbar.set_postfix_str(f"type={sample_type}, samples={len(batch_samples)}")
+                    except Exception:
+                        pass
                     # Calculate global batch number for naming
                     global_batch_num = successful_batches + failed_batches + 1
                     
@@ -360,6 +354,10 @@ class ConditionalProcessingWorkflow:
                         }
                     
                     batch_num += 1
+                    try:
+                        pbar.update(1)
+                    except Exception:
+                        pass
             
             execution_time = time.time() - start_time
             
@@ -423,6 +421,11 @@ class ConditionalProcessingWorkflow:
                 json.dump(error_output, f, indent=2)
             
             return error_output
+        finally:
+            try:
+                pbar.close()
+            except Exception:
+                pass
 
 
 async def run_conditional_processing_workflow(

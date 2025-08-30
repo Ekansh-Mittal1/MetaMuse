@@ -14,6 +14,11 @@ import argparse
 from pathlib import Path
 from typing import Dict, List
 from dotenv import load_dotenv
+try:
+    from tqdm import tqdm
+except Exception:
+    def tqdm(iterable, **kwargs):
+        return iterable
 
 # Add the project root to Python path when running this file directly
 if __name__ == "__main__":
@@ -712,7 +717,7 @@ class DataIntakeWorkflow:
             all_sample_ids = []
 
             # Process GSM IDs
-            for gsm_id in geo_ids["gsm_ids"]:
+            for gsm_id in tqdm(geo_ids["gsm_ids"], desc="Data Intake - GSM", unit="gsm"):
                 result = self._extract_gsm_workflow(gsm_id)
                 if not result.success:
                     return result
@@ -721,7 +726,7 @@ class DataIntakeWorkflow:
                 all_sample_ids.append(gsm_id)
 
             # Process GSE IDs
-            for gse_id in geo_ids["gse_ids"]:
+            for gse_id in tqdm(geo_ids["gse_ids"], desc="Data Intake - GSE", unit="gse"):
                 result = self._extract_gse_workflow(gse_id)
                 if not result.success:
                     return result
@@ -749,7 +754,7 @@ class DataIntakeWorkflow:
                         )
 
             # Process PMID IDs
-            for pmid in geo_ids["pmid_ids"]:
+            for pmid in tqdm(geo_ids["pmid_ids"], desc="Data Intake - PMID", unit="pmid"):
                 result = self._extract_pmid_workflow(pmid)
                 if not result.success:
                     return result
@@ -797,7 +802,7 @@ class DataIntakeWorkflow:
             all_results = []
             all_files_created = []
 
-            for sample_id in sample_ids:
+            for sample_id in tqdm(sample_ids, desc="Data Intake - Linking samples", unit="sample"):
                 result = self._link_sample_data(sample_id, fields_to_remove)
                 if not result.success:
                     return result
@@ -856,7 +861,7 @@ class DataIntakeWorkflow:
             all_sample_ids = []
 
             # Process GSM IDs
-            for gsm_id in geo_ids["gsm_ids"]:
+            for gsm_id in tqdm(geo_ids["gsm_ids"], desc="Data Intake - GSM", unit="gsm"):
                 result = self._extract_gsm_workflow(gsm_id)
                 if not result.success:
                     return result
@@ -865,7 +870,7 @@ class DataIntakeWorkflow:
                 all_sample_ids.append(gsm_id)
 
             # Process GSE IDs
-            for gse_id in geo_ids["gse_ids"]:
+            for gse_id in tqdm(geo_ids["gse_ids"], desc="Data Intake - GSE", unit="gse"):
                 result = self._extract_gse_workflow(gse_id)
                 if not result.success:
                     return result
@@ -893,7 +898,7 @@ class DataIntakeWorkflow:
                         )
 
             # Process PMID IDs
-            for pmid in geo_ids["pmid_ids"]:
+            for pmid in tqdm(geo_ids["pmid_ids"], desc="Data Intake - PMID", unit="pmid"):
                 result = self._extract_pmid_workflow(pmid)
                 if not result.success:
                     return result

@@ -40,6 +40,7 @@ from src.workflows.conditional_processing import run_conditional_processing_work
 
 from src.models import LinkerOutput
 from src.models.common import KeyValue
+from src.tools.batch_processing_tools import extract_direct_fields_from_data_intake
 
 # Load environment variables
 load_dotenv()
@@ -171,13 +172,10 @@ class EfficientBatchSamplesProcessor:
             logger.info(f"🎯 Using custom batch name: batch_{self.batch_name}_{timestamp}")
         else:
             self.batch_dir = self.output_dir / f"batch_{timestamp}"
-            logger.info(f"🕒 Using timestamp-based batch name: batch_{timestamp}")
         
         self.batch_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create unified discovery directory structure
-        self.discovery_dir = self.batch_dir / "discovery"
-        self.discovery_dir.mkdir(parents=True, exist_ok=True)
+        # Discovery directory no longer used
 
     def _setup_logging(self):
         """Set up file logging for the batch process."""
@@ -283,10 +281,11 @@ class EfficientBatchSamplesProcessor:
                 raise RuntimeError(f"Data intake failed: {data_intake_result.message}")
             
             stage_duration = time.time() - stage_start_time
-            logger.info(f"✅ Stage 1 completed in {stage_duration:.2f} seconds")
             
-            # Save data intake output for auditability
-            data_intake_output_file = self.batch_dir / "data_intake_stage_output.json"
+            # Save data intake output under data_intake/
+            data_intake_dir = self.batch_dir / "data_intake"
+            data_intake_dir.mkdir(exist_ok=True)
+            data_intake_output_file = data_intake_dir / "data_intake_stage_output.json"
             with open(data_intake_output_file, "w") as f:
                 json.dump(data_intake_result.model_dump(), f, indent=2)
             
@@ -334,10 +333,11 @@ class EfficientBatchSamplesProcessor:
                 raise RuntimeError(f"Preprocessing failed: {preprocessing_result['message']}")
             
             stage_duration = time.time() - stage_start_time
-            logger.info(f"✅ Stage 2 completed in {stage_duration:.2f} seconds")
             
-            # Save preprocessing output for auditability
-            preprocessing_output_file = self.batch_dir / "preprocessing_stage_output.json"
+            # Save preprocessing output under preprocessing/
+            preprocessing_dir = self.batch_dir / "preprocessing"
+            preprocessing_dir.mkdir(exist_ok=True)
+            preprocessing_output_file = preprocessing_dir / "preprocessing_output.json"
             with open(preprocessing_output_file, "w") as f:
                 json.dump(preprocessing_result, f, indent=2)
             
@@ -393,8 +393,10 @@ class EfficientBatchSamplesProcessor:
             stage_duration = time.time() - stage_start_time
             logger.info(f"✅ Stage 3 completed in {stage_duration:.2f} seconds")
             
-            # Save conditional processing output for auditability
-            conditional_output_file = self.batch_dir / "conditional_processing_stage_output.json"
+            # Save conditional processing output under conditional_processing/
+            conditional_dir = self.batch_dir / "conditional_processing"
+            conditional_dir.mkdir(exist_ok=True)
+            conditional_output_file = conditional_dir / "conditional_processing_stage_output.json"
             with open(conditional_output_file, "w") as f:
                 json.dump(conditional_result, f, indent=2)
             
@@ -443,16 +445,48 @@ class EfficientBatchSamplesProcessor:
                     "direct_fields": {}
                 }
                 
-                # Extract direct fields from data intake
+                # Extract direct fields from data intake (fallback to cleaned metadata content)
                 if "curation_packages" in data_intake:
                     for pkg in data_intake["curation_packages"]:
-                        if pkg["sample_id"] == sample_id:
+                        if pkg.get("sample_id") == sample_id:
+                            series_id = pkg.get("series_id", "")
+                            organism = ""
+                            platform_id = ""
+                            instrument = ""
+                            pubmed_id = ""
+
+                            # Sample metadata content lookup
+                            sm = pkg.get("sample_metadata") or {}
+                            sm_content = sm.get("content") or []
+                            for kv in sm_content:
+                                key = kv.get("key", "").lower()
+                                val = kv.get("value", "")
+                                if not organism and key == "organism":
+                                    organism = val
+                                if not platform_id and key in ("platform_id", "gpl", "platform"):
+                                    platform_id = val
+                                if not instrument and key in ("instrument", "instrument_model", "sequencer"):
+                                    instrument = val
+
+                            # Abstract metadata preferred for pubmed_id
+                            am = pkg.get("abstract_metadata") or {}
+                            if am.get("pmid"):
+                                pubmed_id = str(am.get("pmid"))
+                            else:
+                                # Fallback to series metadata content
+                                sr = pkg.get("series_metadata") or {}
+                                sr_content = sr.get("content") or []
+                                for kv in sr_content:
+                                    if kv.get("key", "").lower() == "pubmed_id" and kv.get("value"):
+                                        pubmed_id = str(kv.get("value"))
+                                        break
+
                             sample_data["direct_fields"] = {
-                                "organism": pkg.get("organism", ""),
-                                "series_id": pkg.get("series_id", ""),
-                                "pubmed_id": pkg.get("pubmed_id", ""),
-                                "platform_id": pkg.get("platform_id", ""),
-                                "instrument": pkg.get("instrument", "")
+                                "organism": organism,
+                                "series_id": series_id,
+                                "pubmed_id": pubmed_id,
+                                "platform_id": platform_id,
+                                "instrument": instrument,
                             }
                             break
                 
@@ -597,7 +631,6 @@ class EfficientBatchSamplesProcessor:
             "pubmed_id": "",
             "platform_id": "",
             "instrument": "",
-            "treatment": ""  # Additional treatment field
         }
         
         # Populate direct fields
@@ -703,6 +736,17 @@ class EfficientBatchSamplesProcessor:
             # Note: The actual data is in the individual batch directories
             # These files provide summary statistics and metadata
             
+            # Precompute direct fields (organism, pubmed_id, platform_id, instrument_model, series_id)
+            # using the original extractor for parity with legacy workflow
+            all_sample_ids = []
+            for batch_result in conditional_output.get("batch_results", []):
+                if batch_result.get("success"):
+                    all_sample_ids.extend(batch_result.get("batch_samples", []))
+            direct_fields_map = extract_direct_fields_from_data_intake(
+                data_intake_output=data_intake_output,
+                sample_ids=list(dict.fromkeys(all_sample_ids))  # preserve order, remove dups
+            ) if all_sample_ids else {}
+
             if self.output_format == "parquet":
                 # Extract detailed results from each batch directory (matching original format)
                 detailed_data = []
@@ -721,6 +765,14 @@ class EfficientBatchSamplesProcessor:
                                 sample_data = sample_results[sample_id]
                                 # Create row matching original batch_samples format
                                 row = self.create_streamlined_csv_row(sample_id, sample_data, sample_type, batch_name)
+                                # Override with authoritative direct fields from data intake for parity
+                                df = direct_fields_map.get(sample_id, {})
+                                if df:
+                                    row["organism"] = df.get("organism", {}).get("value", row.get("organism", ""))
+                                    row["series_id"] = df.get("series_id", {}).get("value", row.get("series_id", ""))
+                                    row["pubmed_id"] = df.get("pubmed_id", {}).get("value", row.get("pubmed_id", ""))
+                                    row["platform_id"] = df.get("platform_id", {}).get("value", row.get("platform_id", ""))
+                                    row["instrument"] = df.get("instrument_model", {}).get("value", row.get("instrument", ""))
                                 detailed_data.append(row)
                 
                 if detailed_data:
@@ -754,6 +806,14 @@ class EfficientBatchSamplesProcessor:
                                 sample_data = sample_results[sample_id]
                                 # Create row matching original batch_samples format
                                 row = self.create_streamlined_csv_row(sample_id, sample_data, sample_type, batch_name)
+                                # Override with authoritative direct fields from data intake for parity
+                                df = direct_fields_map.get(sample_id, {})
+                                if df:
+                                    row["organism"] = df.get("organism", {}).get("value", row.get("organism", ""))
+                                    row["series_id"] = df.get("series_id", {}).get("value", row.get("series_id", ""))
+                                    row["pubmed_id"] = df.get("pubmed_id", {}).get("value", row.get("pubmed_id", ""))
+                                    row["platform_id"] = df.get("platform_id", {}).get("value", row.get("platform_id", ""))
+                                    row["instrument"] = df.get("instrument_model", {}).get("value", row.get("instrument", ""))
                                 detailed_data.append(row)
                 
                 if detailed_data:
@@ -805,7 +865,6 @@ class EfficientBatchSamplesProcessor:
             if hasattr(data_intake_output, 'sample_ids_for_curation') and data_intake_output.sample_ids_for_curation:
                 successful_samples = data_intake_output.sample_ids_for_curation
             
-            logger.info(f"📋 Data intake completed: {len(successful_samples)}/{len(samples)} samples processed successfully")
             if len(successful_samples) != len(samples):
                 failed_count = len(samples) - len(successful_samples)
                 logger.warning(f"⚠️ {failed_count} samples failed during data intake and will be excluded from processing")
