@@ -50,6 +50,7 @@ class PreprocessingWorkflow:
         sample_type_filter: str = None,
         model_provider=None,
         max_tokens: int = None,
+        max_workers: int = None,
     ):
         """
         Initialize the preprocessing workflow.
@@ -74,6 +75,7 @@ class PreprocessingWorkflow:
         self.sample_type_filter = sample_type_filter
         self.model_provider = model_provider
         self.max_tokens = max_tokens
+        self.max_workers = max_workers
         
         # New layout: data_intake and preprocessing directories
         self.data_intake_dir = self.session_directory / "data_intake"
@@ -132,85 +134,99 @@ class PreprocessingWorkflow:
         all_sample_type_mapping = {}
         cached_initial_results = {}
         
-        # Process discovery batches with progress bar
-        for batch_num, batch_samples in enumerate(
-            tqdm(discovery_batches, total=len(discovery_batches), desc="Preprocessing - batches", unit="batch"),
-            1
-        ):
+        # Process discovery batches with optional parallelism
+        sem = asyncio.Semaphore(self.max_workers) if self.max_workers else None
+
+        async def process_batch(batch_num: int, batch_samples: List[str]):
             try:
-                
-                # Run sample type curation using existing data intake output
-                
+                if sem:
+                    async with sem:
+                        pass
                 # Filter data intake output for this batch
                 batch_data_intake = self._filter_data_intake_for_batch(self.data_intake_output, batch_samples)
-                
                 # Create sample type curation-specific model provider (using faster model for sample types)
                 curation_model_provider = self._create_sample_type_model_provider(self.model_provider)
-                
                 # Run curator agent for sample type using preprocessing directory (no discovery)
                 curator_result = await run_curator_agent(
                     data_intake_output=batch_data_intake,
                     target_field="sample_type",
-                    session_id="preprocessing",  # unified session name for preprocessing
-                    sandbox_dir=str(self.preprocessing_dir),  # use preprocessing directory
+                    session_id="preprocessing",
+                    sandbox_dir=str(self.preprocessing_dir),
                     model_provider=curation_model_provider,
                     max_tokens=self.max_tokens,
                 )
-                
-                if curator_result.success:
-                    # Extract sample type mapping from curator results
+                batch_sample_types = {}
+                batch_cached = {}
+                if getattr(curator_result, "success", False):
                     batch_sample_types = self._extract_sample_types_from_curator_result(curator_result)
-                    all_sample_type_mapping.update(batch_sample_types)
-
-                    # Persist full curator output for auditability under preprocessing/outputs
                     try:
                         output_path = self.outputs_dir / f"sample_type_curator_output_batch_{batch_num}.json"
                         with open(output_path, "w") as f:
-                            # curator_result is a Pydantic model; prefer model_dump if available
                             payload = curator_result.model_dump() if hasattr(curator_result, "model_dump") else (
                                 curator_result if isinstance(curator_result, dict) else {}
                             )
                             json.dump(payload, f, indent=2)
                     except Exception as save_err:
                         logger.warning(f"Failed to save sample type curator output for batch {batch_num}: {save_err}")
-                    
-                    # Store cached results per individual sample (matching original workflow structure)
                     for sample_id in batch_samples:
                         sample_type = batch_sample_types.get(sample_id, "failed")
-                        cached_initial_results[sample_id] = {
+                        batch_cached[sample_id] = {
                             "discovery_session_id": "preprocessing",
                             "session_directory": str(self.preprocessing_dir),
                             "sample_type": sample_type,
                             "batch_id": batch_num,
-                            "initial_curator_outputs": {}  # Not needed since we're only doing sample type curation
+                            "initial_curator_outputs": {}
                         }
-                    
-                    # Log sample type distribution for this batch
-                    batch_distribution = {}
-                    for sample_id in batch_samples:
-                        sample_type = batch_sample_types.get(sample_id, "failed")
-                        batch_distribution[sample_type] = batch_distribution.get(sample_type, 0) + 1
-                    
-                    
                 else:
-                    logger.error(f"❌ Discovery batch {batch_num} failed: {curator_result.message}")
-                    
-                    # Mark all samples in this batch as failed
+                    logger.error(f"❌ Discovery batch {batch_num} failed: {getattr(curator_result, 'message', 'unknown error')}")
                     for sample_id in batch_samples:
-                        all_sample_type_mapping[sample_id] = "failed"
-                        
+                        batch_sample_types[sample_id] = "failed"
+                        batch_cached[sample_id] = {
+                            "discovery_session_id": "preprocessing",
+                            "session_directory": str(self.preprocessing_dir),
+                            "sample_type": "failed",
+                            "batch_id": batch_num
+                        }
+                try:
+                    tqdm(None)
+                except Exception:
+                    pass
+                return batch_sample_types, batch_cached
             except Exception as e:
                 logger.error(f"❌ Discovery batch {batch_num} failed with exception: {str(e)}")
-                
-                # Mark all samples in this batch as failed
-                for sample_id in batch_samples:
-                    all_sample_type_mapping[sample_id] = "failed"
-                    cached_initial_results[sample_id] = {
+                batch_sample_types = {sid: "failed" for sid in batch_samples}
+                batch_cached = {
+                    sid: {
                         "discovery_session_id": "preprocessing",
                         "session_directory": str(self.preprocessing_dir),
                         "sample_type": "failed",
                         "batch_id": batch_num
-                    }
+                    } for sid in batch_samples
+                }
+                return batch_sample_types, batch_cached
+
+        # Use tqdm progress bar
+        pbar = tqdm(discovery_batches, total=len(discovery_batches), desc="Preprocessing - batches", unit="batch")
+        tasks = []
+        for idx, batch in enumerate(discovery_batches, 1):
+            tasks.append(process_batch(idx, batch))
+        results = []
+        for coro in asyncio.as_completed(tasks):
+            result = await coro
+            results.append(result)
+            try:
+                pbar.update(1)
+            except Exception:
+                pass
+        try:
+            pbar.close()
+        except Exception:
+            pass
+
+        # Merge results
+        for batch_sample_types, batch_cached in results:
+            all_sample_type_mapping.update(batch_sample_types)
+            cached_initial_results.update(batch_cached)
         
         # Create unified sample type mapping with batch IDs
         unified_sample_type_mapping = {}
@@ -530,6 +546,7 @@ async def run_preprocessing_workflow(
     sample_type_filter: str = None,
     model_provider=None,
     max_tokens: int = None,
+    max_workers: int = None,
 ) -> Dict[str, Any]:
     """
     Run the preprocessing workflow.
@@ -563,6 +580,7 @@ async def run_preprocessing_workflow(
         sample_type_filter=sample_type_filter,
         model_provider=model_provider,
         max_tokens=max_tokens,
+        max_workers=max_workers,
     )
     
     return await workflow.run_preprocessing(samples)

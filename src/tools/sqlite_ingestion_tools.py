@@ -8,10 +8,10 @@ but uses the local GEOmetadb SQLite database instead of ENTREZ API calls.
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 import traceback
 
-from .sqlite_manager import GEOmetadbManager, get_geometadb_manager, download_geometadb
+from .sqlite_manager import get_geometadb_manager, download_geometadb
 
 
 def extract_gsm_metadata_sqlite_impl(
@@ -55,14 +55,13 @@ def extract_gsm_metadata_sqlite_impl(
             try:
                 # Import and use HTTP-based implementation
                 from src.tools.ingestion_tools import extract_gsm_metadata_impl
-                import os
                 
                 # Get email and API key from environment
                 email = os.getenv("NCBI_EMAIL")
                 api_key = os.getenv("NCBI_API_KEY")
                 
                 if not email:
-                    print(f"❌ NCBI_EMAIL environment variable not set, cannot use HTTP API fallback")
+                    print("❌ NCBI_EMAIL environment variable not set, cannot use HTTP API fallback")
                     return json.dumps({
                         "success": False,
                         "message": f"{error_msg}. HTTP API fallback requires NCBI_EMAIL environment variable.",
@@ -121,8 +120,13 @@ def extract_gsm_metadata_sqlite_impl(
             restructured_metadata["attributes"]["series_id"] = metadata["series"][0] if metadata["series"] else None
             restructured_metadata["attributes"]["all_series_ids"] = ", ".join(metadata["series"]) if metadata["series"] else None
         
-        # Save metadata to file
-        output_file = session_path / f"{gsm_id}_metadata.json"
+        # Save metadata to file (prefer series directory when available)
+        series_id = restructured_metadata.get('attributes', {}).get('series_id')
+        target_dir = session_path
+        if series_id:
+            target_dir = session_path / series_id
+            target_dir.mkdir(parents=True, exist_ok=True)
+        output_file = target_dir / f"{gsm_id}_metadata.json"
         with open(output_file, 'w') as f:
             json.dump(restructured_metadata, f, indent=2, default=str)
         
@@ -236,14 +240,13 @@ def extract_gse_metadata_sqlite_impl(
             try:
                 # Import and use HTTP-based implementation
                 from src.tools.ingestion_tools import extract_gse_metadata_impl
-                import os
                 
                 # Get email and API key from environment
                 email = os.getenv("NCBI_EMAIL")
                 api_key = os.getenv("NCBI_API_KEY")
                 
                 if not email:
-                    print(f"❌ NCBI_EMAIL environment variable not set, cannot use HTTP API fallback")
+                    print("❌ NCBI_EMAIL environment variable not set, cannot use HTTP API fallback")
                     return json.dumps({
                         "success": False,
                         "message": f"{error_msg}. HTTP API fallback requires NCBI_EMAIL environment variable.",
@@ -432,7 +435,7 @@ def extract_pubmed_id_from_geo_website(gse_id: str) -> str:
     try:
         import requests
         import re
-        from urllib.parse import urljoin
+        # from urllib.parse import urljoin  # unused
         
         # GEO website URL for the specific GSE
         geo_url = f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gse_id}"
@@ -483,7 +486,7 @@ def extract_pubmed_id_from_geo_website(gse_id: str) -> str:
         return ""
         
     except ImportError:
-        print(f"❌ requests module not available for direct GEO website requests")
+        print("❌ requests module not available for direct GEO website requests")
         return ""
     except requests.RequestException as e:
         print(f"❌ HTTP request failed for {gse_id}: {e}")
@@ -511,8 +514,6 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
     str
         JSON string with the extracted PubMed ID or error information.
     """
-    import os  # Import os at the top of the function
-    
     try:
         # Check if the input is actually a file path or if it's an error message
         if not os.path.exists(gse_metadata_file):
@@ -548,7 +549,7 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
                                         "source": "geo_website_direct_from_error"
                                     }
                                     return json.dumps(result, indent=2)
-                            except Exception as e:
+                            except Exception:
                                 pass
                         
                         result = {
@@ -658,7 +659,7 @@ def extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_metadata_file: str) -> s
                 "message": "Could not determine GSE ID for HTTP API fallback",
                 "source": "gse_id_not_found"
             }
-            print(f"❌ Could not determine GSE ID for HTTP API fallback")
+            print("❌ Could not determine GSE ID for HTTP API fallback")
             
         return json.dumps(result, indent=2)
         
@@ -842,52 +843,126 @@ def create_series_sample_mapping_sqlite_impl(
                 "message": "No metadata files found in session directory"
             }, indent=2)
         
-        # Extract GSE and GSM IDs from metadata files
-        gse_ids = []
-        gsm_ids = []
+        # Extract GSE and GSM IDs and also derive mappings from files
+        gse_ids: List[str] = []
+        gsm_ids: List[str] = []
+        file_derived_gsm_to_gse: Dict[str, str] = {}
+        file_derived_gse_to_gsm: Dict[str, List[str]] = {}
         
         for file_path in metadata_files:
             try:
                 with open(file_path, 'r') as f:
                     metadata = json.load(f)
                 
-                # Check for GSE metadata (new structure)
+                # New structure: GSE metadata
                 if metadata.get('gse_id'):
-                    gse_ids.append(metadata.get('gse_id', ''))
-                # Check for GSM metadata (new structure)
+                    gse_id = metadata.get('gse_id', '')
+                    if gse_id:
+                        gse_ids.append(gse_id)
+                        # If GSE metadata includes sample list, capture it
+                        samples_str = metadata.get('attributes', {}).get('sample_id')
+                        if samples_str:
+                            samples = [s.strip() for s in samples_str.split(',') if s.strip()]
+                            if samples:
+                                file_derived_gse_to_gsm.setdefault(gse_id, [])
+                                # Extend uniquely
+                                for sid in samples:
+                                    if sid not in file_derived_gse_to_gsm[gse_id]:
+                                        file_derived_gse_to_gsm[gse_id].append(sid)
+                # New structure: GSM metadata
                 elif metadata.get('gsm_id'):
-                    gsm_ids.append(metadata.get('gsm_id', ''))
+                    gsm_id = metadata.get('gsm_id', '')
+                    if gsm_id:
+                        gsm_ids.append(gsm_id)
+                        # Try to read series_id directly from attributes
+                        series_id = metadata.get('attributes', {}).get('series_id')
+                        if not series_id:
+                            # Fallback to legacy field list
+                            series_list = metadata.get('series') or []
+                            if isinstance(series_list, list) and series_list:
+                                series_id = series_list[0]
+                        if series_id:
+                            file_derived_gsm_to_gse[gsm_id] = series_id
+                            file_derived_gse_to_gsm.setdefault(series_id, [])
+                            if gsm_id not in file_derived_gse_to_gsm[series_id]:
+                                file_derived_gse_to_gsm[series_id].append(gsm_id)
+                            # Ensure we capture GSE IDs from GSM files too
+                            if series_id not in gse_ids:
+                                gse_ids.append(series_id)
                 # Fallback to old structure
                 elif metadata.get('type') == 'GSE':
-                    gse_ids.append(metadata.get('geo_accession', ''))
+                    gse_id = metadata.get('geo_accession', '')
+                    if gse_id:
+                        gse_ids.append(gse_id)
                 elif metadata.get('type') == 'GSM':
-                    gsm_ids.append(metadata.get('geo_accession', ''))
-                    
+                    gsm_id = metadata.get('geo_accession', '')
+                    if gsm_id:
+                        gsm_ids.append(gsm_id)
             except Exception as e:
                 print(f"⚠️ Warning: Could not parse {file_path}: {e}")
                 continue
         
-        # Get mapping from database
+        # Get mapping from database. Avoid full-table scan if we have no GSE IDs.
         with get_geometadb_manager(db_path) as manager:
             if gse_ids:
                 mapping_result = manager.get_series_sample_mapping(gse_ids)
             else:
-                mapping_result = manager.get_series_sample_mapping()
+                # Start with empty mapping; we'll fill from file-derived data below
+                mapping_result = {"mapping": {}, "total_series": 0, "total_samples": 0}
         
         if "error" in mapping_result:
-            return json.dumps({
+            mapping_result = {
                 "mapping": {},
                 "total_series": 0,
                 "total_samples": 0,
-                "error": mapping_result["error"]
-            }, indent=2)
+                "error": mapping_result["error"],
+            }
         
-        # Add required fields for SeriesSampleMapping model
-        mapping_result["reverse_mapping"] = {}
-        for gse_id, gsm_list in mapping_result["mapping"].items():
+        # Ensure base structure exists
+        mapping: Dict[str, List[str]] = mapping_result.get("mapping") or {}
+        
+        # Merge in file-derived GSE->GSM mappings
+        for gse_id, gsm_list in file_derived_gse_to_gsm.items():
+            if not gse_id:
+                continue
+            existing = mapping.get(gse_id, [])
+            # Union while preserving order
+            seen = set(existing)
             for gsm_id in gsm_list:
-                mapping_result["reverse_mapping"][gsm_id] = gse_id
+                if gsm_id and gsm_id not in seen:
+                    existing.append(gsm_id)
+                    seen.add(gsm_id)
+            mapping[gse_id] = existing
         
+        # Also ensure any GSM->GSE seen in files is represented in mapping
+        for gsm_id, gse_id in file_derived_gsm_to_gse.items():
+            if not gse_id or not gsm_id:
+                continue
+            lst = mapping.get(gse_id, [])
+            if gsm_id not in lst:
+                lst.append(gsm_id)
+            mapping[gse_id] = lst
+        
+        # Recompute totals and reverse mapping
+        reverse_mapping: Dict[str, str] = {}
+        total_samples = 0
+        for gse_id, gsm_list in mapping.items():
+            # Deduplicate while preserving order
+            dedup = []
+            seen = set()
+            for sid in gsm_list:
+                if sid and sid not in seen:
+                    dedup.append(sid)
+                    seen.add(sid)
+            mapping[gse_id] = dedup
+            total_samples += len(dedup)
+            for sid in dedup:
+                reverse_mapping[sid] = gse_id
+        
+        mapping_result["mapping"] = mapping
+        mapping_result["reverse_mapping"] = reverse_mapping
+        mapping_result["total_series"] = len(mapping)
+        mapping_result["total_samples"] = total_samples
         mapping_result["generated_at"] = str(session_path)
         mapping_result["session_directory"] = str(session_path)
         

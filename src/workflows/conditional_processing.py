@@ -56,6 +56,7 @@ class ConditionalProcessingWorkflow:
         target_fields: List[str] = None,
         model_provider=None,
         max_tokens: int = None,
+        max_workers: int = None,
     ):
         """
         Initialize the conditional processing workflow.
@@ -80,6 +81,7 @@ class ConditionalProcessingWorkflow:
         ]
         self.base_model_provider = model_provider
         self.max_tokens = max_tokens
+        self.max_workers = max_workers
         
         # Create conditional processing directory structure
         self.conditional_dir = self.session_directory / "conditional_processing"
@@ -318,52 +320,73 @@ class ConditionalProcessingWorkflow:
         failed_batches = 0
         
         try:
-            # Process each sample type
+            # Prepare all batch tasks across sample types
+            batch_jobs = []  # (global_index, sample_type, batch_samples)
             for sample_type, batches in sample_type_batches.items():
-                # Process batches for this sample type and advance unified progress bar
-                batch_num = 1
+                if sample_type not in TARGET_FIELD_CONFIG["conditional_processing"]:
+                    logger.warning(f"⚠️ No configuration found for sample_type: {sample_type}. Skipping {len(batches)} batches.")
+                    try:
+                        pbar.update(len(batches))
+                    except Exception:
+                        pass
+                    continue
                 for batch_samples in batches:
+                    batch_jobs.append((len(batch_jobs) + 1, sample_type, batch_samples))
+
+            sem = asyncio.Semaphore(self.max_workers) if self.max_workers else None
+
+            async def run_one(job_index: int, sample_type: str, batch_samples: List[str]):
+                try:
+                    if sem:
+                        async with sem:
+                            pass
                     try:
                         pbar.set_description(f"Conditional - {sample_type}")
                         pbar.set_postfix_str(f"type={sample_type}, samples={len(batch_samples)}")
                     except Exception:
                         pass
-                    # Calculate global batch number for naming
-                    global_batch_num = successful_batches + failed_batches + 1
-                    
-                    batch_result = await self.process_sample_type_batch(
+                    result = await self.process_sample_type_batch(
                         batch_samples=batch_samples,
                         sample_type=sample_type,
-                        batch_num=global_batch_num,
+                        batch_num=job_index,
                         total_batches=total_batches,
                         data_intake_output=data_intake_output,
                     )
-                    
-                    all_batch_results.append(batch_result)
-                    
-                    if batch_result["success"]:
-                        successful_batches += 1
-                    else:
-                        failed_batches += 1
-                        
-                        # Track failed batch details
-                        self.failed_items["missing_results"][f"{sample_type}_batch_{global_batch_num}"] = {
-                            "error": batch_result.get("message", "Unknown error"),
-                            "samples": batch_samples,
-                            "sample_type": sample_type
-                        }
-                    
-                    batch_num += 1
+                    return job_index, sample_type, batch_samples, result
+                finally:
                     try:
                         pbar.update(1)
                     except Exception:
                         pass
+
+            tasks = [run_one(idx, st, bs) for idx, st, bs in batch_jobs]
+            results = []
+            for coro in asyncio.as_completed(tasks):
+                results.append(await coro)
+
+            for job_index, sample_type, batch_samples, batch_result in results:
+                all_batch_results.append(batch_result)
+                if batch_result.get("success"):
+                    successful_batches += 1
+                else:
+                    failed_batches += 1
+                    self.failed_items["missing_results"][f"{sample_type}_batch_{job_index}"] = {
+                        "error": batch_result.get("message", "Unknown error"),
+                        "samples": batch_samples,
+                        "sample_type": sample_type
+                    }
             
             execution_time = time.time() - start_time
             
-            # Calculate statistics
-            total_samples = sum(len(samples) for batch_result in all_batch_results for samples in [batch_result["batch_samples"]])
-            successful_samples = sum(len(batch_result["batch_samples"]) for batch_result in all_batch_results if batch_result["success"])
+            # Calculate statistics (robust to missing keys in failed batch results)
+            total_samples = 0
+            for batch_result in all_batch_results:
+                try:
+                    if isinstance(batch_result, dict) and "batch_samples" in batch_result:
+                        total_samples += len(batch_result["batch_samples"])
+                except Exception:
+                    pass
+            successful_samples = sum(len(batch_result["batch_samples"]) for batch_result in all_batch_results if batch_result.get("success") and "batch_samples" in batch_result)
             failed_samples = total_samples - successful_samples
             
             # Create output structure
@@ -435,6 +458,7 @@ async def run_conditional_processing_workflow(
     target_fields: List[str] = None,
     model_provider=None,
     max_tokens: int = None,
+    max_workers: int = None,
 ) -> Dict[str, Any]:
     """
     Run the conditional processing workflow.
@@ -464,6 +488,7 @@ async def run_conditional_processing_workflow(
         target_fields=target_fields,
         model_provider=model_provider,
         max_tokens=max_tokens,
+        max_workers=max_workers,
     )
     
     return await workflow.run_conditional_processing(sample_type_batches, data_intake_output)

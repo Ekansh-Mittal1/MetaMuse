@@ -277,6 +277,8 @@ async def run_workflow(
         sample_type_filter = None
         batch_name = None
         output_format = "parquet"
+        max_workers = None
+        enable_profiling = False
 
         if input_data:
             # Parse key=value pairs
@@ -300,6 +302,13 @@ async def run_workflow(
                         batch_name = value
                     elif key == "output_format":
                         output_format = value
+                    elif key == "max_workers":
+                        try:
+                            max_workers = int(value)
+                        except Exception:
+                            raise ValueError(f"Invalid value for max_workers: {value}")
+                    elif key == "enable_profiling":
+                        enable_profiling = str(value).lower() in ("true", "1", "yes", "on")
 
         try:
             result = await run_efficient_batch_samples_workflow(
@@ -313,6 +322,8 @@ async def run_workflow(
                 sample_type_filter=sample_type_filter,
                 batch_name=batch_name,
                 output_format=output_format,
+                max_workers=max_workers,
+                enable_profiling=enable_profiling,
             )
 
             if result["success"]:

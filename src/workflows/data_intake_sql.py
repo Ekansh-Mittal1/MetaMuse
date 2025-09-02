@@ -99,7 +99,8 @@ class DataIntakeSQLWorkflow:
     """
 
     def __init__(self, session_id: str, sandbox_dir: str = "sandbox", 
-                 create_series_directories: bool = True, db_path: str = "data/GEOmetadb.sqlite"):
+                 create_series_directories: bool = True, db_path: str = "data/GEOmetadb.sqlite",
+                 enable_profiling: bool = False, max_workers: int = None):
         """
         Initialize the SQLite-based data intake workflow.
 
@@ -120,6 +121,8 @@ class DataIntakeSQLWorkflow:
         self.sandbox_dir = sandbox_dir
         self.create_series_directories = create_series_directories
         self.db_path = db_path
+        self.enable_profiling = enable_profiling
+        self.max_workers = max_workers
         
         # For unified discovery structure, use sandbox_dir directly
         if session_id == "discovery":
@@ -128,15 +131,315 @@ class DataIntakeSQLWorkflow:
             self.session_dir = Path(sandbox_dir) / session_id
             self.session_dir.mkdir(parents=True, exist_ok=True)
         self._start_time = time.time()
-
+        
         # New layout: data_intake directory with raw_data
         self.data_intake_dir = self.session_dir / "data_intake"
         self.data_intake_dir.mkdir(parents=True, exist_ok=True)
         self.data_intake_raw_dir = self.data_intake_dir / "raw_data"
         self.data_intake_raw_dir.mkdir(parents=True, exist_ok=True)
-
+        
+        # Profiling storage
+        self._timings = {"phases": []}
+        self._phase_start = None
+        
+        # Create and maintain a single database manager instance
+        self._db_manager = None
+        
         # Check if database exists and is accessible
         self._check_database()
+
+    def _phase(self, name: str):
+        import contextlib
+        import time
+        @contextlib.contextmanager
+        def timer():
+            start = time.time()
+            try:
+                yield
+            finally:
+                duration = time.time() - start
+                if self.enable_profiling:
+                    self._timings["phases"].append({"name": name, "seconds": duration})
+        return timer()
+
+    def _flush_profile(self, extra: Dict = None):
+        if not self.enable_profiling:
+            return
+        try:
+            import time
+            total = time.time() - self._start_time
+            self._timings["total_seconds"] = total
+            if extra:
+                self._timings.update(extra)
+            out = self.session_dir / "data_intake" / "intake_profile.json"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with open(out, "w") as f:
+                json.dump(self._timings, f, indent=2)
+        except Exception as e:
+            print(f"⚠️  Failed to write profiling report: {e}")
+
+    def _get_db_manager(self):
+        """Get or create a database manager instance."""
+        if not hasattr(self, '_db_manager') or self._db_manager is None:
+            from src.tools.sqlite_manager import GEOmetadbManager
+            self._db_manager = GEOmetadbManager(self.db_path)
+        return self._db_manager
+
+    def _close_db_manager(self):
+        """Close the database manager if it exists."""
+        if self._db_manager is not None:
+            try:
+                self._db_manager.close()
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to close database manager: {e}")
+            finally:
+                self._db_manager = None
+
+    def _extract_gsm_metadata_optimized(self, gsm_id: str) -> str:
+        """Extract GSM metadata using the shared database manager."""
+        try:
+            session_path = Path(str(self.session_dir))
+            session_path.mkdir(parents=True, exist_ok=True)
+            
+            # Get metadata from shared database manager
+            manager = self._get_db_manager()
+            metadata = manager.get_gsm_metadata(gsm_id)
+            
+            if "error" in metadata:
+                # Fall back to HTTP API
+                return extract_gsm_metadata_sqlite_impl(gsm_id, str(self.session_dir), self.db_path)
+            
+            # Restructure metadata to match original workflow structure
+            restructured_metadata = {
+                "gsm_id": gsm_id,
+                "status": "retrieved",
+                "attributes": {}
+            }
+            
+            # Move all database fields to attributes (except gsm_id, status, series)
+            for key, value in metadata.items():
+                if key not in ["gsm_id", "status", "series"]:
+                    # Convert numeric fields to strings to match Pydantic model expectations
+                    if key in ["channel_count", "data_row_count"] and value is not None:
+                        restructured_metadata["attributes"][key] = str(value)
+                    # Skip the raw 'gsm' field as it's redundant with gsm_id
+                    elif key != "gsm":
+                        restructured_metadata["attributes"][key] = value
+            
+            # Add series information to attributes
+            if "series" in metadata:
+                restructured_metadata["attributes"]["series_id"] = metadata["series"][0] if metadata["series"] else None
+                restructured_metadata["attributes"]["all_series_ids"] = ", ".join(metadata["series"]) if metadata["series"] else None
+            
+            # Determine series and target directory
+            series_id = None
+            if "series" in metadata and metadata["series"]:
+                series_id = metadata["series"][0]
+
+            target_dir = session_path
+            if series_id:
+                target_dir = session_path / series_id
+                target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save metadata to file under series directory when available
+            output_file = target_dir / f"{gsm_id}_metadata.json"
+            with open(output_file, 'w') as f:
+                json.dump(restructured_metadata, f, indent=2, default=str)
+            
+            return str(output_file)
+            
+        except Exception as e:
+            # Fall back to original implementation
+            return extract_gsm_metadata_sqlite_impl(gsm_id, str(self.session_dir), self.db_path)
+
+    def _extract_gse_metadata_optimized(self, gse_id: str) -> str:
+        """Extract GSE metadata using the shared database manager."""
+        try:
+            session_path = Path(str(self.session_dir))
+            session_path.mkdir(parents=True, exist_ok=True)
+            
+            # Get metadata from shared database manager
+            manager = self._get_db_manager()
+            metadata = manager.get_gse_metadata(gse_id)
+            
+            if "error" in metadata:
+                # Fall back to HTTP API
+                return extract_gse_metadata_sqlite_impl(gse_id, str(self.session_dir), self.db_path)
+            
+            # Restructure metadata to match original workflow structure
+            restructured_metadata = {
+                "gse_id": gse_id,
+                "status": "retrieved",
+                "attributes": {}
+            }
+            
+            # Move all database fields to attributes (except gse_id, status, samples, platforms, gse)
+            for key, value in metadata.items():
+                if key not in ["gse_id", "status", "samples", "platforms", "gse"]:
+                    # Convert pubmed_id to string if it exists
+                    if key == "pubmed_id" and value is not None:
+                        restructured_metadata["attributes"][key] = str(value)
+                    else:
+                        restructured_metadata["attributes"][key] = value
+            
+            # Add samples and platforms to attributes
+            if "samples" in metadata:
+                restructured_metadata["attributes"]["sample_id"] = ", ".join(metadata["samples"]) if metadata["samples"] else None
+            if "platforms" in metadata:
+                restructured_metadata["attributes"]["platform_id"] = ", ".join(metadata["platforms"]) if metadata["platforms"] else None
+            
+            # Save metadata to file under series directory
+            target_dir = session_path / gse_id
+            target_dir.mkdir(parents=True, exist_ok=True)
+            output_file = target_dir / f"{gse_id}_metadata.json"
+            with open(output_file, 'w') as f:
+                json.dump(restructured_metadata, f, indent=2, default=str)
+            
+            return str(output_file)
+            
+        except Exception as e:
+            # Fall back to original implementation
+            return extract_gse_metadata_sqlite_impl(gse_id, str(self.session_dir), self.db_path)
+
+    def _batch_check_gsm_availability(self, gsm_ids: List[str]) -> Dict[str, bool]:
+        """Check which GSMs are available in the local database."""
+        try:
+            manager = self._get_db_manager()
+            available = {}
+            
+            # Batch query to check GSM availability
+            if manager.connection:
+                placeholders = ','.join(['?' for _ in gsm_ids])
+                query = f"SELECT gsm FROM gsm WHERE gsm IN ({placeholders})"
+                cursor = manager.connection.execute(query, gsm_ids)
+                found_gsms = {row[0] for row in cursor.fetchall()}
+                
+                for gsm_id in gsm_ids:
+                    available[gsm_id] = gsm_id in found_gsms
+            else:
+                # Fallback: assume none are available
+                available = {gsm_id: False for gsm_id in gsm_ids}
+                
+            return available
+        except Exception as e:
+            print(f"⚠️  Batch GSM availability check failed: {e}")
+            # Fallback: assume none are available
+            return {gsm_id: False for gsm_id in gsm_ids}
+
+    def _batch_check_gse_availability(self, gse_ids: List[str]) -> Dict[str, bool]:
+        """Check which GSEs are available in the local database."""
+        try:
+            manager = self._get_db_manager()
+            available = {}
+            
+            # Batch query to check GSE availability
+            if manager.connection:
+                placeholders = ','.join(['?' for _ in gse_ids])
+                query = f"SELECT gse FROM gse WHERE gse IN ({placeholders})"
+                cursor = manager.connection.execute(query, gse_ids)
+                found_gses = {row[0] for row in cursor.fetchall()}
+                
+                for gse_id in gse_ids:
+                    available[gse_id] = gse_id in found_gses
+            else:
+                # Fallback: assume none are available
+                available = {gse_id: False for gse_id in gse_ids}
+                
+            return available
+        except Exception as e:
+            print(f"⚠️  Batch GSE availability check failed: {e}")
+            # Fallback: assume none are available
+            return {gse_id: False for gse_id in gse_ids}
+
+    def _batch_extract_gsm_metadata(self, gsm_ids: List[str]) -> Dict[str, str]:
+        """Extract metadata for multiple GSMs, using batch DB queries where possible."""
+        self._ensure_data_intake_dirs()
+        results = {}
+        
+        # Check which GSMs are available in the database
+        with self._phase("batch_check_gsm_availability"):
+            availability = self._batch_check_gsm_availability(gsm_ids)
+        
+        # Process GSMs that are available in the database
+        db_available = [gsm_id for gsm_id, available in availability.items() if available]
+        http_fallback = [gsm_id for gsm_id, available in availability.items() if not available]
+        
+        if db_available:
+            print(f"🔍 Processing {len(db_available)} GSMs from local database")
+            with self._phase("batch_extract_gsm_from_db"):
+                for gsm_id in db_available:
+                    try:
+                        results[gsm_id] = self._extract_gsm_metadata_optimized(gsm_id)
+                    except Exception as e:
+                        print(f"⚠️  Failed to extract {gsm_id} from DB: {e}")
+                        http_fallback.append(gsm_id)
+        
+        if http_fallback:
+            print(f"🔍 Processing {len(http_fallback)} GSMs via HTTP API fallback")
+            with self._phase("batch_extract_gsm_from_http"):
+                for gsm_id in http_fallback:
+                    try:
+                        results[gsm_id] = extract_gsm_metadata_sqlite_impl(gsm_id, str(self.session_dir), self.db_path)
+                    except Exception as e:
+                        print(f"❌ Failed to extract {gsm_id} via HTTP: {e}")
+        
+        return results
+
+    def _batch_extract_gse_metadata(self, gse_ids: List[str]) -> Dict[str, str]:
+        """Extract metadata for multiple GSEs, using batch DB queries where possible."""
+        self._ensure_data_intake_dirs()
+        results = {}
+        
+        # Check which GSEs are available in the database  
+        with self._phase("batch_check_gse_availability"):
+            availability = self._batch_check_gse_availability(gse_ids)
+        
+        # Process GSEs that are available in the database
+        db_available = [gse_id for gse_id, available in availability.items() if available]
+        http_fallback = [gse_id for gse_id, available in availability.items() if not available]
+        
+        if db_available:
+            print(f"🔍 Processing {len(db_available)} GSEs from local database")
+            with self._phase("batch_extract_gse_from_db"):
+                for gse_id in db_available:
+                    try:
+                        results[gse_id] = self._extract_gse_metadata_optimized(gse_id)
+                    except Exception as e:
+                        print(f"⚠️  Failed to extract {gse_id} from DB: {e}")
+                        http_fallback.append(gse_id)
+        
+        if http_fallback:
+            print(f"🔍 Processing {len(http_fallback)} GSEs via HTTP API fallback")
+            with self._phase("batch_extract_gse_from_http"):
+                for gse_id in http_fallback:
+                    try:
+                        results[gse_id] = extract_gse_metadata_sqlite_impl(gse_id, str(self.session_dir), self.db_path)
+                    except Exception as e:
+                        print(f"❌ Failed to extract {gse_id} via HTTP: {e}")
+        
+        return results
+
+    def _ensure_data_intake_dirs(self):
+        """Ensure data_intake and raw_data directories and attributes exist."""
+        try:
+            if not hasattr(self, "session_dir") or self.session_dir is None:
+                if self.session_id == "discovery":
+                    self.session_dir = Path(self.sandbox_dir)
+                else:
+                    self.session_dir = Path(self.sandbox_dir) / self.session_id
+                    self.session_dir.mkdir(parents=True, exist_ok=True)
+            
+            if not hasattr(self, "data_intake_dir") or self.data_intake_dir is None:
+                self.data_intake_dir = self.session_dir / "data_intake"
+                self.data_intake_dir.mkdir(parents=True, exist_ok=True)
+                
+            if not hasattr(self, "data_intake_raw_dir") or self.data_intake_raw_dir is None:
+                self.data_intake_raw_dir = self.data_intake_dir / "raw_data"
+                self.data_intake_raw_dir.mkdir(parents=True, exist_ok=True)
+                
+        except Exception as e:
+            print(f"⚠️  Failed to ensure data_intake directories: {e}")
+
 
     def _check_database(self):
         """Check if the SQLite database exists and is accessible."""
@@ -213,7 +516,7 @@ class DataIntakeSQLWorkflow:
             try:
                 # Find the sample directory
                 sample_dir_result = find_sample_directory_impl(
-                    sample_id, str(self.data_intake_dir)
+                    sample_id, str(self.session_dir)
                 )
                 if isinstance(sample_dir_result, str):
                     sample_dir_data = json.loads(sample_dir_result)
@@ -311,7 +614,7 @@ class DataIntakeSQLWorkflow:
             try:
                 # Use the implementation from the tool
                 result = create_curation_data_package_impl(
-                    sample_id, str(self.data_intake_dir), fields_to_remove
+                    sample_id, str(self.session_dir), fields_to_remove
                 )
 
                 if isinstance(result, str):
@@ -442,12 +745,14 @@ class DataIntakeSQLWorkflow:
 
 
             # Step 1: Extract GSM metadata from SQLite
-            gsm_file = extract_gsm_metadata_sqlite_impl(
-                gsm_id, str(self.session_dir), self.db_path
-            )
+            with self._phase("extract_gsm_metadata"):
+                gsm_file = self._extract_gsm_metadata_optimized(gsm_id)
             files_created.append(gsm_file)
             workflow_data["gsm_metadata_file"] = gsm_file
             
+            # Ensure directories exist (robust when called in different contexts)
+            self._ensure_data_intake_dirs()
+
             # If create_series_directories is True, move the GSM file to a series subdirectory
             if self.create_series_directories:
                 try:
@@ -483,7 +788,8 @@ class DataIntakeSQLWorkflow:
                     print("⚠️  Continuing with original file location...")
 
             # Step 2: Extract Series ID from GSM metadata
-            series_result = extract_series_id_from_gsm_metadata_sqlite_impl(gsm_file)
+            with self._phase("extract_series_id_from_gsm"):
+                series_result = extract_series_id_from_gsm_metadata_sqlite_impl(gsm_file)
             series_data = json.loads(series_result)
             if not series_data.get("success", False):
                 return WorkflowResult(
@@ -501,9 +807,8 @@ class DataIntakeSQLWorkflow:
             workflow_data["series_id"] = series_id
 
             # Step 3: Extract GSE metadata from SQLite
-            gse_file = extract_gse_metadata_sqlite_impl(
-                series_id, str(self.session_dir), self.db_path
-            )
+            with self._phase("extract_gse_metadata"):
+                gse_file = self._extract_gse_metadata_optimized(series_id)
             
             # Check if the result is a file path or an error message
             if gse_file.startswith('{') and gse_file.endswith('}'):
@@ -562,6 +867,9 @@ class DataIntakeSQLWorkflow:
             files_created.append(gse_file)
             workflow_data["gse_metadata_file"] = gse_file
             
+            # Ensure directories exist
+            self._ensure_data_intake_dirs()
+
             # If create_series_directories is True, move the GSE file to a series subdirectory
             if self.create_series_directories:
                 try:
@@ -583,7 +891,8 @@ class DataIntakeSQLWorkflow:
                     print("⚠️  Continuing with original file location...")
 
             # Step 4: Extract PubMed ID from GSE metadata
-            pmid_result = extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_file)
+            with self._phase("extract_pubmed_id_from_gse"):
+                pmid_result = extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_file)
             pmid_data = json.loads(pmid_result)
             if not pmid_data.get("success", False):
                 workflow_data["pmid_extraction_error"] = pmid_data.get("message", "Unknown error")
@@ -594,9 +903,10 @@ class DataIntakeSQLWorkflow:
 
                 # Step 5: Extract paper abstract from SQLite
                 try:
-                    paper_file = extract_paper_abstract_sqlite_impl(
-                        pmid, str(self.session_dir), self.db_path
-                    )
+                    with self._phase("extract_paper_abstract"):
+                        paper_file = extract_paper_abstract_sqlite_impl(
+                            pmid, str(self.session_dir), self.db_path
+                        )
                     files_created.append(paper_file)
                     workflow_data["paper_metadata_file"] = paper_file
                     
@@ -604,6 +914,7 @@ class DataIntakeSQLWorkflow:
                     if self.create_series_directories:
                         try:
                             # Move the paper file to the series directory
+                            series_dir = _get_series_subdirectory(str(self.data_intake_dir), series_id, True)
                             new_paper_file = series_dir / f"PMID_{pmid}_metadata.json"
                             import shutil
                             shutil.move(paper_file, new_paper_file)
@@ -624,10 +935,7 @@ class DataIntakeSQLWorkflow:
                     print("⚠️  Continuing workflow without paper abstract...")
                     workflow_data["paper_extraction_error"] = str(e)
 
-            # Step 4: Create series-sample mapping using SQLite (write into data_intake/)
-            mapping_file = create_series_sample_mapping_sqlite_impl(str(self.data_intake_dir), self.db_path)
-            files_created.append(mapping_file)
-            workflow_data["mapping_file"] = mapping_file
+            # Note: Mapping generation deferred to end of workflow for efficiency
 
             # Step 6: Populate data_intake/raw_data/<GSM>/ structure
             try:
@@ -706,9 +1014,8 @@ class DataIntakeSQLWorkflow:
             print(f"🔍 Starting GSE workflow for {gse_id}")
 
             # Step 1: Extract GSE metadata from SQLite
-            gse_file = extract_gse_metadata_sqlite_impl(
-                gse_id, str(self.session_dir), self.db_path
-            )
+            with self._phase("extract_gse_metadata"):
+                gse_file = self._extract_gse_metadata_optimized(gse_id)
             
             # Check if the result is a file path or an error message
             if gse_file.startswith('{') and gse_file.endswith('}'):
@@ -790,7 +1097,8 @@ class DataIntakeSQLWorkflow:
                     print("⚠️  Continuing with original file location...")
 
             # Step 2: Extract PubMed ID from GSE metadata
-            pmid_result = extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_file)
+            with self._phase("extract_pubmed_id_from_gse"):
+                pmid_result = extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_file)
             pmid_data = json.loads(pmid_result)
             if not pmid_data.get("success", False):
                 print(f"⚠️  Warning: Failed to extract PubMed ID: {pmid_data.get('message', 'Unknown error')}")
@@ -804,9 +1112,10 @@ class DataIntakeSQLWorkflow:
 
                     # Step 3: Extract paper abstract from SQLite
                     try:
-                        paper_file = extract_paper_abstract_sqlite_impl(
-                            pmid, str(self.session_dir), self.db_path
-                        )
+                        with self._phase("extract_paper_abstract"):
+                            paper_file = extract_paper_abstract_sqlite_impl(
+                                pmid, str(self.session_dir), self.db_path
+                            )
                         files_created.append(paper_file)
                         workflow_data["paper_metadata_file"] = paper_file
                         print(f"✅ Paper abstract extracted: {paper_file}")
@@ -839,11 +1148,7 @@ class DataIntakeSQLWorkflow:
                     # No PMID found, continue without paper abstract
                     pass
 
-            # Step 4: Create series-sample mapping using SQLite (write into data_intake/)
-            mapping_file = create_series_sample_mapping_sqlite_impl(str(self.data_intake_dir), self.db_path)
-            files_created.append(mapping_file)
-            workflow_data["mapping_file"] = mapping_file
-            print(f"✅ Series-sample mapping created: {mapping_file}")
+            # Note: Mapping generation deferred to end of workflow for efficiency
 
             return WorkflowResult(
                 success=True,
@@ -881,9 +1186,10 @@ class DataIntakeSQLWorkflow:
 
             # Extract paper abstract from SQLite
             try:
-                paper_file = extract_paper_abstract_sqlite_impl(
-                    pmid, str(self.session_dir), self.db_path
-                )
+                with self._phase("extract_paper_abstract"):
+                    paper_file = extract_paper_abstract_sqlite_impl(
+                        pmid, str(self.session_dir), self.db_path
+                    )
                 files_created.append(paper_file)
                 workflow_data["paper_metadata_file"] = paper_file
                 print(f"✅ Paper abstract extracted: {paper_file}")
@@ -932,7 +1238,7 @@ class DataIntakeSQLWorkflow:
         try:
 
             # Step 1: Load mapping file
-            mapping_result = load_mapping_file_impl(str(self.data_intake_dir))
+            mapping_result = load_mapping_file_impl(str(self.session_dir))
             if not mapping_result["success"]:
                 return WorkflowResult(
                     success=False,
@@ -941,7 +1247,7 @@ class DataIntakeSQLWorkflow:
                 )
 
             # Step 2: Find sample directory
-            dir_result = find_sample_directory_impl(sample_id, str(self.data_intake_dir))
+            dir_result = find_sample_directory_impl(sample_id, str(self.session_dir))
             if not dir_result["success"]:
                 return WorkflowResult(
                     success=False,
@@ -951,7 +1257,7 @@ class DataIntakeSQLWorkflow:
 
             # Step 3: Clean metadata files
             clean_result = clean_metadata_files_impl(
-                sample_id, str(self.data_intake_dir), fields_to_remove
+                sample_id, str(self.session_dir), fields_to_remove
             )
             if not clean_result["success"]:
                 return WorkflowResult(
@@ -962,7 +1268,7 @@ class DataIntakeSQLWorkflow:
 
             # Step 4: Package linked data
             package_result = package_linked_data_impl(
-                sample_id, str(self.data_intake_dir), fields_to_remove
+                sample_id, str(self.session_dir), fields_to_remove
             )
             if not package_result["success"]:
                 return WorkflowResult(
@@ -1020,24 +1326,50 @@ class DataIntakeSQLWorkflow:
             all_workflow_data = []
             all_sample_ids = []
 
-            # Process GSM IDs
-            if len(geo_ids["gsm_ids"]) > 0: 
-                for gsm_id in tqdm(geo_ids["gsm_ids"], desc="Data Intake SQL - GSM", unit="gsm"):
-                    result = self._extract_gsm_workflow(gsm_id)
-                    if not result.success:
-                        return result
-                    all_files_created.extend(result.files_created or [])
-                    all_workflow_data.append(result.data)
-                    all_sample_ids.append(gsm_id)
+            # Process GSM IDs using batch optimization
+            if len(geo_ids["gsm_ids"]) > 0:
+                print(f"🚀 Processing {len(geo_ids['gsm_ids'])} GSM IDs with batch optimization")
+                gsm_results = self._batch_extract_gsm_metadata(geo_ids["gsm_ids"])
+                
+                for gsm_id in geo_ids["gsm_ids"]:
+                    if gsm_id in gsm_results:
+                        # Create workflow data for this GSM
+                        workflow_data = {
+                            "gsm_id": gsm_id,
+                            "gsm_metadata_file": gsm_results[gsm_id]
+                        }
+                        all_files_created.append(gsm_results[gsm_id])
+                        all_workflow_data.append(workflow_data)
+                        all_sample_ids.append(gsm_id)
+                    else:
+                        print(f"❌ Failed to process GSM {gsm_id}")
+                        return WorkflowResult(
+                            success=False,
+                            message=f"Failed to extract metadata for GSM {gsm_id}",
+                            errors=[f"GSM {gsm_id} extraction failed"]
+                        )
 
-            # Process GSE IDs
+            # Process GSE IDs using batch optimization
             if len(geo_ids["gse_ids"]) > 0:
-                for gse_id in tqdm(geo_ids["gse_ids"], desc="Data Intake SQL - GSE", unit="gse"):
-                    result = self._extract_gse_workflow(gse_id)
-                    if not result.success:
-                        return result
-                    all_files_created.extend(result.files_created or [])
-                    all_workflow_data.append(result.data)
+                print(f"🚀 Processing {len(geo_ids['gse_ids'])} GSE IDs with batch optimization")
+                gse_results = self._batch_extract_gse_metadata(geo_ids["gse_ids"])
+                
+                for gse_id in geo_ids["gse_ids"]:
+                    if gse_id in gse_results:
+                        # Create workflow data for this GSE
+                        workflow_data = {
+                            "gse_id": gse_id,
+                            "gse_metadata_file": gse_results[gse_id]
+                        }
+                        all_files_created.append(gse_results[gse_id])
+                        all_workflow_data.append(workflow_data)
+                    else:
+                        print(f"❌ Failed to process GSE {gse_id}")
+                        return WorkflowResult(
+                            success=False,
+                            message=f"Failed to extract metadata for GSE {gse_id}",
+                            errors=[f"GSE {gse_id} extraction failed"]
+                        )
 
             # Process PMID IDs
             if len(geo_ids["pmid_ids"]) > 0:
@@ -1049,7 +1381,7 @@ class DataIntakeSQLWorkflow:
                     all_workflow_data.append(result.data)
 
 
-            return WorkflowResult(
+            final = WorkflowResult(
                 success=True,
                 message=f"SQLite ingestion workflow completed successfully. Processed {len(geo_ids['gsm_ids'])} GSM, {len(geo_ids['gse_ids'])} GSE, {len(geo_ids['pmid_ids'])} PMID",
                 data={
@@ -1060,6 +1392,8 @@ class DataIntakeSQLWorkflow:
                 },
                 files_created=all_files_created,
             )
+            self._flush_profile({"entity": "ingestion"})
+            return final
 
         except Exception as e:
             return WorkflowResult(
@@ -1069,10 +1403,10 @@ class DataIntakeSQLWorkflow:
             )
 
     def run_linker_workflow(
-        self, sample_ids: List[str], fields_to_remove: List[str] = None
+        self, sample_ids: List[str], fields_to_remove: List[str] = None, max_workers: int = None
     ) -> WorkflowResult:
         """
-        Run the complete linker workflow for multiple samples.
+        Run the complete linker workflow for multiple samples with optional parallelization.
 
         Parameters
         ----------
@@ -1080,6 +1414,8 @@ class DataIntakeSQLWorkflow:
             List of sample IDs to process
         fields_to_remove : List[str], optional
             Fields to remove during cleaning
+        max_workers : int, optional
+            Maximum number of worker threads for parallel processing
 
         Returns
         -------
@@ -1087,19 +1423,59 @@ class DataIntakeSQLWorkflow:
             Complete linker workflow result
         """
         try:
-            
             all_results = []
             all_files_created = []
-
             failed_samples = []
-            for sample_id in tqdm(sample_ids, desc="Data Intake SQL - Linking samples", unit="sample"):
-                result = self._link_sample_data(sample_id, fields_to_remove)
-                if not result.success:
-                    print(f"⚠️  Failed to process sample {sample_id}: {result.message}")
-                    failed_samples.append(sample_id)
-                    continue  # Continue with other samples instead of failing entire workflow
-                all_results.append(result.data)
-                all_files_created.extend(result.files_created or [])
+
+            if max_workers and max_workers > 1:
+                # Parallel processing using ThreadPoolExecutor
+                import concurrent.futures
+                import threading
+                
+                results_lock = threading.Lock()
+                
+                def process_sample(sample_id):
+                    result = self._link_sample_data(sample_id, fields_to_remove)
+                    with results_lock:
+                        if not result.success:
+                            print(f"⚠️  Failed to process sample {sample_id}: {result.message}")
+                            failed_samples.append(sample_id)
+                            return None
+                        return result
+                
+                print(f"🚀 Processing {len(sample_ids)} samples with {max_workers} workers")
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit all tasks
+                    future_to_sample = {
+                        executor.submit(process_sample, sample_id): sample_id 
+                        for sample_id in sample_ids
+                    }
+                    
+                    # Process results with progress bar
+                    with tqdm(total=len(sample_ids), desc="Data Intake SQL - Linking samples", unit="sample") as pbar:
+                        for future in concurrent.futures.as_completed(future_to_sample):
+                            sample_id = future_to_sample[future]
+                            try:
+                                result = future.result()
+                                if result:
+                                    all_results.append(result.data)
+                                    all_files_created.extend(result.files_created or [])
+                            except Exception as e:
+                                print(f"⚠️  Exception processing sample {sample_id}: {e}")
+                                with results_lock:
+                                    failed_samples.append(sample_id)
+                            finally:
+                                pbar.update(1)
+            else:
+                # Sequential processing (original behavior)
+                for sample_id in tqdm(sample_ids, desc="Data Intake SQL - Linking samples", unit="sample"):
+                    result = self._link_sample_data(sample_id, fields_to_remove)
+                    if not result.success:
+                        print(f"⚠️  Failed to process sample {sample_id}: {result.message}")
+                        failed_samples.append(sample_id)
+                        continue  # Continue with other samples instead of failing entire workflow
+                    all_results.append(result.data)
+                    all_files_created.extend(result.files_created or [])
 
 
             successful_samples = len(sample_ids) - len(failed_samples)
@@ -1107,7 +1483,7 @@ class DataIntakeSQLWorkflow:
             if failed_samples:
                 message += f". Failed samples: {failed_samples}"
             
-            return WorkflowResult(
+            final = WorkflowResult(
                 success=True,
                 message=message,
                 data={
@@ -1118,6 +1494,8 @@ class DataIntakeSQLWorkflow:
                 },
                 files_created=all_files_created,
             )
+            self._flush_profile({"entity": "linker", "requested_samples": len(sample_ids)})
+            return final
 
         except Exception as e:
             return WorkflowResult(
@@ -1158,28 +1536,132 @@ class DataIntakeSQLWorkflow:
             all_workflow_data = []
             all_sample_ids = []
 
-            # Process GSM IDs
-            for gsm_id in tqdm(geo_ids["gsm_ids"], desc="Data Intake SQL - GSM", unit="gsm"):
-                result = self._extract_gsm_workflow(gsm_id)
-                if not result.success:
-                    return result
-                all_files_created.extend(result.files_created or [])
-                all_workflow_data.append(result.data)
-                all_sample_ids.append(gsm_id)
+            # Process GSM IDs using batch optimization
+            if len(geo_ids["gsm_ids"]) > 0:
+                print(f"🚀 Processing {len(geo_ids['gsm_ids'])} GSM IDs with batch optimization")
+                with self._phase("batch_ingest_gsms"):
+                    gsm_results = self._batch_extract_gsm_metadata(geo_ids["gsm_ids"])
+                
+                # Collect series IDs from extracted GSM metadata to extract GSE metadata
+                series_ids_to_extract = set()
+                
+                for gsm_id in geo_ids["gsm_ids"]:
+                    if gsm_id in gsm_results:
+                        # Create workflow data for this GSM
+                        workflow_data = {
+                            "gsm_id": gsm_id,
+                            "gsm_metadata_file": gsm_results[gsm_id]
+                        }
+                        all_files_created.append(gsm_results[gsm_id])
+                        all_workflow_data.append(workflow_data)
+                        all_sample_ids.append(gsm_id)
+                        
+                        # Extract series ID from GSM metadata to queue for GSE extraction
+                        try:
+                            import json
+                            with open(gsm_results[gsm_id]) as f:
+                                gsm_data = json.load(f)
+                            series_id = gsm_data.get("attributes", {}).get("series_id")
+                            if series_id:
+                                series_ids_to_extract.add(series_id)
+                        except Exception as e:
+                            print(f"⚠️  Could not extract series_id from {gsm_id}: {e}")
+                    else:
+                        print(f"❌ Failed to process GSM {gsm_id}")
+                        return LinkerOutput(
+                            success=False,
+                            message=f"Failed to extract metadata for GSM {gsm_id}",
+                            execution_time_seconds=0.0,
+                            sample_ids_requested=[],
+                            session_directory=str(self.session_dir),
+                            files_created=[],
+                            successfully_linked=[],
+                            failed_linking=[gsm_id],
+                            warnings=[f"GSM {gsm_id} extraction failed"],
+                            sample_ids_for_curation=[],
+                            recommended_curation_fields=[],
+                            fields_removed_during_cleaning=[],
+                            linked_data=None,
+                            cleaned_metadata_files=None,
+                            cleaned_series_metadata=None,
+                            cleaned_sample_metadata=None,
+                            cleaned_abstract_metadata=None,
+                        )
+                
+                # Extract GSE metadata for all series found in GSM data
+                if series_ids_to_extract:
+                    print(f"🚀 Extracting GSE metadata for {len(series_ids_to_extract)} series: {', '.join(sorted(series_ids_to_extract))}")
+                    with self._phase("batch_ingest_derived_gses"):
+                        gse_results = self._batch_extract_gse_metadata(list(series_ids_to_extract))
+                    
+                    for gse_id in series_ids_to_extract:
+                        if gse_id in gse_results:
+                            all_files_created.append(gse_results[gse_id])
+                            print(f"✅ Extracted GSE metadata: {gse_id}")
+                        else:
+                            print(f"⚠️  Failed to extract GSE metadata: {gse_id}")
 
-            # Process GSE IDs
-            for gse_id in tqdm(geo_ids["gse_ids"], desc="Data Intake SQL - GSE", unit="gse"):
-                result = self._extract_gse_workflow(gse_id)
-                if not result.success:
-                    return result
-                all_files_created.extend(result.files_created or [])
-                all_workflow_data.append(result.data)
+            # Process GSE IDs using batch optimization
+            if len(geo_ids["gse_ids"]) > 0:
+                print(f"🚀 Processing {len(geo_ids['gse_ids'])} GSE IDs with batch optimization")
+                with self._phase("batch_ingest_gses"):
+                    gse_results = self._batch_extract_gse_metadata(geo_ids["gse_ids"])
+                
+                for gse_id in geo_ids["gse_ids"]:
+                    if gse_id in gse_results:
+                        # Create workflow data for this GSE
+                        workflow_data = {
+                            "gse_id": gse_id,
+                            "gse_metadata_file": gse_results[gse_id]
+                        }
+                        all_files_created.append(gse_results[gse_id])
+                        all_workflow_data.append(workflow_data)
+                    else:
+                        print(f"❌ Failed to process GSE {gse_id}")
+                        return LinkerOutput(
+                            success=False,
+                            message=f"Failed to extract metadata for GSE {gse_id}",
+                            execution_time_seconds=0.0,
+                            sample_ids_requested=[],
+                            session_directory=str(self.session_dir),
+                            files_created=[],
+                            successfully_linked=[],
+                            failed_linking=[gse_id],
+                            warnings=[f"GSE {gse_id} extraction failed"],
+                            sample_ids_for_curation=[],
+                            recommended_curation_fields=[],
+                            fields_removed_during_cleaning=[],
+                            linked_data=None,
+                            cleaned_metadata_files=None,
+                            cleaned_series_metadata=None,
+                            cleaned_sample_metadata=None,
+                            cleaned_abstract_metadata=None,
+                        )
 
-            # Process PMID IDs
+            # Process PMID IDs (keep sequential for now since they're typically fewer)
             for pmid in tqdm(geo_ids["pmid_ids"], desc="Data Intake SQL - PMID", unit="pmid"):
-                result = self._extract_pmid_workflow(pmid)
+                with self._phase("ingest_pmid"):
+                    result = self._extract_pmid_workflow(pmid)
                 if not result.success:
-                    return result
+                    return LinkerOutput(
+                        success=False,
+                        message=f"Failed to extract metadata for PMID {pmid}",
+                        execution_time_seconds=0.0,
+                        sample_ids_requested=[],
+                        session_directory=str(self.session_dir),
+                        files_created=[],
+                        successfully_linked=[],
+                        failed_linking=[str(pmid)],
+                        warnings=[f"PMID {pmid} extraction failed"],
+                        sample_ids_for_curation=[],
+                        recommended_curation_fields=[],
+                        fields_removed_during_cleaning=[],
+                        linked_data=None,
+                        cleaned_metadata_files=None,
+                        cleaned_series_metadata=None,
+                        cleaned_sample_metadata=None,
+                        cleaned_abstract_metadata=None,
+                    )
                 all_files_created.extend(result.files_created or [])
                 all_workflow_data.append(result.data)
 
@@ -1213,8 +1695,64 @@ class DataIntakeSQLWorkflow:
                     "mesh_terms",
                 ]
 
-            # Run linker workflow
-            linker_result = self.run_linker_workflow(all_sample_ids, fields_to_remove)
+            # Generate series-sample mapping once for all samples
+            with self._phase("create_series_sample_mapping"):
+                # Create mapping by scanning the session directory (where metadata files are saved)
+                create_series_sample_mapping_sqlite_impl(str(self.session_dir), self.db_path)
+                mapping_path = self.session_dir / "series_sample_mapping.json"
+                
+                # Update mapping to include all ingested samples to fix missing reverse mappings
+                try:
+                    import json
+                    with open(mapping_path, 'r') as f:
+                        mapping_data = json.load(f)
+                    
+                    # Add all processed GSMs to the mapping based on their actual file locations
+                    for gsm_id in all_sample_ids:
+                        # Find which GSE directory contains this GSM
+                        for gse_dir in self.session_dir.glob("GSE*"):
+                            gsm_file = gse_dir / f"{gsm_id}_metadata.json"
+                            if gsm_file.exists():
+                                gse_id = gse_dir.name
+                                # Add to mapping
+                                if gse_id not in mapping_data["mapping"]:
+                                    mapping_data["mapping"][gse_id] = []
+                                if gsm_id not in mapping_data["mapping"][gse_id]:
+                                    mapping_data["mapping"][gse_id].append(gsm_id)
+                                # Add to reverse mapping
+                                mapping_data["reverse_mapping"][gsm_id] = gse_id
+                                break
+                    
+                    # Update totals
+                    mapping_data["total_series"] = len(mapping_data["mapping"])
+                    total_samples = sum(len(samples) for samples in mapping_data["mapping"].values())
+                    mapping_data["total_samples"] = total_samples
+                    
+                    # Save updated mapping
+                    with open(mapping_path, 'w') as f:
+                        json.dump(mapping_data, f, indent=2)
+                    
+                    print(f"✅ Updated mapping with {len(all_sample_ids)} ingested samples")
+                except Exception as e:
+                    print(f"⚠️  Warning: Failed to update mapping with ingested samples: {e}")
+                
+                # Ensure a copy exists under data_intake for LinkerTools, which expects it there
+                try:
+                    self.data_intake_dir.mkdir(parents=True, exist_ok=True)
+                    di_mapping_path = self.data_intake_dir / "series_sample_mapping.json"
+                    import shutil
+                    shutil.copyfile(mapping_path, di_mapping_path)
+                    all_files_created.extend([str(mapping_path), str(di_mapping_path)])
+                    print(f"✅ Series-sample mapping saved: {mapping_path}")
+                    print(f"✅ Series-sample mapping copied to: {di_mapping_path}")
+                except Exception as e:
+                    print(f"⚠️  Warning: Failed to copy mapping into data_intake dir: {e}")
+                    all_files_created.append(str(mapping_path))
+
+            # Run linker workflow (after mapping is updated)
+            # Use max_workers for parallel linking if available
+            max_workers = getattr(self, 'max_workers', None)
+            linker_result = self.run_linker_workflow(all_sample_ids, fields_to_remove, max_workers)
             if not linker_result.success:
                 return linker_result
 
@@ -1237,6 +1775,9 @@ class DataIntakeSQLWorkflow:
             execution_time = time.time() - self._start_time
 
             print(f"✅ Complete SQLite workflow completed successfully in {execution_time:.2f} seconds\n\n")
+            
+            # Close database manager to clean up resources
+            self._close_db_manager()
 
             return create_successful_linker_output(
                 sample_ids=all_sample_ids,
@@ -1327,6 +1868,8 @@ def run_data_intake_sql_workflow(
     workflow_type: str = "complete",
     create_series_directories: bool = True,
     db_path: str = "data/GEOmetadb.sqlite",
+    enable_profiling: bool = False,
+    max_workers: int = None,
 ) -> LinkerOutput:
     """
     Run the SQLite-based data intake workflow.
@@ -1370,7 +1913,9 @@ def run_data_intake_sql_workflow(
         session_id, 
         sandbox_dir, 
         create_series_directories=create_series_directories,
-        db_path=db_path
+        db_path=db_path,
+        enable_profiling=enable_profiling,
+        max_workers=max_workers,
     )
 
     if workflow_type == "ingestion":
@@ -1521,6 +2066,12 @@ Examples:
     )
 
     parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable per-step profiling and write intake_profile.json",
+    )
+
+    parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose output"
     )
 
@@ -1549,17 +2100,25 @@ Examples:
             fields_to_remove=args.remove_fields,
             workflow_type=args.type,
             db_path=args.db_path,
+            enable_profiling=args.profile,
         )
 
         # Output result
         if args.json:
             # Output as JSON
-            output_data = {
-                "success": result.success,
-                "message": result.message,
-                "data": result.data,
-                "files_created": result.files_created,
-                "errors": result.errors,
+            output_data = result.model_dump() if hasattr(result, "model_dump") else {
+                "success": getattr(result, "success", None),
+                "message": getattr(result, "message", None),
+                "execution_time_seconds": getattr(result, "execution_time_seconds", None),
+                "sample_ids_requested": getattr(result, "sample_ids_requested", None),
+                "session_directory": getattr(result, "session_directory", None),
+                "files_created": getattr(result, "files_created", None),
+                "successfully_linked": getattr(result, "successfully_linked", None),
+                "failed_linking": getattr(result, "failed_linking", None),
+                "warnings": getattr(result, "warnings", None),
+                "sample_ids_for_curation": getattr(result, "sample_ids_for_curation", None),
+                "recommended_curation_fields": getattr(result, "recommended_curation_fields", None),
+                "fields_removed_during_cleaning": getattr(result, "fields_removed_during_cleaning", None),
             }
             print(json.dumps(output_data, indent=2))
         else:

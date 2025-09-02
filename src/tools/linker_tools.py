@@ -135,9 +135,27 @@ class LinkerTools:
                     session_id=getattr(self, "session_id", None),
                 )
 
+        # Fallback: scan for the GSM file in any GSE directory
+        print(f"🔍 Sample {sample_id} not in mapping, scanning directories...")
+        for gse_dir in self.session_dir.glob("GSE*"):
+            if gse_dir.is_dir():
+                gsm_file = gse_dir / f"{sample_id}_metadata.json"
+                if gsm_file.exists():
+                    print(f"✅ Found {sample_id} in {gse_dir.name} via directory scan")
+                    return create_success_result(
+                        LinkerResult,
+                        f"Found directory for sample {sample_id} via fallback scan",
+                        data={
+                            "sample_id": sample_id,
+                            "series_id": gse_dir.name,
+                            "directory": str(gse_dir),
+                        },
+                        session_id=getattr(self, "session_id", None),
+                    )
+
         return create_error_result(
             LinkerResult,
-            f"Sample {sample_id} not found in mapping",
+            f"Sample {sample_id} not found in mapping or directory scan",
             session_id=getattr(self, "session_id", None),
         )
 
@@ -501,6 +519,13 @@ class LinkerTools:
             normalized["contact_zip_postal_code"] = normalized.pop(
                 "contact_zip/postal_code"
             )
+
+        # Filter out problematic GSE fields that cause validation errors
+        if "attributes" in normalized and isinstance(normalized["attributes"], dict):
+            attrs = normalized["attributes"]
+            problematic_fields = ["platform_organism", "sample_organism", "sample_taxid", "relation"]
+            for field in problematic_fields:
+                attrs.pop(field, None)
 
         return normalized
 

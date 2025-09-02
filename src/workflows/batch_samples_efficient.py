@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
-from tqdm import tqdm
+from tqdm import tqdm  # noqa: F401 (not used directly in this module)
 
 from dotenv import load_dotenv
 from agents import ModelProvider
@@ -39,7 +39,7 @@ from src.workflows.preprocessing import run_preprocessing_workflow
 from src.workflows.conditional_processing import run_conditional_processing_workflow
 
 from src.models import LinkerOutput
-from src.models.common import KeyValue
+# from src.models.common import KeyValue  # Unused
 from src.tools.batch_processing_tools import extract_direct_fields_from_data_intake
 
 # Load environment variables
@@ -78,6 +78,8 @@ class EfficientBatchSamplesProcessor:
         sample_type_filter: str = None,
         batch_name: str = None,
         output_format: str = "parquet",
+        max_workers: Optional[int] = None,
+        enable_profiling: bool = False,
     ):
         """
         Initialize the efficient batch samples processor.
@@ -118,6 +120,8 @@ class EfficientBatchSamplesProcessor:
         self.sample_type_filter = sample_type_filter
         self.batch_name = batch_name
         self.output_format = output_format
+        self.max_workers = max_workers
+        self.enable_profiling = enable_profiling
         
         # Validate parameters
         self._validate_parameters()
@@ -141,6 +145,8 @@ class EfficientBatchSamplesProcessor:
             "samples_file": samples_file,
             "output_format": output_format,
             "batch_name": batch_name,
+            "max_workers": max_workers,
+            "enable_profiling": enable_profiling,
         }
 
         # Set up logging to file
@@ -193,7 +199,7 @@ class EfficientBatchSamplesProcessor:
         if self.base_model_provider:
             try:
                 sample_type_provider = type(self.base_model_provider)(default_model="google/gemini-2.5-flash")
-            except:
+            except Exception:
                 sample_type_provider = self.base_model_provider
         
         # Use Gemini Pro for conditional curation (higher quality)
@@ -201,7 +207,7 @@ class EfficientBatchSamplesProcessor:
         if self.base_model_provider:
             try:
                 curation_provider = type(self.base_model_provider)(default_model="google/gemini-2.5-pro")
-            except:
+            except Exception:
                 curation_provider = self.base_model_provider
         
         # Use Gemini Flash for normalization (faster, cost-effective)
@@ -209,7 +215,7 @@ class EfficientBatchSamplesProcessor:
         if self.base_model_provider:
             try:
                 normalization_provider = type(self.base_model_provider)(default_model="google/gemini-2.5-flash")
-            except:
+            except Exception:
                 normalization_provider = self.base_model_provider
         
         return sample_type_provider, curation_provider, normalization_provider
@@ -275,18 +281,26 @@ class EfficientBatchSamplesProcessor:
                 sandbox_dir=str(self.batch_dir),
                 workflow_type="complete",
                 create_series_directories=True,
+                enable_profiling=self.enable_profiling,
+                max_workers=self.max_workers,
             )
             
             if not data_intake_result.success:
                 raise RuntimeError(f"Data intake failed: {data_intake_result.message}")
             
             stage_duration = time.time() - stage_start_time
+            logger.info(f"✅ Stage 1 completed in {stage_duration:.2f} seconds")
             
             # Save data intake output under data_intake/
             data_intake_dir = self.batch_dir / "data_intake"
             data_intake_dir.mkdir(exist_ok=True)
             data_intake_output_file = data_intake_dir / "data_intake_stage_output.json"
             with open(data_intake_output_file, "w") as f:
+                json.dump(data_intake_result.model_dump(), f, indent=2)
+            
+            # Also save with the expected name for direct fields extraction
+            data_intake_output_main = self.batch_dir / "data_intake_output.json"
+            with open(data_intake_output_main, "w") as f:
                 json.dump(data_intake_result.model_dump(), f, indent=2)
             
             return data_intake_result
@@ -311,7 +325,7 @@ class EfficientBatchSamplesProcessor:
         Dict[str, Any]
             Preprocessing workflow output
         """
-        logger.info(f"🚀 Stage 2: Running preprocessing (sample type curation and batching)")
+        logger.info("🚀 Stage 2: Running preprocessing (sample type curation and batching)")
         stage_start_time = time.time()
         
         try:
@@ -327,12 +341,14 @@ class EfficientBatchSamplesProcessor:
                 sample_type_filter=self.sample_type_filter,
                 model_provider=sample_type_provider,
                 max_tokens=self.max_tokens,
+                max_workers=self.max_workers,
             )
             
             if not preprocessing_result["success"]:
                 raise RuntimeError(f"Preprocessing failed: {preprocessing_result['message']}")
             
             stage_duration = time.time() - stage_start_time
+            logger.info(f"✅ Stage 2 completed in {stage_duration:.2f} seconds")
             
             # Save preprocessing output under preprocessing/
             preprocessing_dir = self.batch_dir / "preprocessing"
@@ -367,7 +383,7 @@ class EfficientBatchSamplesProcessor:
         Dict[str, Any]
             Conditional processing workflow output
         """
-        logger.info(f"🚀 Stage 3: Running conditional processing (curation and normalization)")
+        logger.info("🚀 Stage 3: Running conditional processing (curation and normalization)")
         stage_start_time = time.time()
         
         try:
@@ -385,6 +401,7 @@ class EfficientBatchSamplesProcessor:
                 target_fields=self.target_fields,
                 model_provider=curation_provider,  # Will be specialized internally
                 max_tokens=self.max_tokens,
+                max_workers=self.max_workers,
             )
             
             if not conditional_result["success"]:
@@ -519,7 +536,7 @@ class EfficientBatchSamplesProcessor:
                         "ethnicity", "gender", "age", "assay_type", "treatment"
                     ]:
                         field_name = field_dir.name
-                        curator_file = field_dir / f"curator_output_primary_sample.json"
+                        curator_file = field_dir / "curator_output_primary_sample.json"
                         if not curator_file.exists():
                             # Try other sample type names
                             for sample_type in ["cell_line", "unknown"]:
@@ -559,16 +576,34 @@ class EfficientBatchSamplesProcessor:
                             norm_results = batch_targets_data["normalization_results"]
                             for field_name, field_data in norm_results.items():
                                 if isinstance(field_data, dict) and "sample_results" in field_data:
-                                    for sample_result in field_data["sample_results"]:
-                                        if sample_result.get("sample_id") == sample_id:
-                                            result = sample_result.get("result", {})
+                                    for sr in field_data["sample_results"]:
+                                        if sr.get("sample_id") == sample_id:
+                                            result = sr.get("result", {})
                                             if "final_normalized_term" in result:
                                                 sample_data["normalized_fields"][field_name] = {
-                                                    "normalized_term": result["final_normalized_term"],
+                                                    "normalized_term": result.get("final_normalized_term", ""),
                                                     "normalized_id": result.get("final_normalized_id", ""),
                                                     "ontology": result.get("final_ontology", "")
                                                 }
                                             break
+                        # Fallback: handle "normalization_result" (singular) with field -> sample_id map
+                        elif "normalization_result" in batch_targets_data:
+                            norm_results = batch_targets_data["normalization_result"]
+                            if isinstance(norm_results, dict):
+                                for field_name, field_map in norm_results.items():
+                                    if isinstance(field_map, dict):
+                                        # field_map expected: sample_id -> {normalized_term, term_id, ontology, original_value}
+                                        single = field_map.get(sample_id)
+                                        if isinstance(single, dict):
+                                            term = single.get("normalized_term") or ""
+                                            term_id = single.get("term_id") or ""
+                                            ontology = single.get("ontology") or ""
+                                            if term or term_id:
+                                                sample_data["normalized_fields"][field_name] = {
+                                                    "normalized_term": term,
+                                                    "normalized_id": term_id,
+                                                    "ontology": ontology,
+                                                }
                     except Exception as e:
                         logger.warning(f"Error reading batch targets file {batch_targets_file}: {e}")
                 
@@ -850,8 +885,8 @@ class EfficientBatchSamplesProcessor:
         """
         start_time = time.time()
         
-        logger.info(f"🚀 Starting efficient batch samples workflow")
-        logger.info(f"📋 Configuration: {self.batch_config}")
+        logger.info("🚀 Starting efficient batch samples workflow")
+        logger.info("📋 Configuration: %s", self.batch_config)
         
         try:
             # Load samples
@@ -887,7 +922,7 @@ class EfficientBatchSamplesProcessor:
             # Create final workflow result
             workflow_result = {
                 "success": True,
-                "message": f"Efficient batch samples workflow completed successfully",
+                "message": "Efficient batch samples workflow completed successfully",
                 "total_execution_time_seconds": total_execution_time,
                 "samples_requested": len(samples),
                 "batch_directory": str(self.batch_dir),
@@ -912,8 +947,8 @@ class EfficientBatchSamplesProcessor:
                 "timestamp": datetime.now().isoformat(),
             }
             
-            logger.info(f"✅ Efficient batch samples workflow completed successfully in {total_execution_time:.2f} seconds")
-            logger.info(f"📊 Final results: {workflow_result['stage_results']}")
+            logger.info("✅ Efficient batch samples workflow completed successfully in %.2f seconds", total_execution_time)
+            logger.info("📊 Final results: %s", workflow_result['stage_results'])
             
             return workflow_result
             
@@ -943,6 +978,8 @@ async def run_efficient_batch_samples_workflow(
     sample_type_filter: str = None,
     batch_name: str = None,
     output_format: str = "parquet",
+    max_workers: int | None = None,
+    enable_profiling: bool = False,
 ) -> Dict[str, Any]:
     """
     Run the efficient batch samples workflow.
@@ -989,6 +1026,8 @@ async def run_efficient_batch_samples_workflow(
         sample_type_filter=sample_type_filter,
         batch_name=batch_name,
         output_format=output_format,
+        max_workers=max_workers,
+        enable_profiling=enable_profiling,
     )
     
     return await processor.run_complete_workflow()
