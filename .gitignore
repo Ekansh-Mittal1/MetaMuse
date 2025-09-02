@@ -240,3 +240,6 @@ src/normalization/model_cache/
 
 .bash_history
 
+# Cache directories
+geo_cache/
+
