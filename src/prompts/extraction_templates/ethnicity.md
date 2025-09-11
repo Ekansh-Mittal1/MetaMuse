@@ -54,7 +54,26 @@ Return a valid JSON object with this exact structure:
 - "European ancestry" → {"value": "European", "confidence": 0.75, "context": "genetic ancestry", "prenormalized": "European (HANCESTRO:0004)"}
 
 ## Important Notes
-- If no ethnicity candidates are found, return an empty candidates array
+- **MANDATORY: If no ethnicity candidates are found, you MUST report "None reported" with a clear explanation** - blank fields are forbidden
+
+## Handling No Candidates Found
+When no ethnicity candidates can be identified, create a candidate with:
+- `value`: "None reported"
+- `confidence`: 1.0 (high confidence that no ethnicity terms were found)
+- `context`: Brief description of what metadata was available
+- `rationale`: Clear explanation of why no ethnicity candidates could be identified
+- `prenormalized`: "None reported"
+
+Example:
+```json
+{
+  "value": "None reported",
+  "confidence": 1.0,
+  "context": "Sample metadata contains cell line and treatment information but no ethnicity/ancestry terms",
+  "rationale": "Thoroughly searched series title, sample characteristics, and metadata fields. No ethnicity-related terms, ancestry descriptors, or population identifiers were mentioned. Sample may be from cell culture without donor ethnicity specified.",
+  "prenormalized": "None reported"
+}
+```
 - Confidence should reflect both the certainty that it's an ethnicity and the clarity of context
 - Be conservative - it's better to miss ambiguous cases than include false positives
 - **STRICTLY ADHERE TO HANCESTRO ONTOLOGY** for ethnicity terms - only use standardized ethnicity classifications

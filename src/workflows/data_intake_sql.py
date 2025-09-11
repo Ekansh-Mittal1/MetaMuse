@@ -65,14 +65,14 @@ from src.tools.sqlite_manager import get_geometadb_manager
 load_dotenv()
 
 
-def _get_series_subdirectory(session_dir: str, series_id: str, create_directory: bool = True) -> Path:
+def _get_series_subdirectory(data_intake_dir: str, series_id: str, create_directory: bool = True) -> Path:
     """
-    Get or create a subdirectory for a specific series ID within the session directory.
+    Get or create a subdirectory for a specific series ID within the data_intake directory.
 
     Parameters
     ----------
-    session_dir : str
-        The session directory path
+    data_intake_dir : str
+        Path to the data_intake directory (not session directory)
     series_id : str
         The series ID (e.g., "GSE41588")
     create_directory : bool
@@ -81,9 +81,9 @@ def _get_series_subdirectory(session_dir: str, series_id: str, create_directory:
     Returns
     -------
     Path
-        Path to the series subdirectory
+        Path to the series subdirectory within data_intake/
     """
-    series_dir = Path(session_dir) / series_id
+    series_dir = Path(data_intake_dir) / series_id
     if create_directory:
         series_dir.mkdir(parents=True, exist_ok=True)
     return series_dir
@@ -231,17 +231,24 @@ class DataIntakeSQLWorkflow:
                 restructured_metadata["attributes"]["series_id"] = metadata["series"][0] if metadata["series"] else None
                 restructured_metadata["attributes"]["all_series_ids"] = ", ".join(metadata["series"]) if metadata["series"] else None
             
-            # Determine series and target directory
+            # Determine series and target directory - save to data_intake structure
             series_id = None
             if "series" in metadata and metadata["series"]:
                 series_id = metadata["series"][0]
 
-            target_dir = session_path
+            # Save metadata to file in data_intake directory structure
             if series_id:
-                target_dir = session_path / series_id
+                # Create series directory in data_intake/
+                data_intake_path = session_path / "data_intake"
+                data_intake_path.mkdir(parents=True, exist_ok=True)
+                target_dir = data_intake_path / series_id
+                target_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                # Fallback to data_intake root if no series
+                target_dir = session_path / "data_intake"
                 target_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save metadata to file under series directory when available
+            # Save metadata to file under series directory in data_intake/
             output_file = target_dir / f"{gsm_id}_metadata.json"
             with open(output_file, 'w') as f:
                 json.dump(restructured_metadata, f, indent=2, default=str)
@@ -288,8 +295,10 @@ class DataIntakeSQLWorkflow:
             if "platforms" in metadata:
                 restructured_metadata["attributes"]["platform_id"] = ", ".join(metadata["platforms"]) if metadata["platforms"] else None
             
-            # Save metadata to file under series directory
-            target_dir = session_path / gse_id
+            # Save metadata to file under series directory in data_intake/
+            data_intake_path = session_path / "data_intake"
+            data_intake_path.mkdir(parents=True, exist_ok=True)
+            target_dir = data_intake_path / gse_id
             target_dir.mkdir(parents=True, exist_ok=True)
             output_file = target_dir / f"{gse_id}_metadata.json"
             with open(output_file, 'w') as f:
@@ -612,7 +621,7 @@ class DataIntakeSQLWorkflow:
 
         for sample_id in sample_ids:
             try:
-                # Use the implementation from the tool
+                # Use the implementation from the tool - pass session_dir and let LinkerTools handle the structure
                 result = create_curation_data_package_impl(
                     sample_id, str(self.session_dir), fields_to_remove
                 )
@@ -905,7 +914,7 @@ class DataIntakeSQLWorkflow:
                 try:
                     with self._phase("extract_paper_abstract"):
                         paper_file = extract_paper_abstract_sqlite_impl(
-                            pmid, str(self.session_dir), self.db_path
+                            pmid, str(self.data_intake_dir), self.db_path
                         )
                     files_created.append(paper_file)
                     workflow_data["paper_metadata_file"] = paper_file
@@ -1113,9 +1122,9 @@ class DataIntakeSQLWorkflow:
                     # Step 3: Extract paper abstract from SQLite
                     try:
                         with self._phase("extract_paper_abstract"):
-                            paper_file = extract_paper_abstract_sqlite_impl(
-                                pmid, str(self.session_dir), self.db_path
-                            )
+                                                    paper_file = extract_paper_abstract_sqlite_impl(
+                            pmid, str(self.data_intake_dir), self.db_path
+                        )
                         files_created.append(paper_file)
                         workflow_data["paper_metadata_file"] = paper_file
                         print(f"✅ Paper abstract extracted: {paper_file}")
@@ -1187,9 +1196,9 @@ class DataIntakeSQLWorkflow:
             # Extract paper abstract from SQLite
             try:
                 with self._phase("extract_paper_abstract"):
-                    paper_file = extract_paper_abstract_sqlite_impl(
-                        pmid, str(self.session_dir), self.db_path
-                    )
+                                            paper_file = extract_paper_abstract_sqlite_impl(
+                            pmid, str(self.data_intake_dir), self.db_path
+                        )
                 files_created.append(paper_file)
                 workflow_data["paper_metadata_file"] = paper_file
                 print(f"✅ Paper abstract extracted: {paper_file}")
@@ -1216,6 +1225,87 @@ class DataIntakeSQLWorkflow:
                 message=f"PMID workflow failed for {pmid}: {str(e)}",
                 errors=[str(e)],
             )
+
+    def _populate_raw_data_directory(self, sample_ids: List[str]):
+        """
+        Populate the raw_data directory with metadata files organized by sample ID.
+        Each sample gets a subdirectory with sample_metadata.json, series_metadata.json, and abstract_metadata.json.
+        
+        Parameters
+        ----------
+        sample_ids : List[str]
+            List of GSM sample IDs to process
+        """
+        # Load the series-sample mapping to get series information for each sample
+        mapping_file = self.session_dir / "series_sample_mapping.json"
+        if not mapping_file.exists():
+            raise FileNotFoundError(f"Series-sample mapping file not found: {mapping_file}")
+        
+        with open(mapping_file, 'r') as f:
+            mapping_data = json.load(f)
+        
+        for gsm_id in sample_ids:
+            # Find which series this sample belongs to
+            series_id = None
+            for series, samples in mapping_data.get("series_sample_mapping", {}).items():
+                if gsm_id in samples:
+                    series_id = series
+                    break
+            
+            if not series_id:
+                print(f"⚠️  Could not find series for sample {gsm_id}, skipping...")
+                continue
+            
+            # Create raw_data subdirectory for this sample
+            gsm_raw_dir = self.data_intake_raw_dir / gsm_id
+            gsm_raw_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Define source file paths
+            series_dir = self.data_intake_dir / series_id
+            gsm_file = series_dir / f"{gsm_id}_metadata.json"
+            gse_file = series_dir / f"{series_id}_metadata.json"
+            
+            # Copy sample_metadata.json
+            try:
+                if gsm_file.exists():
+                    with open(gsm_file, 'r', encoding='utf-8') as f:
+                        gsm_metadata_json = json.load(f)
+                    with open(gsm_raw_dir / 'sample_metadata.json', 'w', encoding='utf-8') as f:
+                        json.dump(gsm_metadata_json, f, indent=2)
+                else:
+                    print(f"⚠️  Sample metadata file not found: {gsm_file}")
+            except Exception as e:
+                print(f"⚠️  Failed writing sample_metadata.json for {gsm_id}: {e}")
+
+            # Copy series_metadata.json
+            try:
+                if gse_file.exists():
+                    with open(gse_file, 'r', encoding='utf-8') as f:
+                        gse_metadata_json = json.load(f)
+                    with open(gsm_raw_dir / 'series_metadata.json', 'w', encoding='utf-8') as f:
+                        json.dump(gse_metadata_json, f, indent=2)
+                else:
+                    print(f"⚠️  Series metadata file not found: {gse_file}")
+            except Exception as e:
+                print(f"⚠️  Failed writing series_metadata.json for {gsm_id}: {e}")
+
+            # Create abstract_metadata.json by aggregating all PMID files from the series
+            try:
+                series_dir_path = self.data_intake_dir / series_id
+                pmid_files = sorted(series_dir_path.glob('PMID_*_metadata.json'))
+                pmid_entries = []
+                for pf in pmid_files:
+                    try:
+                        with open(pf, 'r', encoding='utf-8') as f:
+                            pmid_entries.append(json.load(f))
+                    except Exception as e:
+                        print(f"⚠️  Failed reading {pf}: {e}")
+                
+                abstract_payload = {"pmids": pmid_entries}
+                with open(gsm_raw_dir / 'abstract_metadata.json', 'w', encoding='utf-8') as f:
+                    json.dump(abstract_payload, f, indent=2)
+            except Exception as e:
+                print(f"⚠️  Failed writing abstract_metadata.json for {gsm_id}: {e}")
 
     def _link_sample_data(
         self, sample_id: str, fields_to_remove: List[str] = None
@@ -1380,6 +1470,14 @@ class DataIntakeSQLWorkflow:
                     all_files_created.extend(result.files_created or [])
                     all_workflow_data.append(result.data)
 
+            # Populate raw_data directory with metadata files organized by sample ID
+            if all_sample_ids:
+                print(f"📁 Populating raw_data directory for {len(all_sample_ids)} samples...")
+                try:
+                    self._populate_raw_data_directory(all_sample_ids)
+                    print("✅ Raw data directory population completed")
+                except Exception as e:
+                    print(f"⚠️  Warning: Failed to populate raw_data directory: {e}")
 
             final = WorkflowResult(
                 success=True,
@@ -1596,8 +1694,48 @@ class DataIntakeSQLWorkflow:
                     
                     for gse_id in series_ids_to_extract:
                         if gse_id in gse_results:
-                            all_files_created.append(gse_results[gse_id])
+                            gse_file = gse_results[gse_id]
+                            all_files_created.append(gse_file)
                             print(f"✅ Extracted GSE metadata: {gse_id}")
+                            
+                            # Extract PubMed ID and abstract for this derived GSE
+                            try:
+                                with self._phase("extract_pubmed_id_from_gse"):
+                                    pmid_result = extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_file)
+                                pmid_data = json.loads(pmid_result)
+                                
+                                if pmid_data.get("success", False):
+                                    pmid = pmid_data.get("pubmed_id")
+                                    if pmid:
+                                        print(f"✅ PubMed ID extracted for derived {gse_id}: {pmid}")
+                                        
+                                        # Extract paper abstract
+                                        try:
+                                            with self._phase("extract_paper_abstract"):
+                                                paper_file = extract_paper_abstract_sqlite_impl(
+                                                    pmid, str(self.data_intake_dir), self.db_path
+                                                )
+                                            all_files_created.append(paper_file)
+                                            print(f"✅ Paper abstract extracted for derived {gse_id}: {paper_file}")
+                                            
+                                            # Move paper file to series directory
+                                            if self.create_series_directories:
+                                                try:
+                                                    series_dir = _get_series_subdirectory(str(self.data_intake_dir), gse_id, True)
+                                                    new_paper_file = series_dir / f"PMID_{pmid}_metadata.json"
+                                                    import shutil
+                                                    shutil.move(paper_file, new_paper_file)
+                                                    all_files_created[-1] = str(new_paper_file)
+                                                    print(f"✅ Moved derived paper file to: {new_paper_file}")
+                                                except Exception as e:
+                                                    print(f"⚠️  Warning: Failed to move derived paper file: {e}")
+                                                    
+                                        except Exception as e:
+                                            print(f"⚠️  Warning: Failed to extract abstract for derived PMID {pmid}: {e}")
+                                else:
+                                    print(f"⚠️  No PubMed ID found for derived {gse_id}")
+                            except Exception as e:
+                                print(f"⚠️  Warning: Failed to extract PubMed ID for derived {gse_id}: {e}")
                         else:
                             print(f"⚠️  Failed to extract GSE metadata: {gse_id}")
 
@@ -1609,12 +1747,58 @@ class DataIntakeSQLWorkflow:
                 
                 for gse_id in geo_ids["gse_ids"]:
                     if gse_id in gse_results:
+                        gse_file = gse_results[gse_id]
+                        
                         # Create workflow data for this GSE
                         workflow_data = {
                             "gse_id": gse_id,
-                            "gse_metadata_file": gse_results[gse_id]
+                            "gse_metadata_file": gse_file
                         }
-                        all_files_created.append(gse_results[gse_id])
+                        
+                        # Extract PubMed ID and abstract for this GSE
+                        try:
+                            with self._phase("extract_pubmed_id_from_gse"):
+                                pmid_result = extract_pubmed_id_from_gse_metadata_sqlite_impl(gse_file)
+                            pmid_data = json.loads(pmid_result)
+                            
+                            if pmid_data.get("success", False):
+                                pmid = pmid_data.get("pubmed_id")
+                                if pmid:
+                                    workflow_data["pmid"] = pmid
+                                    print(f"✅ PubMed ID extracted for {gse_id}: {pmid}")
+                                    
+                                    # Extract paper abstract
+                                    try:
+                                        with self._phase("extract_paper_abstract"):
+                                            paper_file = extract_paper_abstract_sqlite_impl(
+                                                pmid, str(self.data_intake_dir), self.db_path
+                                            )
+                                        all_files_created.append(paper_file)
+                                        workflow_data["paper_metadata_file"] = paper_file
+                                        print(f"✅ Paper abstract extracted for {gse_id}: {paper_file}")
+                                        
+                                        # Move paper file to series directory
+                                        if self.create_series_directories:
+                                            try:
+                                                series_dir = _get_series_subdirectory(str(self.data_intake_dir), gse_id, True)
+                                                new_paper_file = series_dir / f"PMID_{pmid}_metadata.json"
+                                                import shutil
+                                                shutil.move(paper_file, new_paper_file)
+                                                workflow_data["paper_metadata_file"] = str(new_paper_file)
+                                                all_files_created[-1] = str(new_paper_file)
+                                                print(f"✅ Moved paper file to: {new_paper_file}")
+                                            except Exception as e:
+                                                print(f"⚠️  Warning: Failed to move paper file: {e}")
+                                                
+                                    except Exception as e:
+                                        print(f"⚠️  Warning: Failed to extract abstract for PMID {pmid}: {e}")
+                                        workflow_data["paper_extraction_error"] = str(e)
+                            else:
+                                print(f"⚠️  No PubMed ID found for {gse_id}")
+                        except Exception as e:
+                            print(f"⚠️  Warning: Failed to extract PubMed ID for {gse_id}: {e}")
+                        
+                        all_files_created.append(gse_file)
                         all_workflow_data.append(workflow_data)
                     else:
                         print(f"❌ Failed to process GSE {gse_id}")

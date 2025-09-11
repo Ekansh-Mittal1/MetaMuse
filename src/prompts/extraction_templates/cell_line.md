@@ -68,7 +68,7 @@ HeLa, MCF-7, A549, HepG2, HT-29, PC-3, U87-MG, SKOV-3, K562, Jurkat, HEK293, HaC
 - **CONFIDENCE SCORING**: 
   - 0.95-0.98: Specific alphanumeric cell line codes (H1, HEK293, HeLa, CHO)
   - **REJECT**: Generic terms like "embryonic stem cells", "T cells", "fibroblasts"
-- If no specific cell line names are found, return an empty candidates array
+- If no specific cell line names are found, report "None reported" with a clear explanation of why no candidates were identified
 - Confidence should reflect both the certainty that it's a cell line and the clarity of context
 - Be conservative - it's better to miss ambiguous cases than include false positives
 - **STRICTLY ADHERE TO CLO ONTOLOGY** for cell line terms - only use standardized cell line classifications

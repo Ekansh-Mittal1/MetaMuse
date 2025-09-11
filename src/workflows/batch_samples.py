@@ -91,7 +91,7 @@ class BatchSamplesProcessor:
             Maximum tokens for LLM responses
         target_fields : list, optional
             List of target fields to process. If None, processes all available fields.
-            Available fields: disease, tissue, organ, cell_line, developmental_stage,
+            Available fields: disease, tissue, organ, cell_line, cell_type, developmental_stage,
             ethnicity, gender, age, organism, pubmed_id, platform_id, instrument
         sample_type_filter : str, optional
             Filter to process only specific sample type. If None, processes all sample types.
@@ -2750,7 +2750,7 @@ async def run_batch_samples_workflow(
         Maximum tokens for LLM responses
             target_fields : list, optional
             List of target fields to process. If None, processes all available fields.
-            Available fields: disease, tissue, organ, cell_line, developmental_stage,
+            Available fields: disease, tissue, organ, cell_line, cell_type, developmental_stage,
             ethnicity, gender, age, organism, pubmed_id, platform_id, instrument
                     sample_type_filter : str, optional
             Filter to process only specific sample type. If None, processes all sample types.

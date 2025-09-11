@@ -30,22 +30,27 @@ When extracting Developmental Stage candidates, focus EXCLUSIVELY on:
 - **Model organism stages**: larval, pupal, tadpole, juvenile (for non-human studies)
 
 ### **DO NOT EXTRACT:**
-- Generic age numbers without developmental context (e.g., "25" without context)
+- **ANY AGE NUMBERS OR AGE REFERENCES** (e.g., "25", "25 years old", "age 25", "aged 25")
+- **AGE RANGES** (e.g., "18-65 years", "20-30 year olds", "under 18")
+- **AGE DESCRIPTORS WITH NUMBERS** (e.g., "25-year-old patient", "18 year old subjects")
 - Cell culture passage numbers (e.g., "passage 5", "P5" in cell culture context)
 - Experimental timepoints that aren't developmental (e.g., "day 3 treatment")
 - Disease progression stages (e.g., "stage IV cancer")
+- **CRITICAL: AGES SHOULD NEVER BE EXTRACTED INTO DEVELOPMENTAL STAGE** - ages belong in the Age field
 
 ## Extraction Rules
-- **ONLY EXTRACT DEVELOPMENTAL STAGE TERMS** - not general age or time references
+- **ONLY EXTRACT DEVELOPMENTAL STAGE TERMS** - NEVER extract ages, age numbers, or age-related references
 - **HIGHEST CONFIDENCE** for specific developmental stage terms (embryonic, fetal, neonatal, etc.)
+- **ZERO TOLERANCE FOR AGE EXTRACTION** - any candidate with age numbers should be REJECTED
 - Return specific, development-related terms only
 - Include developmental stage variations and synonyms
-- Consider context - ensure extracted terms refer to biological development, not experimental timelines
+- Consider context - ensure extracted terms refer to biological development, not experimental timelines or ages
 - Include confidence score (0.0-1.0) based on certainty and context clarity
 - Provide brief context showing where/how the developmental stage was mentioned
 - **CRITICAL**: STRICTLY adhere to HSAPDV (Human Developmental Stages Ontology) terms and classifications
 - Prefer standardized developmental stage names from HSAPDV database
 - **CRITICAL**: For the prenormalized field, provide the exact HSAPDV ontology term with its ID (e.g., "embryonic stage (HSAPDV:0000002)")
+- **CRITICAL**: If you encounter age information mixed with developmental terms, extract ONLY the developmental stage component, never the age
 
 ## Output Format
 Return a valid JSON object with this exact structure:
@@ -93,7 +98,7 @@ Return a valid JSON object with this exact structure:
   - 0.90-0.95: Clear developmental stage terms (embryonic, fetal, neonatal, adolescent)
   - 0.80-0.90: Context-dependent terms (adult, elderly, juvenile)
   - **REJECT**: Non-developmental timepoints, cell passage numbers, treatment days
-- If no developmental stage candidates are found, return an empty candidates array
+- **MANDATORY: If no developmental stage candidates are found, you MUST report "None reported" with a clear explanation** - blank fields are forbidden
 - Confidence should reflect both the certainty that it's a developmental stage and the clarity of context
 - Be conservative - it's better to miss ambiguous cases than include false positives
 - **STRICTLY ADHERE TO HSAPDV ONTOLOGY** for developmental stage terms

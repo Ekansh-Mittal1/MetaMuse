@@ -109,7 +109,7 @@ For each CurationDataPackage, follow this process:
 - **All candidates in final_candidates must have unique values** (case-insensitive)
 - **If duplicate values exist**, keep only the highest confidence version
 - **Report 1, 2, or 3 unique candidates** - whatever number you actually found
-- **Always report results** - do not leave final_candidates empty unless no candidates were found
+- **MANDATORY: Always report results** - final_candidates must NEVER be empty, use "None reported" with reasoning if no candidates found
 
 #### Conflict Detection:
 - **Conflicts exist** if top candidates have significantly different values (not just confidence differences)
@@ -204,7 +204,7 @@ When analyzing metadata content for each source:
 
 - If a source is missing, process available sources and note in `processing_notes`
 - If extraction fails for a source, note the error and continue with other sources
-- If all sources fail, create a CurationResult with empty candidates
+- If all sources fail, create a CurationResult with "None reported" candidates including reasoning
 
 ## Quality Control
 

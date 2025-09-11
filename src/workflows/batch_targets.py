@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 from uuid import uuid4
 
-from src.workflows.data_intake import run_data_intake_workflow
+from src.workflows.data_intake_sql import run_data_intake_sql_workflow as run_data_intake_workflow
 from src.models import LinkerOutput
 from src.agents.curator import run_curator_agent
 from src.agents.normalizer import run_normalizer_agent
@@ -215,19 +215,19 @@ TARGET_FIELD_CONFIG = {
     # Conditional processing based on sample_type
     "conditional_processing": {
         "primary_sample": {
-            "curation": ["disease", "organ", "ethnicity", "gender", "age", "tissue", "assay_type", "treatment"],
+            "curation": ["disease", "organ", "ethnicity", "gender", "age", "tissue", "cell_type", "developmental_stage", "assay_type", "treatment"],
             "normalization": ["disease", "organ", "tissue"],
             "not_applicable": ["cell_line"]
         },
         "cell_line": {
-            "curation": ["disease", "organ", "cell_line", "assay_type", "treatment"], 
+            "curation": ["disease", "organ", "cell_line", "cell_type", "assay_type", "treatment"], 
             "normalization": ["disease", "organ"],  # Disease, organ, and assay_type are normalized for cell lines
-            "not_applicable": ["ethnicity", "gender", "age", "tissue"]
+            "not_applicable": ["ethnicity", "gender", "age", "tissue", "developmental_stage"]
         },
         "unknown": {
-            "curation": ["disease", "organ", "ethnicity", "gender", "age", "tissue", "cell_line", "assay_type", "treatment"],
+            "curation": ["disease", "organ", "ethnicity", "gender", "age", "tissue", "cell_line", "cell_type", "assay_type", "treatment"],
             "normalization": ["disease", "organ", "tissue"],  # Cell line still not normalized for unknown
-            "not_applicable": []
+            "not_applicable": ["developmental_stage"]  # developmental_stage only for primary samples
         }
     },
     
@@ -374,9 +374,9 @@ async def run_batch_targets_workflow(
     6. Result Assembly - Unified JSON with "not applicable" for excluded fields
 
     CONDITIONAL PROCESSING RULES:
-    - primary_sample: curation[disease, organ, ethnicity, gender, age, tissue] + normalization[disease, organ, tissue]
-    - cell_line: curation[disease, organ, cell_line] + normalization[disease, organ]
-    - unknown: curation[disease, organ, ethnicity, gender, age, tissue, cell_line] + normalization[disease, organ, tissue]
+    - primary_sample: curation[disease, organ, ethnicity, gender, age, tissue, cell_type, developmental_stage] + normalization[disease, organ, tissue]
+    - cell_line: curation[disease, organ, cell_line, cell_type] + normalization[disease, organ]
+    - unknown: curation[disease, organ, ethnicity, gender, age, tissue, cell_line, cell_type] + normalization[disease, organ, tissue]
 
     Parameters
     ----------

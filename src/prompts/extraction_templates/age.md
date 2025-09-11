@@ -77,7 +77,7 @@ Return a valid JSON object with this exact structure:
 - **HIGHEST PRIORITY**: Numeric ages (confidence 0.9-1.0)
 - **MEDIUM PRIORITY**: Age ranges with numbers (confidence 0.8-0.9)  
 - **LOWER PRIORITY**: Descriptive age terms without numbers (confidence 0.6-0.8)
-- If no age or developmental stage candidates are found, return an empty candidates array
+- **MANDATORY: If no age or developmental stage candidates are found, you MUST report "None reported" with a clear explanation** - blank fields are forbidden
 - Confidence should reflect both the certainty that it's an age/developmental stage and the clarity of context
 - Be conservative - it's better to miss ambiguous cases than include false positives
 - Consider age-related context words like "years", "old", "aged", "age" to confirm age references

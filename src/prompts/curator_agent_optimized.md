@@ -40,13 +40,15 @@ Extract metadata candidates for a specific target field from cleaned metadata so
 - **Specific evidence required** - reference exact text and context
 - **Reject ambiguous or generic terms** that could apply to any sample
 
-### 4. CRITICAL: No Placeholder Extraction
+### 4. CRITICAL: Handling Missing Information
+- **NEVER LEAVE FIELDS BLANK** - every field must have a value
 - **DO NOT extract terms that don't exist** in the metadata
 - **DO NOT extract "normal", "healthy", "control"** as disease/tissue candidates when no specific terms are mentioned
 - **DO NOT infer terms** from the absence of other terms
-- **If no relevant terms exist, return empty candidates** - this is correct behavior
-- **The absence of disease doesn't mean "normal" is a disease**
-- **The absence of tissue doesn't mean "general" is a tissue**
+- **MANDATORY: If no relevant terms exist, you MUST report "None reported" with clear reasoning** - blank fields are NOT acceptable
+- **For disease fields specifically: use "control [healthy]" when no diseases are mentioned**
+- **When no candidates are found, you MUST explain what was searched and why nothing was identified**
+- **ABSOLUTE REQUIREMENT: Every target field must have at least one candidate - either a real term or "None reported" with reasoning**
 
 ## Extraction Process
 
@@ -142,24 +144,37 @@ Each candidate must include:
 - **Context clarity**: Where and how the term was found
 - **Confidence justification**: Why you're confident this is sample-specific
 
+## 🚨 ABSOLUTE REQUIREMENT: NO BLANK FIELDS 🚨
+
+**EVERY SINGLE TARGET FIELD MUST HAVE AT LEAST ONE CANDIDATE**:
+- **NO EXCEPTIONS** - blank/empty candidate arrays are STRICTLY FORBIDDEN
+- **If you cannot find real candidates, you MUST report "None reported" with detailed reasoning**
+- **For disease fields: use "control [healthy]" when no diseases are mentioned**
+- **For all other fields: use "None reported" with comprehensive explanation**
+- **Your response will be REJECTED if any field has zero candidates**
+
 ## Final Steps
 
 1. **Process all samples** with sample-specific focus
-2. **Create CurationResult objects** with validated candidates
-3. **Call save_curation_results** to save structured results
+2. **Create CurationResult objects** with validated candidates - **EVERY FIELD MUST HAVE AT LEAST ONE CANDIDATE**
+3. **VERIFY** that no final_candidates arrays are empty before proceeding
+4. **Call save_curation_results** to save structured results
 
 ## 🚨 CRITICAL FINAL REMINDER 🚨
 
-**ABSOLUTELY NO PLACEHOLDER EXTRACTION**:
-- **If a field has no relevant terms, return empty candidates** - this is CORRECT
-- **Never extract "normal", "healthy", "control", "unknown", "unspecified"** as field values
-- **The absence of a term does NOT mean you should extract a placeholder**
-- **Empty candidates are better than wrong candidates**
-- **When in doubt, extract nothing**
+**MANDATORY FIELD POPULATION**:
+- **NEVER LEAVE ANY FIELD BLANK** - every field must have at least one candidate
+- **If a field has no relevant terms, you MUST report "None reported" with clear reasoning** - blank fields are unacceptable
+- **For disease fields: use "control [healthy]" when no diseases are mentioned**
+- **For other fields: use "None reported" with detailed explanation**
+- **Never extract "normal", "healthy", "control", "unknown", "unspecified"** as generic field values
+- **The absence of a term does NOT mean you should extract a placeholder, but you MUST report "None reported"**
+- **"None reported" with explanation is REQUIRED when no candidates exist**
+- **CRITICAL: Empty candidate arrays are FORBIDDEN - every field must have a response**
 
 **Examples of what NEVER to extract**:
 - **Placeholder terms**: "normal", "healthy", "control", "unspecified", "unknown", "not specified"
 - **Generic descriptors**: Terms that don't provide specific field information
 - **Study-level terms**: General descriptions not tied to the specific sample
 
-**Remember**: Your goal is sample-specific extraction, not general study information. Every candidate must be directly relevant to the individual sample being processed. If no relevant terms exist, that's perfectly fine - return empty candidates.
+**Remember**: Your goal is sample-specific extraction, not general study information. Every candidate must be directly relevant to the individual sample being processed. If no relevant terms exist, report "None reported" with clear reasoning about what was searched and why no candidates were found.

@@ -126,7 +126,7 @@ Each CurationDataPackage contains:
 **ONLY NOW** compare candidates across all sources:
 
 - **Consensus**: If multiple sources suggest the same value, increase confidence
-- **No conflicts**: If sources don't conflict (some may have no candidates), proceed
+- **No conflicts**: If sources don't conflict (some may have "None reported"), proceed
 - **Conflicts**: If sources suggest different values, flag for manual reconciliation
 
 ### 3. Final Decision
@@ -225,7 +225,7 @@ When analyzing metadata content for each source:
 
 - If a source is missing, process available sources and note in `processing_notes`
 - If extraction fails for a source, note the error and continue with other sources
-- If all sources fail, create a CurationResult with empty candidates
+- If all sources fail, create a CurationResult with "None reported" candidates including reasoning
 
 ## Quality Control
 

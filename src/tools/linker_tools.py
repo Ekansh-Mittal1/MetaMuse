@@ -121,7 +121,11 @@ class LinkerTools:
         # Check reverse mapping first
         if sample_id in mapping_obj.reverse_mapping:
             series_id = mapping_obj.reverse_mapping[sample_id]
-            series_dir = self.session_dir / series_id
+            # Look for series directory in data_intake/ subdirectory first, then fallback to session root
+            data_intake_series_dir = self.session_dir / "data_intake" / series_id
+            session_series_dir = self.session_dir / series_id
+            
+            series_dir = data_intake_series_dir if data_intake_series_dir.exists() else session_series_dir
 
             if series_dir.exists():
                 return create_success_result(
@@ -135,8 +139,29 @@ class LinkerTools:
                     session_id=getattr(self, "session_id", None),
                 )
 
-        # Fallback: scan for the GSM file in any GSE directory
+        # Fallback: scan for the GSM file in any GSE directory (check both data_intake and session root)
         print(f"🔍 Sample {sample_id} not in mapping, scanning directories...")
+        
+        # First check data_intake directory
+        data_intake_dir = self.session_dir / "data_intake"
+        if data_intake_dir.exists():
+            for gse_dir in data_intake_dir.glob("GSE*"):
+                if gse_dir.is_dir():
+                    gsm_file = gse_dir / f"{sample_id}_metadata.json"
+                    if gsm_file.exists():
+                        print(f"✅ Found {sample_id} in {gse_dir.name} via data_intake directory scan")
+                        return create_success_result(
+                            LinkerResult,
+                            f"Found directory for sample {sample_id} via fallback scan",
+                            data={
+                                "sample_id": sample_id,
+                                "series_id": gse_dir.name,
+                                "directory": str(gse_dir),
+                            },
+                            session_id=getattr(self, "session_id", None),
+                        )
+        
+        # Fallback to session root
         for gse_dir in self.session_dir.glob("GSE*"):
             if gse_dir.is_dir():
                 gsm_file = gse_dir / f"{sample_id}_metadata.json"
@@ -555,7 +580,7 @@ class LinkerTools:
 
             # Get paths
             series_id = directory_result.data["series_id"]
-            series_dir = self.session_dir / series_id
+            series_dir = Path(directory_result.data["directory"])
 
             # Set default fields to remove if not provided
             if fields_to_remove is None or len(fields_to_remove) == 0:

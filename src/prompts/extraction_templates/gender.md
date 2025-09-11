@@ -54,7 +54,26 @@ Return a valid JSON object with this exact structure:
 - "intersex individuals" → {"value": "intersex", "confidence": 0.8, "context": "biological variation", "prenormalized": "intersex (PATO:0001340)"}
 
 ## Important Notes
-- If no gender candidates are found, return an empty candidates array
+- **MANDATORY: If no gender candidates are found, you MUST report "None reported" with a clear explanation** - blank fields are forbidden
+
+## Handling No Candidates Found
+When no gender candidates can be identified, create a candidate with:
+- `value`: "None reported"
+- `confidence`: 1.0 (high confidence that no gender terms were found)
+- `context`: Brief description of what metadata was available
+- `rationale`: Clear explanation of why no gender candidates could be identified
+- `prenormalized`: "None reported"
+
+Example:
+```json
+{
+  "value": "None reported",
+  "confidence": 1.0,
+  "context": "Sample metadata contains cell line and treatment information but no gender/sex terms",
+  "rationale": "Thoroughly searched series title, sample characteristics, and metadata fields. No gender-related terms, sex indicators, or chromosomal patterns were mentioned. Sample may be from cell culture without donor gender specified.",
+  "prenormalized": "None reported"
+}
+```
 - Confidence should reflect both the certainty that it's a gender term and the clarity of context
 - Be conservative - it's better to miss ambiguous cases than include false positives
 - **STRICTLY ADHERE TO PATO ONTOLOGY** for gender terms - only use standardized gender classifications

@@ -33,8 +33,31 @@ brain, heart, liver, kidney, lung, pancreas, spleen, stomach, esophagus, small i
 ```
 
 ## Rules
-- Empty array if no valid organs found
+- If no valid organs found, report "None reported" with explanation
 - No custom organ names - predefined list only
 - Confidence 0.0-1.0
 - If organ not in list → exclude from output 
 - **CRITICAL** IF THERE ARE REFERENCES TO CELL TYPES YOU MUST INFER THE MOST LIKELY ORGAN THE SAMPLE ORIGINATES FROM
+
+## Handling No Candidates Found
+When no organ candidates can be identified, create a candidate with:
+- `value`: "None reported"
+- `confidence`: 1.0 (high confidence that no organ terms were found)
+- `context`: Brief description of what metadata was available
+- `rationale`: Clear explanation of why no organ candidates could be identified
+- `prenormalized`: "None reported"
+
+Example:
+```json
+{
+  "candidates": [
+    {
+      "value": "None reported",
+      "confidence": 1.0,
+      "context": "Sample metadata contains cell line information but no organ/tissue source",
+      "rationale": "Searched series title, sample characteristics, and metadata fields. No anatomical organ terms or tissue sources were mentioned. Sample appears to be from cell culture without organ origin specified.",
+      "prenormalized": "None reported"
+    }
+  ]
+}
+```

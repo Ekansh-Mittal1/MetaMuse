@@ -53,7 +53,26 @@ Return a valid JSON object with this exact structure:
 - "immunotherapy" → {"value": "immunotherapy", "confidence": 0.8, "context": "immune-based treatment", "prenormalized": "immunotherapy (EFO:0003842)"}
 
 ## Important Notes
-- If no treatment candidates are found, return an empty candidates array
+- **MANDATORY: If no treatment candidates are found, you MUST report "None reported" with a clear explanation** - blank fields are forbidden
+
+## Handling No Candidates Found
+When no treatment candidates can be identified, create a candidate with:
+- `value`: "None reported"
+- `confidence`: 1.0 (high confidence that no treatment terms were found)
+- `context`: Brief description of what metadata was available
+- `rationale`: Clear explanation of why no treatment candidates could be identified
+- `prenormalized`: "None reported"
+
+Example:
+```json
+{
+  "value": "None reported",
+  "confidence": 1.0,
+  "context": "Sample metadata contains cell line and disease information but no treatment terms",
+  "rationale": "Thoroughly searched series title, sample characteristics, and metadata fields. No treatment-related terms, drug names, therapeutic interventions, or experimental conditions were mentioned. Sample may be from untreated/baseline condition.",
+  "prenormalized": "None reported"
+}
+```
 - Confidence should reflect both the certainty that it's a treatment and the clarity of context
 - Be conservative - it's better to miss ambiguous cases than include false positives
 - **STRICTLY ADHERE TO EFO ONTOLOGY** for treatment terms - only use standardized treatment classifications

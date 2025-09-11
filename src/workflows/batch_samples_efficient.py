@@ -114,7 +114,7 @@ class EfficientBatchSamplesProcessor:
         self.base_model_provider = model_provider
         self.max_tokens = max_tokens
         self.target_fields = target_fields or [
-            "disease", "tissue", "organ", "cell_line", "developmental_stage",
+            "disease", "tissue", "organ", "cell_line", "cell_type", "developmental_stage",
             "ethnicity", "gender", "age", "organism", "pubmed_id", "platform_id", "instrument"
         ]
         self.sample_type_filter = sample_type_filter
@@ -518,12 +518,39 @@ class EfficientBatchSamplesProcessor:
                         if isinstance(curator_data, list):
                             for curator_result in curator_data:
                                 if curator_result.get("sample_id") == sample_id:
-                                    if "final_candidate" in curator_result:
+                                    # Handle assay_type field which uses 'assay_type' instead of 'final_candidate'
+                                    if field_name == "assay_type" and "assay_type" in curator_result:
                                         sample_data["curated_fields"][field_name] = {
-                                            "final_candidate": curator_result["final_candidate"],
-                                            "confidence": curator_result.get("final_confidence", ""),
-                                            "context": curator_result.get("context", ""),
-                                            "rationale": curator_result.get("rationale", "")
+                                            "final_candidate": curator_result["assay_type"],
+                                            "confidence": curator_result.get("confidence", ""),
+                                            "context": "",  # assay_type doesn't have context in the same format
+                                            "rationale": ""  # assay_type doesn't have rationale in the same format
+                                        }
+                                    elif "final_candidate" in curator_result or "final_candidates" in curator_result:
+                                        # Handle cases where final_candidate might be None but final_candidates array exists
+                                        final_candidate_value = curator_result.get("final_candidate")
+                                        final_confidence = curator_result.get("final_confidence")
+                                        context = ""
+                                        rationale = ""
+                                        
+                                        # If final_candidate is None but final_candidates array exists, use the first one
+                                        if (final_candidate_value is None or final_confidence is None) and "final_candidates" in curator_result and curator_result["final_candidates"]:
+                                            final_candidate_data = curator_result["final_candidates"][0]
+                                            final_candidate_value = final_candidate_data.get("value", "")
+                                            final_confidence = final_candidate_data.get("confidence", "")
+                                            context = final_candidate_data.get("context", "")
+                                            rationale = final_candidate_data.get("rationale", "")
+                                        elif "final_candidates" in curator_result and curator_result["final_candidates"]:
+                                            # Extract context and rationale from final_candidates array
+                                            final_candidate_data = curator_result["final_candidates"][0]
+                                            context = final_candidate_data.get("context", "")
+                                            rationale = final_candidate_data.get("rationale", "")
+                                        
+                                        sample_data["curated_fields"][field_name] = {
+                                            "final_candidate": final_candidate_value or "",
+                                            "confidence": final_confidence or "",
+                                            "context": context,
+                                            "rationale": rationale
                                         }
                                     break
                     except Exception as e:
@@ -532,7 +559,7 @@ class EfficientBatchSamplesProcessor:
                 # Also extract from field directories (alternative structure)
                 for field_dir in batch_dir.iterdir():
                     if field_dir.is_dir() and field_dir.name in [
-                        "disease", "tissue", "organ", "cell_line", "developmental_stage",
+                        "disease", "tissue", "organ", "cell_line", "cell_type", "developmental_stage",
                         "ethnicity", "gender", "age", "assay_type", "treatment"
                     ]:
                         field_name = field_dir.name
@@ -553,12 +580,39 @@ class EfficientBatchSamplesProcessor:
                                 if "curation_results" in curator_data:
                                     for curation_result in curator_data["curation_results"]:
                                         if curation_result.get("sample_id") == sample_id:
-                                            if "final_candidate" in curation_result:
+                                            # Handle assay_type field which uses 'assay_type' instead of 'final_candidate'
+                                            if field_name == "assay_type" and "assay_type" in curation_result:
                                                 sample_data["curated_fields"][field_name] = {
-                                                    "final_candidate": curation_result["final_candidate"],
-                                                    "confidence": curation_result.get("final_confidence", ""),
-                                                    "context": curation_result.get("context", ""),
-                                                    "rationale": curation_result.get("rationale", "")
+                                                    "final_candidate": curation_result["assay_type"],
+                                                    "confidence": curation_result.get("confidence", ""),
+                                                    "context": "",  # assay_type doesn't have context in the same format
+                                                    "rationale": ""  # assay_type doesn't have rationale in the same format
+                                                }
+                                            elif "final_candidate" in curation_result or "final_candidates" in curation_result:
+                                                # Handle cases where final_candidate might be None but final_candidates array exists
+                                                final_candidate_value = curation_result.get("final_candidate")
+                                                final_confidence = curation_result.get("final_confidence")
+                                                context = ""
+                                                rationale = ""
+                                                
+                                                # If final_candidate is None but final_candidates array exists, use the first one
+                                                if (final_candidate_value is None or final_confidence is None) and "final_candidates" in curation_result and curation_result["final_candidates"]:
+                                                    final_candidate_data = curation_result["final_candidates"][0]
+                                                    final_candidate_value = final_candidate_data.get("value", "")
+                                                    final_confidence = final_candidate_data.get("confidence", "")
+                                                    context = final_candidate_data.get("context", "")
+                                                    rationale = final_candidate_data.get("rationale", "")
+                                                elif "final_candidates" in curation_result and curation_result["final_candidates"]:
+                                                    # Extract context and rationale from final_candidates array
+                                                    final_candidate_data = curation_result["final_candidates"][0]
+                                                    context = final_candidate_data.get("context", "")
+                                                    rationale = final_candidate_data.get("rationale", "")
+                                                
+                                                sample_data["curated_fields"][field_name] = {
+                                                    "final_candidate": final_candidate_value or "",
+                                                    "confidence": final_confidence or "",
+                                                    "context": context,
+                                                    "rationale": rationale
                                                 }
                                             break
                             except Exception as e:
@@ -648,6 +702,7 @@ class EfficientBatchSamplesProcessor:
             "tissue_final_candidate": "",
             "organ_final_candidate": "",
             "cell_line_final_candidate": "",
+            "cell_type_final_candidate": "",
             "developmental_stage_final_candidate": "",
             "ethnicity_final_candidate": "",
             "gender_final_candidate": "",
@@ -692,6 +747,92 @@ class EfficientBatchSamplesProcessor:
                 row[term_key] = field_data.get("normalized_term", "")
             if id_key in row:
                 row[id_key] = field_data.get("normalized_id", "")
+        
+        return row
+
+    def create_comprehensive_csv_row(self, sample_id: str, sample_data: Dict[str, Any], sample_type: str, batch_name: str) -> Dict[str, Any]:
+        """
+        Create a comprehensive CSV row with detailed curation and normalization information.
+        Groups all information for each target field together for better analysis.
+        
+        Parameters
+        ----------
+        sample_id : str
+            Sample ID
+        sample_data : Dict[str, Any]
+            Extracted sample data with curation and normalization results
+        sample_type : str
+            Sample type (primary_sample, cell_line, unknown)
+        batch_name : str
+            Batch name
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Comprehensive CSV row data with detailed information grouped by field
+        """
+        # Define all possible fields and their order
+        all_curated_fields = ["disease", "tissue", "organ", "cell_line", "cell_type", "developmental_stage", 
+                             "ethnicity", "gender", "age", "assay_type", "treatment"]
+        all_normalized_fields = ["disease", "tissue", "organ"]
+        
+        # Start with basic metadata
+        row = {
+            "sample_id": sample_id,
+            "sample_type": sample_type,
+            "batch_num": batch_name,
+            "organism": "",
+            "series_id": "",
+            "sandbox_id": batch_name,
+            "pubmed_id": "",
+            "platform_id": "",
+            "instrument": "",
+        }
+        
+        # Populate direct fields
+        direct_fields = sample_data.get("direct_fields", {})
+        row["organism"] = direct_fields.get("organism", "")
+        row["series_id"] = direct_fields.get("series_id", "")
+        row["pubmed_id"] = direct_fields.get("pubmed_id", "")
+        row["platform_id"] = direct_fields.get("platform_id", "")
+        row["instrument"] = direct_fields.get("instrument", "")
+        
+        # For each target field, group all related information together
+        for field_name in all_curated_fields:
+            # Initialize all fields for this target field
+            row[f"{field_name}_final_candidate"] = ""
+            row[f"{field_name}_confidence"] = ""
+            row[f"{field_name}_context"] = ""
+            row[f"{field_name}_rationale"] = ""
+            
+            # Add normalized fields if this field supports normalization
+            if field_name in all_normalized_fields:
+                row[f"{field_name}_normalized_term"] = ""
+                row[f"{field_name}_normalized_id"] = ""
+                row[f"{field_name}_normalization_confidence"] = ""
+                row[f"{field_name}_prenormalized"] = ""
+                row[f"{field_name}_normalization_notes"] = ""
+                row[f"{field_name}_ontology"] = ""
+        
+        # Populate actual curated fields
+        curated_fields = sample_data.get("curated_fields", {})
+        for field_name, field_data in curated_fields.items():
+            if field_name in all_curated_fields:
+                row[f"{field_name}_final_candidate"] = field_data.get("final_candidate", "")
+                row[f"{field_name}_confidence"] = field_data.get("confidence", "")
+                row[f"{field_name}_context"] = field_data.get("context", "")
+                row[f"{field_name}_rationale"] = field_data.get("rationale", "")
+        
+        # Populate actual normalized fields
+        normalized_fields = sample_data.get("normalized_fields", {})
+        for field_name, field_data in normalized_fields.items():
+            if field_name in all_normalized_fields:
+                row[f"{field_name}_normalized_term"] = field_data.get("normalized_term", "")
+                row[f"{field_name}_normalized_id"] = field_data.get("normalized_id", "")
+                row[f"{field_name}_normalization_confidence"] = field_data.get("normalization_confidence", "")
+                row[f"{field_name}_prenormalized"] = field_data.get("prenormalized", "")
+                row[f"{field_name}_normalization_notes"] = field_data.get("normalization_notes", "")
+                row[f"{field_name}_ontology"] = field_data.get("ontology", "")
         
         return row
 
@@ -784,7 +925,8 @@ class EfficientBatchSamplesProcessor:
 
             if self.output_format == "parquet":
                 # Extract detailed results from each batch directory (matching original format)
-                detailed_data = []
+                streamlined_data = []
+                comprehensive_data = []
                 
                 for batch_result in conditional_output.get("batch_results", []):
                     if batch_result["success"]:
@@ -798,34 +940,47 @@ class EfficientBatchSamplesProcessor:
                         for sample_id in batch_result["batch_samples"]:
                             if sample_id in sample_results:
                                 sample_data = sample_results[sample_id]
-                                # Create row matching original batch_samples format
-                                row = self.create_streamlined_csv_row(sample_id, sample_data, sample_type, batch_name)
+                                
+                                # Create streamlined row matching original batch_samples format
+                                streamlined_row = self.create_streamlined_csv_row(sample_id, sample_data, sample_type, batch_name)
                                 # Override with authoritative direct fields from data intake for parity
                                 df = direct_fields_map.get(sample_id, {})
                                 if df:
-                                    row["organism"] = df.get("organism", {}).get("value", row.get("organism", ""))
-                                    row["series_id"] = df.get("series_id", {}).get("value", row.get("series_id", ""))
-                                    row["pubmed_id"] = df.get("pubmed_id", {}).get("value", row.get("pubmed_id", ""))
-                                    row["platform_id"] = df.get("platform_id", {}).get("value", row.get("platform_id", ""))
-                                    row["instrument"] = df.get("instrument_model", {}).get("value", row.get("instrument", ""))
-                                detailed_data.append(row)
+                                    streamlined_row["organism"] = df.get("organism", {}).get("value", streamlined_row.get("organism", ""))
+                                    streamlined_row["series_id"] = df.get("series_id", {}).get("value", streamlined_row.get("series_id", ""))
+                                    streamlined_row["pubmed_id"] = df.get("pubmed_id", {}).get("value", streamlined_row.get("pubmed_id", ""))
+                                    streamlined_row["platform_id"] = df.get("platform_id", {}).get("value", streamlined_row.get("platform_id", ""))
+                                    streamlined_row["instrument"] = df.get("instrument_model", {}).get("value", streamlined_row.get("instrument", ""))
+                                streamlined_data.append(streamlined_row)
+                                
+                                # Create comprehensive row with detailed information
+                                comprehensive_row = self.create_comprehensive_csv_row(sample_id, sample_data, sample_type, batch_name)
+                                # Override with authoritative direct fields from data intake for parity
+                                if df:
+                                    comprehensive_row["organism"] = df.get("organism", {}).get("value", comprehensive_row.get("organism", ""))
+                                    comprehensive_row["series_id"] = df.get("series_id", {}).get("value", comprehensive_row.get("series_id", ""))
+                                    comprehensive_row["pubmed_id"] = df.get("pubmed_id", {}).get("value", comprehensive_row.get("pubmed_id", ""))
+                                    comprehensive_row["platform_id"] = df.get("platform_id", {}).get("value", comprehensive_row.get("platform_id", ""))
+                                    comprehensive_row["instrument"] = df.get("instrument_model", {}).get("value", comprehensive_row.get("instrument", ""))
+                                comprehensive_data.append(comprehensive_row)
                 
-                if detailed_data:
-                    df = pd.DataFrame(detailed_data)
-                    
-                    # Save streamlined results (matching original format)
+                if streamlined_data:
+                    # Save streamlined parquet file
+                    streamlined_df = pd.DataFrame(streamlined_data)
                     streamlined_file = self.batch_dir / "batch_results.parquet"
-                    df.to_parquet(streamlined_file, index=False)
+                    streamlined_df.to_parquet(streamlined_file, index=False)
                     
-                    # Save comprehensive results (same as streamlined for now)
+                    # Save comprehensive parquet file with detailed information
+                    comprehensive_df = pd.DataFrame(comprehensive_data)
                     comprehensive_file = self.batch_dir / "comprehensive_batch_results.parquet"
-                    df.to_parquet(comprehensive_file, index=False)
+                    comprehensive_df.to_parquet(comprehensive_file, index=False)
                     
                     logger.info(f"✅ Saved parquet files: {streamlined_file} and {comprehensive_file}")
                 
             elif self.output_format == "csv":
                 # Extract detailed results from each batch directory (matching original format)
-                detailed_data = []
+                streamlined_data = []
+                comprehensive_data = []
                 
                 for batch_result in conditional_output.get("batch_results", []):
                     if batch_result["success"]:
@@ -839,32 +994,54 @@ class EfficientBatchSamplesProcessor:
                         for sample_id in batch_result["batch_samples"]:
                             if sample_id in sample_results:
                                 sample_data = sample_results[sample_id]
-                                # Create row matching original batch_samples format
-                                row = self.create_streamlined_csv_row(sample_id, sample_data, sample_type, batch_name)
+                                
+                                # Create streamlined row matching original batch_samples format
+                                streamlined_row = self.create_streamlined_csv_row(sample_id, sample_data, sample_type, batch_name)
                                 # Override with authoritative direct fields from data intake for parity
                                 df = direct_fields_map.get(sample_id, {})
                                 if df:
-                                    row["organism"] = df.get("organism", {}).get("value", row.get("organism", ""))
-                                    row["series_id"] = df.get("series_id", {}).get("value", row.get("series_id", ""))
-                                    row["pubmed_id"] = df.get("pubmed_id", {}).get("value", row.get("pubmed_id", ""))
-                                    row["platform_id"] = df.get("platform_id", {}).get("value", row.get("platform_id", ""))
-                                    row["instrument"] = df.get("instrument_model", {}).get("value", row.get("instrument", ""))
-                                detailed_data.append(row)
+                                    streamlined_row["organism"] = df.get("organism", {}).get("value", streamlined_row.get("organism", ""))
+                                    streamlined_row["series_id"] = df.get("series_id", {}).get("value", streamlined_row.get("series_id", ""))
+                                    streamlined_row["pubmed_id"] = df.get("pubmed_id", {}).get("value", streamlined_row.get("pubmed_id", ""))
+                                    streamlined_row["platform_id"] = df.get("platform_id", {}).get("value", streamlined_row.get("platform_id", ""))
+                                    streamlined_row["instrument"] = df.get("instrument_model", {}).get("value", streamlined_row.get("instrument", ""))
+                                streamlined_data.append(streamlined_row)
+                                
+                                # Create comprehensive row with detailed information
+                                comprehensive_row = self.create_comprehensive_csv_row(sample_id, sample_data, sample_type, batch_name)
+                                # Override with authoritative direct fields from data intake for parity
+                                if df:
+                                    comprehensive_row["organism"] = df.get("organism", {}).get("value", comprehensive_row.get("organism", ""))
+                                    comprehensive_row["series_id"] = df.get("series_id", {}).get("value", comprehensive_row.get("series_id", ""))
+                                    comprehensive_row["pubmed_id"] = df.get("pubmed_id", {}).get("value", comprehensive_row.get("pubmed_id", ""))
+                                    comprehensive_row["platform_id"] = df.get("platform_id", {}).get("value", comprehensive_row.get("platform_id", ""))
+                                    comprehensive_row["instrument"] = df.get("instrument_model", {}).get("value", comprehensive_row.get("instrument", ""))
+                                comprehensive_data.append(comprehensive_row)
                 
-                if detailed_data:
-                    # Save CSV files with detailed results
+                if streamlined_data:
+                    # Save streamlined CSV file with proper quoting for special characters
                     streamlined_file = self.batch_dir / "batch_results.csv"
                     with open(streamlined_file, "w", newline="") as f:
-                        writer = csv.DictWriter(f, fieldnames=detailed_data[0].keys())
+                        writer = csv.DictWriter(
+                            f, 
+                            fieldnames=streamlined_data[0].keys(),
+                            quoting=csv.QUOTE_MINIMAL,
+                            escapechar='\\'
+                        )
                         writer.writeheader()
-                        writer.writerows(detailed_data)
+                        writer.writerows(streamlined_data)
                     
-                    # Copy as comprehensive results
+                    # Save comprehensive CSV file with detailed information
                     comprehensive_file = self.batch_dir / "comprehensive_batch_results.csv"
                     with open(comprehensive_file, "w", newline="") as f:
-                        writer = csv.DictWriter(f, fieldnames=detailed_data[0].keys())
+                        writer = csv.DictWriter(
+                            f, 
+                            fieldnames=comprehensive_data[0].keys(),
+                            quoting=csv.QUOTE_MINIMAL,
+                            escapechar='\\'
+                        )
                         writer.writeheader()
-                        writer.writerows(detailed_data)
+                        writer.writerows(comprehensive_data)
                     
                     logger.info(f"✅ Saved CSV files: {streamlined_file} and {comprehensive_file}")
             

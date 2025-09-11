@@ -464,6 +464,35 @@ def semantic_search_candidates_impl(
         # 3. Perform semantic search for all candidates (return top 5 matches per candidate)
         normalized_candidates_map = {}
         for candidate in all_candidates:
+            # Handle "None reported" cases - skip semantic search
+            if candidate.value == "None reported":
+                normalized_candidates_map[candidate.value] = NormalizedCandidate(
+                    **candidate.model_dump(),
+                    top_ontology_matches=[],
+                    best_match=None,
+                    normalization_confidence=None,
+                    normalization_notes=["No normalization attempted - curator reported no candidates found"],
+                )
+                continue
+            
+            # Handle "control [healthy]" for disease fields - skip semantic search but mark as successful
+            if candidate.value == "control [healthy]" and target_field.lower() in ["disease"]:
+                # Create a synthetic ontology match for control [healthy]
+                synthetic_match = OntologyMatch(
+                    term="sterile",
+                    term_id="MONDO:0005047", 
+                    score=1.0,
+                    ontology="mondo"
+                )
+                normalized_candidates_map[candidate.value] = NormalizedCandidate(
+                    **candidate.model_dump(),
+                    top_ontology_matches=[synthetic_match],
+                    best_match=synthetic_match,
+                    normalization_confidence=1.0,
+                    normalization_notes=["Synthetic normalization for healthy/control samples"],
+                )
+                continue
+            
             # Collect all matches across ontologies and get top 5
             all_matches = []
             for ontology in ontologies:
@@ -511,27 +540,38 @@ def semantic_search_candidates_impl(
                 normalized_candidates_map[c.value]
                 for c in res.series_candidates
                 if c.value in normalized_candidates_map
-                and normalized_candidates_map[c.value].best_match
+                and (normalized_candidates_map[c.value].best_match or c.value in ["None reported", "control [healthy]"])
             ]
             norm_sample = [
                 normalized_candidates_map[c.value]
                 for c in res.sample_candidates
                 if c.value in normalized_candidates_map
-                and normalized_candidates_map[c.value].best_match
+                and (normalized_candidates_map[c.value].best_match or c.value in ["None reported", "control [healthy]"])
             ]
             norm_abstract = [
                 normalized_candidates_map[c.value]
                 for c in res.abstract_candidates
                 if c.value in normalized_candidates_map
-                and normalized_candidates_map[c.value].best_match
+                and (normalized_candidates_map[c.value].best_match or c.value in ["None reported", "control [healthy]"])
             ]
 
+            # Separate different types of candidates
             all_norm_candidates = norm_series + norm_sample + norm_abstract
-            if all_norm_candidates:
-                successful_normalizations += len(all_norm_candidates)
+            normalizable_candidates = [c for c in all_norm_candidates if c.value not in ["None reported", "control [healthy]"]]
+            control_healthy_candidates = [c for c in all_norm_candidates if c.value == "control [healthy]"]
+            none_reported_candidates = [c for c in all_norm_candidates if c.value == "None reported"]
+            
+            if normalizable_candidates:
+                successful_normalizations += len(normalizable_candidates)
                 best_overall_match = max(
-                    all_norm_candidates, key=lambda c: c.normalization_confidence or 0.0
+                    normalizable_candidates, key=lambda c: c.normalization_confidence or 0.0
                 )
+            elif control_healthy_candidates:
+                # If only "control [healthy]" candidates exist, use the first one as best match
+                best_overall_match = control_healthy_candidates[0]
+            elif none_reported_candidates:
+                # If only "None reported" candidates exist, use the first one as best match
+                best_overall_match = none_reported_candidates[0]
             else:
                 best_overall_match = None
 
@@ -550,21 +590,31 @@ def semantic_search_candidates_impl(
             final_confidence = (
                 res.final_candidates[0].confidence if res.final_candidates else None
             )
-            final_normalized_term = (
-                best_overall_match.best_match.term
-                if best_overall_match and best_overall_match.best_match
-                else None
-            )
-            final_normalized_id = (
-                best_overall_match.best_match.term_id
-                if best_overall_match and best_overall_match.best_match
-                else None
-            )
-            final_ontology = (
-                best_overall_match.best_match.ontology
-                if best_overall_match and best_overall_match.best_match
-                else None
-            )
+            # Handle special cases for final normalized terms
+            if best_overall_match and best_overall_match.value == "None reported":
+                final_normalized_term = "None reported"
+                final_normalized_id = "None reported"
+                final_ontology = "None reported"
+            elif best_overall_match and best_overall_match.value == "control [healthy]":
+                final_normalized_term = "sterile"
+                final_normalized_id = "MONDO:0005047"
+                final_ontology = "mondo"
+            else:
+                final_normalized_term = (
+                    best_overall_match.best_match.term
+                    if best_overall_match and best_overall_match.best_match
+                    else None
+                )
+                final_normalized_id = (
+                    best_overall_match.best_match.term_id
+                    if best_overall_match and best_overall_match.best_match
+                    else None
+                )
+                final_ontology = (
+                    best_overall_match.best_match.ontology
+                    if best_overall_match and best_overall_match.best_match
+                    else None
+                )
 
             # Extract original candidate values from the curation result
             original_candidates = []

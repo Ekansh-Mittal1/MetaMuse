@@ -67,7 +67,7 @@ class ConditionalProcessingWorkflow:
             Path to the session directory
         target_fields : List[str], optional
             List of target fields to process. If None, processes all available fields.
-            Available fields: disease, tissue, organ, cell_line, developmental_stage,
+            Available fields: disease, tissue, organ, cell_line, cell_type, developmental_stage,
             ethnicity, gender, age, organism, pubmed_id, platform_id, instrument
         model_provider : ModelProvider, optional
             Base model provider (will be specialized per operation)
@@ -76,7 +76,7 @@ class ConditionalProcessingWorkflow:
         """
         self.session_directory = Path(session_directory)
         self.target_fields = target_fields or [
-            "disease", "tissue", "organ", "cell_line", "developmental_stage",
+            "disease", "tissue", "organ", "cell_line", "cell_type", "developmental_stage",
             "ethnicity", "gender", "age", "organism", "pubmed_id", "platform_id", "instrument"
         ]
         self.base_model_provider = model_provider
