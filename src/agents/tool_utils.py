@@ -19,17 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import the tool implementations
-from src.tools.ingestion_tools import (
-    extract_gsm_metadata_impl,
-    extract_gse_metadata_impl,
-    extract_paper_abstract_impl,
-    extract_pubmed_id_from_gse_metadata_impl,
-    extract_series_id_from_gsm_metadata_impl,
-    validate_geo_inputs_impl,
-    create_series_sample_mapping_impl,
-)
-
-# Import the new SQLite-based tools
+# Import the SQLite-based tools
 from src.tools.sqlite_ingestion_tools import (
     extract_gsm_metadata_sqlite_impl,
     extract_gse_metadata_sqlite_impl,
@@ -41,15 +31,6 @@ from src.tools.sqlite_ingestion_tools import (
     search_geo_sqlite_impl,
     get_database_info_sqlite_impl,
     download_geometadb_impl,
-)
-
-from src.tools.linker_tools import (
-    load_mapping_file_impl,
-    find_sample_directory_impl,
-    clean_metadata_files_impl,
-    process_multiple_samples_impl,
-    create_curation_data_package_impl,
-    package_linked_data_impl,
 )
 
 from src.tools.curator_tools import (

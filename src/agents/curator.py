@@ -328,6 +328,7 @@ async def run_curator_agent(
     max_tokens: int = None,
     max_turns: int = 100,
     verbose_output: bool = False,
+    guidance: dict | None = None,
 ) -> Union[CuratorOutput, SampleTypeCuratorOutput]:
     """
     Run the curator agent and return its structured output.
@@ -396,6 +397,13 @@ async def run_curator_agent(
             f"Extract candidates from the provided metadata for samples: {', '.join(sample_ids)}. "
             f"Process all metadata internally and return a CuratorOutput object."
         )
+        if guidance:
+            try:
+                import json as _json
+                curator_message += ("\n\nAdditional guidance for specific samples (if present):\n" +
+                    _json.dumps(guidance, indent=2))
+            except Exception:
+                pass
 
         # Prepare run config if model provider is specified
         run_config = None

@@ -135,26 +135,38 @@ class ConditionalProcessingWorkflow:
             batch_dir = self.conditional_dir / batch_name
             batch_dir.mkdir(exist_ok=True)
             
-            # Create data intake output for this batch
+            # Create data intake output for this batch (filtered from full data_intake_output)
+            filtered_curation_packages = []
+            try:
+                if data_intake_output and getattr(data_intake_output, "curation_packages", None):
+                    for pkg in data_intake_output.curation_packages:
+                        try:
+                            if getattr(pkg, "sample_id", None) in batch_samples:
+                                filtered_curation_packages.append(pkg)
+                        except Exception:
+                            pass
+            except Exception:
+                filtered_curation_packages = []
+
             batch_data_intake = LinkerOutput(
-                success=data_intake_output.success,
-                message=f"Combined from 1 discovery sessions for {sample_type} processing",
+                success=True,
+                message=f"Derived for {sample_type} processing",
                 execution_time_seconds=0.0,
-                sample_ids_requested=batch_samples,
+                sample_ids_requested=list(batch_samples),
                 session_directory=str(batch_dir),
-                fields_removed_during_cleaning=data_intake_output.fields_removed_during_cleaning,
-                linked_data=data_intake_output.linked_data,
-                files_created=data_intake_output.files_created,
-                successfully_linked=batch_samples,
+                fields_removed_during_cleaning=getattr(data_intake_output, "fields_removed_during_cleaning", []) or [],
+                linked_data=getattr(data_intake_output, "linked_data", None),
+                files_created=getattr(data_intake_output, "files_created", []) or [],
+                successfully_linked=list(batch_samples),
                 failed_linking=[],
-                warnings=[],
-                sample_ids_for_curation=batch_samples,
+                warnings=getattr(data_intake_output, "warnings", []) or [],
+                sample_ids_for_curation=list(batch_samples),
                 recommended_curation_fields=self.target_fields,
-                cleaned_metadata_files=data_intake_output.cleaned_metadata_files,
-                cleaned_series_metadata=data_intake_output.cleaned_series_metadata,
-                cleaned_sample_metadata=data_intake_output.cleaned_sample_metadata,
-                cleaned_abstract_metadata=data_intake_output.cleaned_abstract_metadata,
-                curation_packages=data_intake_output.curation_packages,
+                cleaned_metadata_files=getattr(data_intake_output, "cleaned_metadata_files", None),
+                cleaned_series_metadata=getattr(data_intake_output, "cleaned_series_metadata", None),
+                cleaned_sample_metadata=getattr(data_intake_output, "cleaned_sample_metadata", None),
+                cleaned_abstract_metadata=getattr(data_intake_output, "cleaned_abstract_metadata", None),
+                curation_packages=filtered_curation_packages,
             )
             
             # Save batch data intake output
@@ -368,6 +380,7 @@ class ConditionalProcessingWorkflow:
                 all_batch_results.append(batch_result)
                 if batch_result.get("success"):
                     successful_batches += 1
+                    
                 else:
                     failed_batches += 1
                     self.failed_items["missing_results"][f"{sample_type}_batch_{job_index}"] = {
@@ -490,6 +503,7 @@ async def run_conditional_processing_workflow(
         max_tokens=max_tokens,
         max_workers=max_workers,
     )
+    
     
     return await workflow.run_conditional_processing(sample_type_batches, data_intake_output)
 

@@ -10,6 +10,9 @@ class FieldEvaluation(BaseModel):
     curated_value: Optional[str] = Field(
         None, description="Value produced by curation for this field, if available."
     )
+    suggested_curation: Optional[str] = Field(
+        None, description="If curated value is incorrect, a suggested corrected curation proposed by the arbitrator."
+    )
     normalized_term: Optional[str] = Field(
         None, description="Ontology-normalized term for this field, if applicable."
     )

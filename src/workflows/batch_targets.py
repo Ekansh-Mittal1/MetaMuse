@@ -57,7 +57,7 @@ RETRY_BACKOFF_MULTIPLIER = 2
 
 # Dual-model configuration for optimal performance
 SAMPLE_TYPE_CURATION_MODEL = "google/gemini-2.5-flash"  # Faster for simple sample type determination
-CONDITIONAL_CURATION_MODEL = "google/gemini-2.5-pro"    # Higher quality for complex field-specific curation
+CONDITIONAL_CURATION_MODEL = "openai/gpt-5"    # Higher quality for complex field-specific curation
 NORMALIZATION_MODEL = "google/gemini-2.5-flash"         # Faster and more cost-effective for straightforward tasks
 
 # Configuration loaded silently - models will be selected automatically based on operation type
@@ -101,9 +101,35 @@ def create_model_provider_for_operation(operation_type: str, base_model_provider
         if base_model_provider:
             return type(base_model_provider)(default_model=model_name)
         else:
-            # Fallback: create a simple model provider
-            from agents import ModelProvider
-            return ModelProvider(default_model=model_name)
+            # Fallback: create OpenRouter-based model provider (like in evaluation code)
+            import os
+            from agents import ModelProvider, Model, OpenAIChatCompletionsModel
+            from openai import AsyncOpenAI
+            
+            class OpenRouterModelProvider(ModelProvider):
+                """OpenRouter-backed model provider for batch targets."""
+
+                def __init__(self, default_model: str):
+                    self.default_model = default_model
+
+                def get_model(self, model_name: str | None) -> Model:
+                    model = model_name or self.default_model
+                    base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+                    api_key = os.getenv("OPENROUTER_API_KEY")
+                    if not api_key:
+                        raise ValueError("OPENROUTER_API_KEY environment variable is required.")
+                    client = AsyncOpenAI(
+                        base_url=base_url,
+                        api_key=api_key,
+                        default_headers={
+                            "HTTP-Referer": "localhost",
+                            "X-Title": "MetaMuse Batch Processing",
+                            "X-App-Name": "MetaMuse",
+                        },
+                    )
+                    return OpenAIChatCompletionsModel(model=model, openai_client=client)
+            
+            return OpenRouterModelProvider(default_model=model_name)
 
 
 async def retry_operation_with_backoff(
@@ -734,8 +760,27 @@ async def run_batch_targets_workflow(
                     
                     # Save curator output
                     curator_output_path = Path(conditional_field_subdirs[target_field]) / "curator_output.json"
-                    with open(curator_output_path, "w") as f:
-                        json.dump(curator_output.model_dump(), f, indent=2)
+                    try:
+                        curator_data = curator_output.model_dump()
+                        # Write to temporary file first, then rename (atomic operation)
+                        temp_path = curator_output_path.with_suffix('.json.tmp')
+                        with open(temp_path, "w") as f:
+                            json.dump(curator_data, f, indent=2)
+                        temp_path.rename(curator_output_path)
+                        print(f"✅ Successfully saved initial curator output for {target_field}")
+                    except Exception as save_error:
+                        error_msg = f"❌ Failed to save initial curator output for {target_field}: {str(save_error)}"
+                        print(error_msg)
+                        # Create empty placeholder to prevent parsing errors later
+                        placeholder = {
+                            "success": False,
+                            "target_field": target_field,
+                            "error": error_msg,
+                            "curation_results": []
+                        }
+                        with open(curator_output_path, "w") as f:
+                            json.dump(placeholder, f, indent=2)
+                        continue
 
                     # Extract curation candidates
                     field_curation_results = extract_curation_candidates(
@@ -1495,10 +1540,29 @@ async def run_conditional_processing(
                     field_key = target_field.lower()
                     all_sample_type_outputs[field_key] = curator_output
                     
-                    # Save curator output
+                    # Save curator output with robust error handling
                     curator_output_path = Path(conditional_field_subdirs[target_field]) / f"curator_output_{sample_type}.json"
-                    with open(curator_output_path, "w") as f:
-                        json.dump(curator_output.model_dump(), f, indent=2)
+                    try:
+                        curator_data = curator_output.model_dump()
+                        # Write to temporary file first, then rename (atomic operation)
+                        temp_path = curator_output_path.with_suffix('.json.tmp')
+                        with open(temp_path, "w") as f:
+                            json.dump(curator_data, f, indent=2)
+                        temp_path.rename(curator_output_path)
+                        print(f"✅ Successfully saved curator output for {target_field}")
+                    except Exception as save_error:
+                        error_msg = f"❌ Failed to save curator output for {target_field}: {str(save_error)}"
+                        print(error_msg)
+                        # Create empty placeholder to prevent parsing errors later
+                        placeholder = {
+                            "success": False,
+                            "target_field": target_field,
+                            "error": error_msg,
+                            "curation_results": []
+                        }
+                        with open(curator_output_path, "w") as f:
+                            json.dump(placeholder, f, indent=2)
+                        continue
                     
                     # Extract curation candidates
                     field_curation_results = extract_curation_candidates(
