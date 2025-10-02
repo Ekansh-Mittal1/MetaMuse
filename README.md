@@ -1,225 +1,219 @@
 # MetaMuse
 
-Agentic Metadata Curation for GEO and PubMed data extraction and linking.
+Agentic Metadata Curation System for GEO sample metadata extraction, curation, and normalization.
 
-## Quick Start with UV
+## 🚀 Quick Start
 
-This project uses [UV](https://github.com/astral-sh/uv) for fast Python package management.
-
-### Prerequisites
-
-1. **Install UV** (if not already installed):
-   ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
-
-2. **Set up environment variables**:
-   ```bash
-   # Copy the template
-   cp env_template.txt .env
-   
-   # Edit .env with your credentials
-   NCBI_EMAIL=your_email@example.com
-   OPENROUTER_API_KEY=your_openrouter_api_key
-   NCBI_API_KEY=your_ncbi_api_key  # Optional but recommended
-   ```
-
-### Installation
-
+### 1. Install UV
 ```bash
-# Install dependencies
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### 2. Set up environment variables
+Create a `.env` file in the project root:
+```bash
+NCBI_EMAIL=your_email@example.com
+OPENROUTER_API_KEY=your_openrouter_api_key
+NCBI_API_KEY=your_ncbi_api_key  # Optional but recommended
+```
+
+### 3. Install dependencies
+```bash
 uv sync
-
-# Install with development dependencies
-uv sync --dev
 ```
 
-### Usage
-
-#### Main Workflows
-
+### 4. Verify installation
 ```bash
-# List available workflows
 uv run python main.py --list-workflows
-
-# Run agentic workflow (extraction + linking)
-uv run python main.py full_pipeline "Extract metadata for GSM1000981"
-
-# Run single-agent extraction only
-uv run python main.py geo_extraction "Extract metadata for GSM1000981"
-
-# Run deterministic workflow
-uv run python src/workflows/data_intake.py -i "GSM1000981" --type complete
 ```
 
-#### Development Commands
+---
 
+## 📋 Workflows
+
+### batch_samples_efficient
+Multi-sample batch processing with quality control (production workflow).
+
+**Basic Example:**
 ```bash
-# Run tests
-uv run pytest
-
-# Run tests with coverage
-uv run pytest --cov=src
-
-# Format code
-uv run black src/ tests/
-
-# Lint code
-uv run ruff check src/ tests/
-
-# Type checking
-uv run mypy src/
-
-# Clean build artifacts
-rm -rf build/ dist/ *.egg-info/ .pytest_cache/ .ruff_cache/
+uv run python main.py batch_samples_efficient "sample_count=100 batch_size=5"
 ```
 
-#### Direct Python Execution
-
+**Common Examples:**
 ```bash
-# Run any Python script with UV environment
-uv run python main.py --list-workflows
-uv run python src/workflows/data_intake.py -i "GSM1000981" --type complete
+# Process 50 samples with custom name
+uv run python main.py batch_samples_efficient "sample_count=50 batch_name=my_test"
+
+# Filter by sample type
+uv run python main.py batch_samples_efficient "sample_count=100 sample_type_filter=primary_sample"
+
+# Process specific fields only
+uv run python main.py batch_samples_efficient "sample_count=50 target_fields=disease,tissue,organ"
+
+# Fast mode (no quality control)
+uv run python main.py batch_samples_efficient "sample_count=100 conditional_mode=classic"
+
+# CSV output with parallel processing
+uv run python main.py batch_samples_efficient "sample_count=200 max_workers=10 output_format=csv"
 ```
 
-## Model Options
+### deterministic_sql
+Simple single-field processing workflow.
 
-The system supports multiple LLM models through OpenRouter:
-
-| Model | Context Window | Max Response | Description |
-|-------|----------------|--------------|-------------|
-| `google/gemini-2.5-flash` | 4,096 tokens | 2,048 tokens | Fast, cost-effective (default) |
-| `openai/gpt-4o` | 128,000 tokens | 4,096 tokens | High performance, larger context |
-| `openai/gpt-4o-mini` | 128,000 tokens | 4,096 tokens | Balanced performance and cost |
-
-### Usage Examples
-
+**Examples:**
 ```bash
-# Use default model (Gemini)
-uv run python main.py full_pipeline "GSM1000981 target_field=Disease"
+# Process single sample (default: disease field)
+uv run python main.py deterministic_sql "GSM1000981"
 
-# Use GPT-4o for better performance
-uv run python main.py full_pipeline "GSM1000981 target_field=Disease" --model openai/gpt-4o
+# Process for different field
+uv run python main.py deterministic_sql "GSM1000981 target_field:tissue"
 
-# Use GPT-4o-mini for balanced performance
-uv run python main.py full_pipeline "GSM1000981 target_field=Disease" --model openai/gpt-4o-mini
+# Process multiple samples
+uv run python main.py deterministic_sql "GSM1000981,GSM1000984 target_field:disease"
 ```
 
-## Environment Variables
+---
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NCBI_EMAIL` | ✅ | Email for NCBI E-Utilities API |
-| `OPENROUTER_API_KEY` | ✅ | API key for OpenRouter (LLM provider) |
-| `NCBI_API_KEY` | ⚠️ | NCBI API key for higher rate limits |
+## 📊 Parameters
 
-## Project Structure
+### batch_samples_efficient
 
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `sample_count` | 100 | Number of samples to process |
+| `batch_size` | 5 | Samples per batch |
+| `samples_file` | archs4_samples/archs4_gsm_ids.txt | Path to sample IDs file |
+| `target_fields` | All | Comma-separated fields: disease,tissue,organ,cell_line,cell_type,developmental_stage,ethnicity,gender,age,assay_type,treatment |
+| `sample_type_filter` | None | Filter by type: primary_sample, cell_line, or unknown |
+| `conditional_mode` | eval | Mode: eval (quality control) or classic (faster) |
+| `max_iterations` | 2 | Arbitrator cycles (eval mode only) |
+| `max_workers` | None | Parallel workers (recommend 5-10) |
+| `batch_name` | None | Custom batch name |
+| `output_format` | parquet | Output format: parquet or csv |
+
+### deterministic_sql
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| Input | Required | GSM ID(s), comma-separated |
+| `target_field` | disease | Field to extract: disease,tissue,organ,cell_line,cell_type,developmental_stage,ethnicity,gender,age,assay_type,treatment |
+
+**Usage:** `"GSM1000981 target_field:tissue"`
+
+---
+
+## 📁 Output
+
+### batch_samples_efficient
 ```
-MetaMuse/
-├── src/
-│   ├── agents/          # Agent definitions
-│   ├── tools/           # Tool implementations
-│   ├── workflows/       # Workflow definitions
-│   └── prompts/         # Agent prompts
-├── sandbox/             # Session outputs
-├── unittests/           # Unit tests
-├── main.py              # Agentic workflow entry point
-├── pyproject.toml       # Project configuration
-└── uv.lock              # UV dependency lock file
+batch/batch_{name}_{timestamp}/
+├── batch_results.csv                    # Main results file
+├── comprehensive_batch_results.csv      # Detailed results
+└── processing_log.txt                   # Execution log
 ```
 
-## Workflows
+### deterministic_sql
+```
+sandbox/det_sql_{session_id}/
+├── workflow_summary.json
+├── curator_output.json
+└── normalizer_output.json
+```
 
-### Agentic Workflows (main.py)
+---
 
-- **`geo_extraction`**: Single-agent metadata extraction
-- **`full_pipeline`**: Complete extraction + linking pipeline
-- **`linking`**: Linker-only workflow
-- **`multi_agent_geo`**: Multi-agent pipeline
+## 🔧 Data Requirements
 
-### Deterministic Workflows (data_intake.py)
+### Required Databases
 
-- **`ingestion`**: Metadata extraction only
-- **`linker`**: Data linking only  
-- **`complete`**: Full ingestion + linking
+1. **GEOmetadb.sqlite** (18+ GB) - Place in `data/GEOmetadb.sqlite`
+2. **PubMed database** (50+ MB) - Place in `data/pubmed/`
 
-## Development
+### Sample Lists
 
-### Adding Dependencies
+Included in `archs4_samples/`:
+- `archs4_gsm_ids.txt` - Full sample list
+- `manual_100_samples.txt` - Curated test set
 
+---
+
+## ⚡ Quick Reference
+
+### Test Commands
 ```bash
-# Add production dependency
-uv add package-name
+# Quick test (20 samples, 8 minutes)
+uv run python main.py batch_samples_efficient \
+  "sample_count=20 batch_size=5 samples_file=archs4_samples/manual_100_samples.txt \
+   batch_name=test conditional_mode=classic output_format=csv"
 
-# Add development dependency
-uv add --dev package-name
-
-# Add with specific version
-uv add "package-name>=1.0.0"
+# Single sample test (30 seconds)
+uv run python main.py deterministic_sql "GSM1000981"
 ```
 
-### Updating Dependencies
-
+### Production Commands
 ```bash
-# Update all dependencies
-uv lock --upgrade
-
-# Update specific package
-uv lock --upgrade-package package-name
+# Production batch (100 samples with quality control)
+uv run python main.py batch_samples_efficient \
+  "sample_count=100 batch_size=10 conditional_mode=eval max_iterations=2 \
+   max_workers=10 batch_name=production output_format=csv"
 ```
 
-### Virtual Environment
+---
 
-UV automatically manages virtual environments. To activate:
+## 🐛 Troubleshooting
 
+**Missing environment variables:**
+- Create `.env` file with required API keys
+
+**UV issues:**
 ```bash
-# Activate the virtual environment
-source .venv/bin/activate
-
-# Or use UV run (recommended)
-uv run python script.py
+rm -rf .venv
+uv sync
 ```
 
-## Troubleshooting
-
-### Environment Variable Issues
-
-If you get environment variable errors:
-
-1. Check that `.env` file exists and has correct values
-2. Verify variables are not empty or have typos
-3. Restart your terminal after creating `.env`
-
-### UV Issues
-
+**Import errors:**
 ```bash
-# Reinstall dependencies
+find . -type d -name __pycache__ -exec rm -rf {} +
 uv sync --reinstall
-
-# Clear UV cache
-uv cache clean
-
-# Check UV version
-uv --version
-
-# Verify setup
-uv run python verify_uv_setup.py
 ```
 
-### Workflow Issues
+---
 
-- **PubMed abstract extraction fails**: Check `NCBI_EMAIL` and `NCBI_API_KEY`
-- **Agentic workflow handoff fails**: Use `full_pipeline` instead of `geo_extraction`
-- **HTTP 502 errors**: Temporary server issues, retry later
+## 📖 Available Fields
 
-## Contributing
+**Direct extraction:** organism, series_id, pubmed_id, platform_id, instrument
 
-1. Install development dependencies: `uv sync --dev`
-2. Run tests: `uv run test`
-3. Format code: `uv run format`
-4. Lint code: `uv run lint`
+**Curated extraction:** disease, tissue, organ, cell_line, cell_type, developmental_stage, ethnicity, gender, age, assay_type, treatment
 
-## License
+**Normalized (ontology-mapped):** disease, tissue, organ
 
-[Add your license here]
+---
+
+## 🗄️ Data Setup
+
+### GEOmetadb.sqlite Setup
+
+The `GEOmetadb.sqlite` file (19GB) contains GEO metadata and is required for the workflows. Due to GitHub's file size limits, it's not included in this repository.
+
+**Download:**
+```bash
+# Create data directory
+mkdir -p data/
+
+# Download and extract
+wget https://gbnci.cancer.gov/geo/GEOmetadb.sqlite.gz
+gzip -d GEOmetadb.sqlite.gz
+mv GEOmetadb.sqlite data/
+```
+
+**Verify Setup:**
+```bash
+ls -lh data/GEOmetadb.sqlite
+# Should show ~19GB file
+```
+
+### Other Data Files
+
+The following files are included in this repository:
+- `data/pubmed/pubmed.sqlite` (51MB) - PubMed abstracts
+- `archs4_samples/archs4_gsm_ids.txt` (9.4MB) - Sample ID mappings
