@@ -463,13 +463,14 @@ async def run_eval_conditional(
             curated_outputs_per_st[sample_type] = mock_outputs
             
         else:
-            # Normal operation - run actual conditional processing with proper batching
-            # Process each batch separately to avoid overwhelming the curator
+            # Normal operation - run actual conditional processing with concurrent batching
+            # Process batches concurrently to utilize max_workers parameter effectively
             sample_type_outputs = {}
             
-            print(f"🔧 EVAL MODE: Processing {len(batches_list)} small batches for {sample_type} (total: {sum(len(b) for b in batches_list)} samples)")
+            print(f"🔧 EVAL MODE: Processing {len(batches_list)} small batches for {sample_type} (total: {sum(len(b) for b in batches_list)} samples) concurrently")
             
-            for batch_idx, batch_samples in enumerate(batches_list):
+            async def process_batch(batch_idx, batch_samples):
+                """Process a single batch concurrently."""
                 print(f"🔧 DEBUG[eval_conditional]: Processing batch {batch_idx + 1}/{len(batches_list)} for {sample_type} ({len(batch_samples)} samples)")
                 
                 # Create batch-specific curation packages
@@ -528,7 +529,21 @@ async def run_eval_conditional(
                     max_tokens=max_tokens,
                 )
                 
-                # Merge batch results into sample type outputs
+                return batch_cond_result, batch_idx
+            
+            # Create tasks for all batches
+            batch_tasks = [
+                process_batch(batch_idx, batch_samples) 
+                for batch_idx, batch_samples in enumerate(batches_list)
+            ]
+            
+            # Process all batches concurrently
+            print(f"🔧 DEBUG[eval_conditional]: Launching {len(batch_tasks)} concurrent batch processing tasks")
+            batch_results = await asyncio.gather(*batch_tasks)
+            print(f"🔧 DEBUG[eval_conditional]: Completed {len(batch_results)} concurrent batch processing tasks")
+            
+            # Merge batch results into sample type outputs
+            for batch_cond_result, batch_idx in batch_results:
                 batch_outputs = getattr(batch_cond_result, "all_sample_type_outputs", {}) or {}
                 for field_name, curator_output in batch_outputs.items():
                     if field_name not in sample_type_outputs:

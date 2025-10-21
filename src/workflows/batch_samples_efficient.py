@@ -210,7 +210,7 @@ class EfficientBatchSamplesProcessor:
         curation_provider = None
         if self.base_model_provider:
             try:
-                curation_provider = type(self.base_model_provider)(default_model="google/gemini-2.5-pro")
+                curation_provider = type(self.base_model_provider)(default_model="openai/gpt-5")
             except Exception:
                 curation_provider = self.base_model_provider
         
@@ -1080,7 +1080,7 @@ class EfficientBatchSamplesProcessor:
                         batch_dir = Path(batch_result["batch_directory"])
                         
                         # Extract detailed curation and normalization results
-                        sample_results = self.extract_sample_results_from_batch(batch_dir)
+                        sample_results = await self.extract_sample_results_from_batch(batch_dir)
                         
                         for sample_id in batch_result["batch_samples"]:
                             if sample_id in sample_results:
