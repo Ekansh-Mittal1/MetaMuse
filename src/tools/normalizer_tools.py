@@ -28,6 +28,7 @@ from src.models import (
     SampleResultEntry,
     KeyValue,
 )
+from src.models.curation_models import DiseaseCurationResult
 
 
 class NormalizationError(Exception):
@@ -446,16 +447,43 @@ def semantic_search_candidates_impl(
         )
 
     try:
-        # 1. Load CurationResult objects from the specified file
+        # 1. Load appropriate curation result objects from the specified file
         with open(curation_results_file, "r") as f:
             curation_data = json.load(f)
 
-        curation_results = [CurationResult(**data) for data in curation_data]
+        # Extract curation_results array from the output structure
+        if isinstance(curation_data, dict) and "curation_results" in curation_data:
+            curation_results_data = curation_data["curation_results"]
+        else:
+            curation_results_data = curation_data
 
-        # 2. Extract only final_candidates (top 3 per sample)
-        all_candidates = []
-        for res in curation_results:
-            all_candidates.extend(res.final_candidates)
+        # Parse based on target field type
+        if target_field.lower() == "disease":
+            # Parse as DiseaseCurationResult
+            curation_results = [DiseaseCurationResult(**data) for data in curation_results_data]
+            
+            # 2. Extract only final_candidates (top 3 per sample) from DiseaseExtractedCandidate
+            all_candidates = []
+            for res in curation_results:
+                for candidate in res.final_candidates:
+                    # Convert DiseaseExtractedCandidate to ExtractedCandidate for normalization
+                    # We use the disease value as the candidate value
+                    all_candidates.append(ExtractedCandidate(
+                        value=candidate.value,  # The disease name
+                        confidence=candidate.confidence,
+                        source=candidate.source,
+                        context=candidate.context,
+                        rationale=candidate.rationale,
+                        prenormalized=f"{candidate.value} (Control: {candidate.condition.value})"
+                    ))
+        else:
+            # Parse as regular CurationResult
+            curation_results = [CurationResult(**data) for data in curation_results_data]
+            
+            # 2. Extract only final_candidates (top 3 per sample)
+            all_candidates = []
+            for res in curation_results:
+                all_candidates.extend(res.final_candidates)
 
         # Determine ontologies to use if not specified
         if ontologies is None:
@@ -475,11 +503,12 @@ def semantic_search_candidates_impl(
                 )
                 continue
             
-            # Handle "control [healthy]" for disease fields - skip semantic search but mark as successful
-            if candidate.value == "control [healthy]" and target_field.lower() in ["disease"]:
-                # Create a synthetic ontology match for control [healthy]
+            # Handle "healthy" value for disease fields - skip semantic search but mark as successful
+            # This handles the new disease structure where healthy controls have value="healthy" 
+            if target_field.lower() in ["disease"] and candidate.value.lower() == "healthy":
+                # Create a synthetic ontology match for healthy controls
                 synthetic_match = OntologyMatch(
-                    term="sterile",
+                    term="healthy control",
                     term_id="MONDO:0005047", 
                     score=1.0,
                     ontology="mondo"
@@ -490,6 +519,24 @@ def semantic_search_candidates_impl(
                     best_match=synthetic_match,
                     normalization_confidence=1.0,
                     normalization_notes=["Synthetic normalization for healthy/control samples"],
+                )
+                continue
+            
+            # Handle legacy "control [healthy]" format for backwards compatibility
+            if target_field.lower() in ["disease"] and "control [healthy]" in candidate.value.lower():
+                # Create a synthetic ontology match for control [healthy]
+                synthetic_match = OntologyMatch(
+                    term="healthy control",
+                    term_id="MONDO:0005047", 
+                    score=1.0,
+                    ontology="mondo"
+                )
+                normalized_candidates_map[candidate.value] = NormalizedCandidate(
+                    **candidate.model_dump(),
+                    top_ontology_matches=[synthetic_match],
+                    best_match=synthetic_match,
+                    normalization_confidence=1.0,
+                    normalization_notes=["Synthetic normalization for healthy/control samples (legacy format)"],
                 )
                 continue
             
@@ -812,6 +859,23 @@ def normalize_curation_result(
             f"Target field '{curation_result.target_field}' is an enum field and does not require normalization. "
             f"This field should be processed by the curator agent only."
         )
+
+    # Extract original candidate values from the curation result
+    original_candidates = []
+    if curation_result.series_candidates:
+        original_candidates.extend([c.value for c in curation_result.series_candidates])
+    if curation_result.sample_candidates:
+        original_candidates.extend([c.value for c in curation_result.sample_candidates])
+    if curation_result.abstract_candidates:
+        original_candidates.extend([c.value for c in curation_result.abstract_candidates])
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_original_candidates = []
+    for candidate in original_candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            unique_original_candidates.append(candidate)
 
     # Normalize only the final_candidates (top 3) - this is the core functionality
     final_normalized_candidates = []

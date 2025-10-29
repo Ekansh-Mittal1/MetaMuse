@@ -16,6 +16,7 @@ ENV/
 # Sandbox directory
 sandbox/
 batch/
+plotting/
 
 # DendroForge
 DendroForge-main/

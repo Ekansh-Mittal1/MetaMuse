@@ -625,6 +625,20 @@ class EfficientBatchSamplesProcessor:
                                             "context": "",  # assay_type doesn't have context in the same format
                                             "rationale": ""  # assay_type doesn't have rationale in the same format
                                         }
+                                    # Handle disease field which uses 'disease_name' and 'condition'
+                                    elif field_name == "disease" and "disease_name" in curator_result:
+                                        sample_data["curated_fields"][field_name] = {
+                                            "final_candidate": curator_result["disease_name"],
+                                            "condition": curator_result.get("condition", ""),
+                                            "confidence": curator_result.get("confidence", ""),
+                                            "context": "",  # Extract from final_candidates if available
+                                            "rationale": ""  # Extract from final_candidates if available
+                                        }
+                                        # Extract context and rationale from final_candidates if available
+                                        if "final_candidates" in curator_result and curator_result["final_candidates"]:
+                                            final_candidate_data = curator_result["final_candidates"][0]
+                                            sample_data["curated_fields"][field_name]["context"] = final_candidate_data.get("context", "")
+                                            sample_data["curated_fields"][field_name]["rationale"] = final_candidate_data.get("rationale", "")
                                     elif "final_candidate" in curator_result or "final_candidates" in curator_result:
                                         # Handle cases where final_candidate might be None but final_candidates array exists
                                         final_candidate_value = curator_result.get("final_candidate")
@@ -692,6 +706,20 @@ class EfficientBatchSamplesProcessor:
                                                     "context": "",  # assay_type doesn't have context in the same format
                                                     "rationale": ""  # assay_type doesn't have rationale in the same format
                                                 }
+                                            # Handle disease field which uses 'disease_name' and 'condition'
+                                            elif field_name == "disease" and "disease_name" in curation_result:
+                                                sample_data["curated_fields"][field_name] = {
+                                                    "final_candidate": curation_result["disease_name"],
+                                                    "condition": curation_result.get("condition", ""),
+                                                    "confidence": curation_result.get("confidence", ""),
+                                                    "context": "",  # Extract from final_candidates if available
+                                                    "rationale": ""  # Extract from final_candidates if available
+                                                }
+                                                # Extract context and rationale from final_candidates if available
+                                                if "final_candidates" in curation_result and curation_result["final_candidates"]:
+                                                    final_candidate_data = curation_result["final_candidates"][0]
+                                                    sample_data["curated_fields"][field_name]["context"] = final_candidate_data.get("context", "")
+                                                    sample_data["curated_fields"][field_name]["rationale"] = final_candidate_data.get("rationale", "")
                                             elif "final_candidate" in curation_result or "final_candidates" in curation_result:
                                                 # Handle cases where final_candidate might be None but final_candidates array exists
                                                 final_candidate_value = curation_result.get("final_candidate")
@@ -758,11 +786,13 @@ class EfficientBatchSamplesProcessor:
                                     for sr in field_data["sample_results"]:
                                         if sr.get("sample_id") == sample_id:
                                             result = sr.get("result", {})
-                                            if "final_normalized_term" in result:
+                                            # Check for either new format (normalized_term) or legacy format (final_normalized_term)
+                                            # Use 'in' to check key existence rather than truthy check (handles null values)
+                                            if "normalized_term" in result or "final_normalized_term" in result:
                                                 sample_data["normalized_fields"][field_name] = {
-                                                    "normalized_term": result.get("final_normalized_term", ""),
-                                                    "normalized_id": result.get("final_normalized_id", ""),
-                                                    "ontology": result.get("final_ontology", "")
+                                                    "normalized_term": result.get("normalized_term") or result.get("final_normalized_term") or "",
+                                                    "normalized_id": result.get("term_id") or result.get("final_normalized_id") or "",
+                                                    "ontology": result.get("ontology") or result.get("final_ontology") or ""
                                                 }
                                             break
                         # Fallback: handle "normalization_result" (singular) with field -> sample_id map
@@ -825,6 +855,7 @@ class EfficientBatchSamplesProcessor:
             "series_id": "",
             # Target fields - final candidates
             "disease_final_candidate": "",
+            "disease_condition": "",
             "tissue_final_candidate": "",
             "organ_final_candidate": "",
             "cell_line_final_candidate": "",
@@ -863,6 +894,10 @@ class EfficientBatchSamplesProcessor:
             final_candidate_key = f"{field_name}_final_candidate"
             if final_candidate_key in row:
                 row[final_candidate_key] = field_data.get("final_candidate", "")
+            
+            # Special handling for disease condition
+            if field_name == "disease" and "disease_condition" in row:
+                row["disease_condition"] = field_data.get("condition", "")
         
         # Populate normalized fields
         normalized_fields = sample_data.get("normalized_fields", {})
@@ -945,6 +980,10 @@ class EfficientBatchSamplesProcessor:
             row[f"{field_name}_context"] = ""
             row[f"{field_name}_rationale"] = ""
             
+            # Special handling for disease condition
+            if field_name == "disease":
+                row[f"{field_name}_condition"] = ""
+            
             # Add normalized fields if this field supports normalization
             if field_name in all_normalized_fields:
                 row[f"{field_name}_normalized_term"] = ""
@@ -962,6 +1001,10 @@ class EfficientBatchSamplesProcessor:
                 row[f"{field_name}_confidence"] = field_data.get("confidence", "")
                 row[f"{field_name}_context"] = field_data.get("context", "")
                 row[f"{field_name}_rationale"] = field_data.get("rationale", "")
+                
+                # Special handling for disease condition
+                if field_name == "disease":
+                    row[f"{field_name}_condition"] = field_data.get("condition", "")
         
         # Populate actual normalized fields
         normalized_fields = sample_data.get("normalized_fields", {})

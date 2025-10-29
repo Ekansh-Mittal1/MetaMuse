@@ -22,6 +22,10 @@ class SampleType(str, Enum):
     CELL_LINE = "cell_line"
     UNKNOWN = "unknown"
 
+class DiseaseCondition(str, Enum):
+    """Enum for disease condition classification."""
+    CONTROL = "Control"
+    DISEASED = "Diseased"
 
 class AssayType(str, Enum):
     """Enum for assay type classification."""
@@ -90,6 +94,19 @@ class AssayTypeExtractedCandidate(BaseModel):
         ..., description="Explicit reasoning for why this candidate was extracted"
     )
 
+class DiseaseExtractedCandidate(BaseModel):
+    """A single extracted candidate from metadata for Disease target field (disease name and condition)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: str = Field(..., description="Extracted disease candidate value (Disease name)")
+    condition: DiseaseCondition = Field(..., description="Whether the sample is a control or diseased (Control or Diseased)")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0-1)")
+    source: str = Field(..., description="Source type (series/sample/abstract)")
+    context: str = Field(..., description="Direct context from source where disease candidate was found")
+    rationale: str = Field(
+        ... , description="Explicit reasoning for why this disease candidate was extracted"
+    )
 
 class CurationResult(BaseModel):
     """Result of curation for a single sample and target field."""
@@ -241,6 +258,65 @@ class AssayTypeCurationResult(BaseModel):
 
     # Final result - top 3 candidates across all sources (for reference)
     final_candidates: List[AssayTypeExtractedCandidate] = Field(
+        default_factory=list,
+        description="Top 3 candidates ranked by confidence across all sources",
+    )
+
+    reconciliation_needed: bool = Field(
+        False, description="Whether manual reconciliation is needed"
+    )
+    reconciliation_reason: Optional[str] = Field(
+        None, description="Reason for manual reconciliation"
+    )
+
+    # Processing metadata
+    sources_processed: List[str] = Field(
+        default_factory=list, description="Sources that were processed"
+    )
+    processing_notes: List[str] = Field(
+        default_factory=list, description="Processing notes and warnings"
+    )
+
+
+class DiseaseCurationResult(BaseModel):
+    """Result of curation for Disease target field (disease name and condition)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Tool identification
+    tool_name: str = Field(
+        default="Unknown Tool", description="Name of the tool that produced this output"
+    )
+
+    sample_id: str = Field(..., description="Sample ID that was curated")
+    target_field: str = Field(
+        default="Disease", description="Target metadata field (Disease)"
+    )
+
+    # Disease result
+    disease_name: str = Field(
+        ..., description="Disease name or condition"
+    )
+    condition: DiseaseCondition = Field(
+        ..., description="Whether the sample is a control or diseased (Control or Diseased)"
+    )
+    confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Confidence in the disease classification"
+    )
+
+    # Supporting evidence
+    series_candidates: List[DiseaseExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from series metadata"
+    )
+    sample_candidates: List[DiseaseExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from sample metadata"
+    )
+    abstract_candidates: List[DiseaseExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from abstract metadata"
+    )
+
+    # Final result - top 3 candidates across all sources (for reference)
+    final_candidates: List[DiseaseExtractedCandidate] = Field(
         default_factory=list,
         description="Top 3 candidates ranked by confidence across all sources",
     )

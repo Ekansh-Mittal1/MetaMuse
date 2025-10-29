@@ -113,6 +113,76 @@ def _atomic_write_json(path: Path, data: dict, *, indent: int = 2) -> None:
         # Fallback to rename
         tmp_path.rename(path)
 
+def merge_corrective_with_original_results(original_result, corrective_result, corrected_sample_ids: list):
+    """
+    Merge corrective results with original results, preserving uncorrected samples.
+    
+    Args:
+        original_result: Original CuratorOutput with all samples
+        corrective_result: Corrective CuratorOutput with only corrected samples
+        corrected_sample_ids: List of sample IDs that were corrected
+        
+    Returns:
+        Merged CuratorOutput with all samples (corrected + unchanged)
+    """
+    print(f"🔍 DEBUG[merge_corrective]: Original has {len(getattr(original_result, 'curation_results', []))} samples")
+    print(f"🔍 DEBUG[merge_corrective]: Corrective has {len(getattr(corrective_result, 'curation_results', []))} samples")
+    print(f"🔍 DEBUG[merge_corrective]: Corrected sample IDs: {corrected_sample_ids}")
+    
+    if not original_result:
+        return corrective_result
+    
+    if not corrective_result:
+        return original_result
+    
+    # Create a merged result
+    class MergedCuratorOutput:
+        def __init__(self):
+            self.success = True
+            self.message = "Merged original and corrective curation results"
+            self.execution_time_seconds = 0
+            self.sample_ids_requested = []
+            self.target_field = getattr(original_result, 'target_field', getattr(corrective_result, 'target_field', ''))
+            self.session_directory = getattr(original_result, 'session_directory', getattr(corrective_result, 'session_directory', ''))
+            self.curation_results = []
+            self.total_samples_processed = 0
+            self.samples_needing_review = 0
+            self.files_created = []
+            self.curation_results_file = getattr(original_result, 'curation_results_file', None)
+            self.average_confidence = None
+            self.warnings = []
+    
+    merged = MergedCuratorOutput()
+    
+    # Build a map of corrected samples
+    corrective_map = {}
+    if hasattr(corrective_result, 'curation_results'):
+        for curation in corrective_result.curation_results:
+            sample_id = getattr(curation, 'sample_id', None)
+            if sample_id:
+                corrective_map[sample_id] = curation
+    
+    # Add all samples: use corrective version if available, otherwise original
+    if hasattr(original_result, 'curation_results'):
+        for curation in original_result.curation_results:
+            sample_id = getattr(curation, 'sample_id', None)
+            if sample_id in corrective_map:
+                # Use corrected version
+                merged.curation_results.append(corrective_map[sample_id])
+                print(f"🔍 DEBUG[merge_corrective]: Using corrected version for {sample_id}")
+            else:
+                # Keep original version
+                merged.curation_results.append(curation)
+                print(f"🔍 DEBUG[merge_corrective]: Keeping original version for {sample_id}")
+    
+    merged.total_samples_processed = len(merged.curation_results)
+    merged.sample_ids_requested = [getattr(c, 'sample_id', '') for c in merged.curation_results]
+    
+    print(f"🔍 DEBUG[merge_corrective]: Final merged result has {len(merged.curation_results)} samples")
+    
+    return merged
+
+
 def merge_batch_curator_results(batch_results: list, field_name: str):
     """
     Merge multiple corrective curator batch results into a single result.
@@ -149,6 +219,14 @@ def merge_batch_curator_results(batch_results: list, field_name: str):
                 getattr(br, 'execution_time_seconds', 0) for br in batch_results
             )
             self.message = f"Merged corrective curation from {len(batch_results)} batches"
+            # Add session_directory from first batch result to fix normalization errors
+            self.session_directory = getattr(batch_results[0], 'session_directory', '') if batch_results else ''
+            self.sample_ids_requested = [getattr(r, 'sample_id', '') for r in merged_curation_results]
+            self.curation_results_file = None
+            self.files_created = []
+            self.average_confidence = None
+            self.warnings = []
+            self.samples_needing_review = 0
         
         def model_dump(self):
             return {
@@ -625,6 +703,7 @@ async def run_eval_conditional(
 
         # Build arbitration tasks per sample
         sem = asyncio.Semaphore(max_workers or 8)
+        arbitrator_provider = create_model_provider_for_operation("arbitrator", model_provider)
         tasks = []
         sample_index: List[tuple[str, str]] = []  # (sample_type, sample_id)
 
@@ -706,8 +785,8 @@ async def run_eval_conditional(
                     async with sem:
                         print(f"🔧 DEBUG[eval_conditional]: Arbitrator start sid={sid} st={st}")
                         result = await run_arbitration_for_sample(
-                            model_name=getattr(model_provider, 'default_model', ''),
-                            model_provider=model_provider,
+                            model_name=getattr(arbitrator_provider, 'default_model', ''),
+                            model_provider=arbitrator_provider,
                             sample_id=sid,
                             series_id=ser_id,
                             sample_type=st,
@@ -940,10 +1019,10 @@ async def run_eval_conditional(
                     if corrective_result:  # Only add successful results
                         merged_corrective_results[key].append(corrective_result)
                 
-                # Merge batched corrective results
+                # Merge batched corrective results WITH original results (preserving uncorrected samples)
                 for (field_name, sample_type), batch_results in merged_corrective_results.items():
                     if batch_results and sample_type in curated_outputs_per_st:
-                        # If we have multiple batches, we need to merge them
+                        # If we have multiple batches, we need to merge them first
                         if len(batch_results) == 1:
                             # Single batch - use directly
                             final_corrective_result = batch_results[0]
@@ -951,10 +1030,19 @@ async def run_eval_conditional(
                             # Multiple batches - merge curation results
                             final_corrective_result = merge_batch_curator_results(batch_results, field_name)
                         
-                        # Replace the original field result with merged corrective result
+                        # Get list of corrected sample IDs from field_to_samples
+                        corrected_sample_ids = field_to_samples.get(field_name, [])
+                        
+                        # Merge corrective results WITH original results (preserve uncorrected samples)
                         if field_name in curated_outputs_per_st[sample_type]:
-                            print(f"🔧 DEBUG[eval_conditional]: replacing {field_name} for {sample_type} with merged corrective result from {len(batch_results)} batches")
-                            curated_outputs_per_st[sample_type][field_name] = final_corrective_result
+                            original_result = curated_outputs_per_st[sample_type][field_name]
+                            print(f"🔧 DEBUG[eval_conditional]: merging {len(batch_results)} corrective batches for {field_name}/{sample_type} with original (preserving uncorrected samples)")
+                            merged_result = merge_corrective_with_original_results(
+                                original_result, 
+                                final_corrective_result, 
+                                corrected_sample_ids
+                            )
+                            curated_outputs_per_st[sample_type][field_name] = merged_result
                         else:
                             print(f"🔧 DEBUG[eval_conditional]: adding new {field_name} for {sample_type} from merged corrective result")
                             curated_outputs_per_st[sample_type][field_name] = final_corrective_result

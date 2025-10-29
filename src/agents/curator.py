@@ -23,7 +23,7 @@ from src.utils.prompts import load_prompt
 
 # Import Pydantic models for structured data
 from src.models import CuratorOutput, CurationDataPackage
-from src.models.agent_outputs import LinkerOutput, SampleTypeCuratorOutput
+from src.models.agent_outputs import LinkerOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput
 
 # Module-level variable to store data_intake_output for tool access
 _data_intake_output: Optional[LinkerOutput] = None
@@ -49,6 +49,10 @@ def get_curator_output_type_for_field(target_field: str):
     elif target_field.lower() in ["assaytype", "assay_type"]:
         from src.models.agent_outputs import AssayTypeCuratorOutput
         return AssayTypeCuratorOutput
+    elif target_field.lower() == "disease":
+        print("\n\n🔍 DEBUG: DiseaseCuratorOutput\n\n")
+        from src.models.agent_outputs import DiseaseCuratorOutput
+        return DiseaseCuratorOutput
     from src.models.agent_outputs import CuratorOutput
     return CuratorOutput
 
@@ -329,7 +333,7 @@ async def run_curator_agent(
     max_turns: int = 100,
     verbose_output: bool = False,
     guidance: dict | None = None,
-) -> Union[CuratorOutput, SampleTypeCuratorOutput]:
+) -> Union[CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput]:
     """
     Run the curator agent and return its structured output.
 
@@ -476,11 +480,11 @@ async def run_curator_agent(
             print(f"🔍 DEBUG: Raw response content: {raw_response_content[:1000]}...")
             raise RuntimeError("No result received from curator agent")
 
-        # Validate that we got a CuratorOutput, SampleTypeCuratorOutput, or AssayTypeCuratorOutput
-        from src.models.agent_outputs import CuratorOutput, SampleTypeCuratorOutput, AssayTypeCuratorOutput
+        # Validate that we got a CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, or AssayTypeCuratorOutput
+        from src.models.agent_outputs import CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput
         
-        if not isinstance(final_result, (CuratorOutput, SampleTypeCuratorOutput, AssayTypeCuratorOutput)):
-            error_msg = f"Expected CuratorOutput, SampleTypeCuratorOutput, or AssayTypeCuratorOutput, got {type(final_result)}"
+        if not isinstance(final_result, (CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput)):
+            error_msg = f"Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, or AssayTypeCuratorOutput, got {type(final_result)}"
             print(f"❌ {error_msg}")
             print(f"🔍 DEBUG: Final result content: {final_result}")
             print(f"🔍 DEBUG: Raw response content: {raw_response_content[:1000]}...")

@@ -57,8 +57,9 @@ RETRY_BACKOFF_MULTIPLIER = 2
 
 # Dual-model configuration for optimal performance
 SAMPLE_TYPE_CURATION_MODEL = "google/gemini-2.5-flash"  # Faster for simple sample type determination
-CONDITIONAL_CURATION_MODEL = "openai/gpt-5"    # Higher quality for complex field-specific curation
+CONDITIONAL_CURATION_MODEL = "google/gemini-2.5-pro"    # Higher quality for complex field-specific curation
 NORMALIZATION_MODEL = "google/gemini-2.5-flash"         # Faster and more cost-effective for straightforward tasks
+ARBITRATOR_MODEL = "google/gemini-2.5-pro"              # High quality reasoning for arbitration
 
 # Configuration loaded silently - models will be selected automatically based on operation type
 
@@ -70,7 +71,7 @@ def create_model_provider_for_operation(operation_type: str, base_model_provider
     Parameters
     ----------
     operation_type : str
-        Type of operation ('sample_type_curation', 'conditional_curation', or 'normalization')
+        Type of operation ('sample_type_curation', 'conditional_curation', 'arbitrator', or 'normalization')
     base_model_provider : ModelProvider, optional
         Base model provider to use as template
         
@@ -85,6 +86,8 @@ def create_model_provider_for_operation(operation_type: str, base_model_provider
         model_name = SAMPLE_TYPE_CURATION_MODEL
     elif operation_type.lower() == "conditional_curation":
         model_name = CONDITIONAL_CURATION_MODEL
+    elif operation_type.lower() == "arbitrator":
+        model_name = ARBITRATOR_MODEL
     elif operation_type.lower() == "normalization":
         model_name = NORMALIZATION_MODEL
     else:
