@@ -26,6 +26,64 @@ class OntologyMatch(BaseModel):
     definition: Optional[str] = Field(None, description="Term definition if available")
 
 
+class OntologyMatchCandidate(BaseModel):
+    """Ontology match without similarity score (for LLM selection)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    term: str = Field(..., description="The matched ontology term")
+    term_id: str = Field(..., description="The ontology term ID (e.g., MONDO:0018906)")
+    ontology: str = Field(..., description="Source ontology (e.g., 'mondo', 'efo')")
+    definition: Optional[str] = Field(None, description="Term definition if available")
+
+
+class CandidateWithMatches(BaseModel):
+    """Original candidate with top 5 ontology matches for LLM selection."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Original candidate info
+    value: str = Field(..., description="Original extracted candidate value")
+    confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Original confidence score (0-1)"
+    )
+    source: str = Field(..., description="Source type (series/sample/abstract)")
+    context: str = Field(..., description="Context where candidate was found")
+    rationale: str = Field(..., description="Explicit reasoning for extraction")
+    prenormalized: str = Field(
+        ..., description="Original ontology-normalized term with ID"
+    )
+
+    # Top 5 matches (no scores)
+    ontology_matches: List[OntologyMatchCandidate] = Field(
+        default_factory=list, max_length=5, description="Top 5 ontology matches"
+    )
+
+
+class ToolNormalizationOutput(BaseModel):
+    """Intermediate output from semantic_search_candidates tool."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sample_id: str = Field(..., description="Sample ID being normalized")
+    target_field: str = Field(..., description="Target metadata field")
+    candidates_with_matches: List[CandidateWithMatches] = Field(
+        default_factory=list, description="Candidates with their ontology matches"
+    )
+    ontologies_searched: List[str] = Field(
+        default_factory=list, description="Ontologies that were searched"
+    )
+    original_candidates: List[str] = Field(
+        default_factory=list, description="Original candidate values"
+    )
+    sources_processed: List[str] = Field(
+        default_factory=list, description="Sources that were processed"
+    )
+    processing_notes: List[str] = Field(
+        default_factory=list, description="Processing notes"
+    )
+
+
 class NormalizedCandidate(BaseModel):
     """An extracted candidate enhanced with ontology normalization."""
 
@@ -59,6 +117,9 @@ class NormalizedCandidate(BaseModel):
     )
     normalization_notes: List[str] = Field(
         default_factory=list, description="Notes about the normalization process"
+    )
+    agent_selection_rationale: Optional[str] = Field(
+        None, description="Agent's reasoning for selecting the best match"
     )
 
 

@@ -33,6 +33,9 @@ from .curation_models import (
 # Normalization models
 from .normalization_models import (
     OntologyMatch,
+    OntologyMatchCandidate,
+    CandidateWithMatches,
+    ToolNormalizationOutput,
     NormalizedCandidate,
     NormalizationResult,
     SampleTypeNormalizationResult,
@@ -93,6 +96,9 @@ __all__ = [
     
     # Normalization models
     "OntologyMatch",
+    "OntologyMatchCandidate",
+    "CandidateWithMatches",
+    "ToolNormalizationOutput",
     "NormalizedCandidate", 
     "NormalizationResult",
     "SampleTypeNormalizationResult",

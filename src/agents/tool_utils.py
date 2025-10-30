@@ -1014,12 +1014,14 @@ def get_normalizer_tools(session_dir: str | Path) -> list:
             target_field: str = "Disease",
             top_k: int = 2,
             min_score: float = 0.5,
-        ) -> BatchNormalizationResult:
+        ) -> list:
             """
             Perform semantic search on extracted candidates from a curation results file.
 
-            This tool reads a JSON file containing CurationResult objects, performs
-            semantic similarity search, and returns a fully formed BatchNormalizationResult.
+            This tool reads a JSON file containing CurationResult objects and performs
+            semantic similarity search. It returns the top 5 ontology matches for each
+            candidate WITHOUT similarity scores, allowing the LLM agent to make the final
+            selection based on context, rationale, and biomedical knowledge.
 
             Parameters
             ----------
@@ -1027,15 +1029,16 @@ def get_normalizer_tools(session_dir: str | Path) -> list:
                 Path to the JSON file containing a list of CurationResult objects.
             target_field : str, default "Disease"
                 The target metadata field (e.g., "Disease", "Tissue", "Age").
-            top_k : int, default 5
-                Number of top matches to return per candidate.
+            top_k : int, default 2
+                Number of top matches to retrieve per ontology (combines across ontologies for top 5).
             min_score : float, default 0.5
-                Minimum similarity score threshold for matches.
+                Minimum similarity score threshold for filtering matches.
 
             Returns
             -------
-            BatchNormalizationResult
-                The structured output object containing all normalization results.
+            list
+                A list of ToolNormalizationOutput objects containing candidates with their
+                top 5 ontology matches (without scores) for LLM-based selection.
             """
 
             try:

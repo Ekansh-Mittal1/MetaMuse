@@ -20,6 +20,9 @@ sys.path.append(str(Path(__file__).parent.parent / "normalization"))
 from semantic_search import OntologySemanticSearch
 from src.models import (
     OntologyMatch,
+    OntologyMatchCandidate,
+    CandidateWithMatches,
+    ToolNormalizationOutput,
     NormalizedCandidate,
     NormalizationResult,
     ExtractedCandidate,
@@ -433,12 +436,259 @@ def semantic_search_candidates_impl(
     ontologies: Optional[List[str]] = None,
     top_k: int = 2,
     min_score: float = 0.5,
-) -> BatchNormalizationResult:
+) -> List[ToolNormalizationOutput]:
     """
     Perform semantic search on extracted candidates from a curation results file
-    and return a complete BatchNormalizationResult object.
+    and return a list of ToolNormalizationOutput objects for LLM-based selection.
+    
+    The tool performs semantic search and returns the top 5 matches per candidate
+    WITHOUT scores, allowing the LLM agent to make the final selection based on
+    context, rationale, and biomedical knowledge.
     """
 
+    # Check for enum target fields that don't need normalization
+    if target_field.lower() in ["sampletype", "sample_type", "assay_type"]:
+        raise NormalizationError(
+            f"Target field '{target_field}' is an enum field and does not require normalization. "
+            f"This field should be processed by the curator agent only."
+        )
+
+    try:
+        # 1. Load appropriate curation result objects from the specified file
+        with open(curation_results_file, "r") as f:
+            curation_data = json.load(f)
+
+        # Extract curation_results array from the output structure
+        if isinstance(curation_data, dict) and "curation_results" in curation_data:
+            curation_results_data = curation_data["curation_results"]
+        else:
+            curation_results_data = curation_data
+
+        # Parse based on target field type - try DiseaseCurationResult for disease field
+        curation_results = []
+        if target_field.lower() == "disease":
+            # Try to parse as DiseaseCurationResult, fall back to CurationResult
+            for data in curation_results_data:
+                try:
+                    # Try DiseaseCurationResult first
+                    disease_result = DiseaseCurationResult(**data)
+                    # Convert DiseaseExtractedCandidate to ExtractedCandidate for processing
+                    # Create a synthetic CurationResult for compatibility
+                    synthetic_result = CurationResult(
+                        tool_name=disease_result.tool_name,
+                        sample_id=disease_result.sample_id,
+                        target_field=disease_result.target_field,
+                        series_candidates=[
+                            ExtractedCandidate(
+                                value=c.value,
+                                confidence=c.confidence,
+                                source=c.source,
+                                context=c.context,
+                                rationale=c.rationale,
+                                prenormalized=f"{c.value} ({c.condition.value})"
+                            ) for c in disease_result.series_candidates
+                        ],
+                        sample_candidates=[
+                            ExtractedCandidate(
+                                value=c.value,
+                                confidence=c.confidence,
+                                source=c.source,
+                                context=c.context,
+                                rationale=c.rationale,
+                                prenormalized=f"{c.value} ({c.condition.value})"
+                            ) for c in disease_result.sample_candidates
+                        ],
+                        abstract_candidates=[
+                            ExtractedCandidate(
+                                value=c.value,
+                                confidence=c.confidence,
+                                source=c.source,
+                                context=c.context,
+                                rationale=c.rationale,
+                                prenormalized=f"{c.value} ({c.condition.value})"
+                            ) for c in disease_result.abstract_candidates
+                        ],
+                        final_candidates=[
+                            ExtractedCandidate(
+                                value=c.value,
+                                confidence=c.confidence,
+                                source=c.source,
+                                context=c.context,
+                                rationale=c.rationale,
+                                prenormalized=f"{c.value} ({c.condition.value})"
+                            ) for c in disease_result.final_candidates
+                        ],
+                        sources_processed=disease_result.sources_processed,
+                        processing_notes=disease_result.processing_notes,
+                    )
+                    curation_results.append(synthetic_result)
+                except Exception:
+                    # Fall back to regular CurationResult
+                    curation_results.append(CurationResult(**data))
+        else:
+            # Parse as regular CurationResult for all other fields
+            curation_results = [CurationResult(**data) for data in curation_results_data]
+
+        # Determine ontologies to use if not specified
+        if ontologies is None:
+            ontologies = get_default_ontologies_for_field(target_field)
+
+        # 3. Perform semantic search for all candidates and build output structure
+        tool_outputs = []
+        
+        for curation_result in curation_results:
+            candidates_with_matches = []
+            
+            # Process only the final_candidates (top 3) for this sample
+            for candidate in curation_result.final_candidates:
+                # Handle "None reported" cases - provide empty matches
+                if candidate.value == "None reported":
+                    candidates_with_matches.append(
+                        CandidateWithMatches(
+                            value=candidate.value,
+                            confidence=candidate.confidence,
+                            source=candidate.source,
+                            context=candidate.context,
+                            rationale=candidate.rationale,
+                            prenormalized=candidate.prenormalized,
+                            ontology_matches=[],  # No matches for "None reported"
+                        )
+                    )
+                    continue
+                
+                # Handle "healthy" value for disease fields - provide synthetic match
+                if target_field.lower() in ["disease"] and candidate.value.lower() == "healthy":
+                    synthetic_match = OntologyMatchCandidate(
+                        term="healthy control",
+                        term_id="MONDO:0005047",
+                        ontology="mondo"
+                    )
+                    candidates_with_matches.append(
+                        CandidateWithMatches(
+                            value=candidate.value,
+                            confidence=candidate.confidence,
+                            source=candidate.source,
+                            context=candidate.context,
+                            rationale=candidate.rationale,
+                            prenormalized=candidate.prenormalized,
+                            ontology_matches=[synthetic_match],
+                        )
+                    )
+                    continue
+                
+                # Handle legacy "control [healthy]" format
+                if target_field.lower() in ["disease"] and "control [healthy]" in candidate.value.lower():
+                    synthetic_match = OntologyMatchCandidate(
+                        term="healthy control",
+                        term_id="MONDO:0005047",
+                        ontology="mondo"
+                    )
+                    candidates_with_matches.append(
+                        CandidateWithMatches(
+                            value=candidate.value,
+                            confidence=candidate.confidence,
+                            source=candidate.source,
+                            context=candidate.context,
+                            rationale=candidate.rationale,
+                            prenormalized=candidate.prenormalized,
+                            ontology_matches=[synthetic_match],
+                        )
+                    )
+                    continue
+                
+                # Perform semantic search and collect matches
+                all_matches = []
+                for ontology in ontologies:
+                    searcher = OntologySemanticSearch(
+                        f"src/normalization/dictionaries/{ontology}_terms.json"
+                    )
+                    searcher.load_index()
+                    matches = searcher.search(candidate.value, k=top_k)
+                    for term, term_id, score in matches:
+                        if score >= min_score:
+                            all_matches.append((term, term_id, ontology, score))
+                
+                # Sort by score and take top 5
+                all_matches.sort(key=lambda x: x[3], reverse=True)
+                top_5_matches = all_matches[:5]
+                
+                # Convert to OntologyMatchCandidate WITHOUT scores
+                ontology_matches_no_scores = [
+                    OntologyMatchCandidate(
+                        term=match[0],
+                        term_id=match[1],
+                        ontology=match[2],
+                        definition=None  # Could add later if needed
+                    )
+                    for match in top_5_matches
+                ]
+                
+                # Create CandidateWithMatches
+                candidates_with_matches.append(
+                    CandidateWithMatches(
+                        value=candidate.value,
+                        confidence=candidate.confidence,
+                        source=candidate.source,
+                        context=candidate.context,
+                        rationale=candidate.rationale,
+                        prenormalized=candidate.prenormalized,
+                        ontology_matches=ontology_matches_no_scores,
+                    )
+                )
+            
+            # Extract original candidate values for this sample
+            original_candidates = []
+            if curation_result.series_candidates:
+                original_candidates.extend([c.value for c in curation_result.series_candidates])
+            if curation_result.sample_candidates:
+                original_candidates.extend([c.value for c in curation_result.sample_candidates])
+            if curation_result.abstract_candidates:
+                original_candidates.extend([c.value for c in curation_result.abstract_candidates])
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_original_candidates = []
+            for candidate in original_candidates:
+                if candidate not in seen:
+                    seen.add(candidate)
+                    unique_original_candidates.append(candidate)
+            
+            # Create ToolNormalizationOutput for this sample
+            tool_output = ToolNormalizationOutput(
+                sample_id=curation_result.sample_id,
+                target_field=target_field,
+                candidates_with_matches=candidates_with_matches,
+                ontologies_searched=ontologies,
+                original_candidates=unique_original_candidates,
+                sources_processed=curation_result.sources_processed,
+                processing_notes=curation_result.processing_notes,
+            )
+            tool_outputs.append(tool_output)
+        
+        # Return the list of tool outputs for LLM-based selection
+        return tool_outputs
+
+    except Exception as e:
+        print(f"❌ semantic_search_candidates_impl error: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+        # Re-raise to be caught by the tool wrapper
+        raise
+
+
+# Keep the old implementation for backwards compatibility with direct function calls
+def semantic_search_candidates_impl_legacy(
+    curation_results_file: str,
+    target_field: str = "Disease",
+    ontologies: Optional[List[str]] = None,
+    top_k: int = 2,
+    min_score: float = 0.5,
+) -> BatchNormalizationResult:
+    """
+    Legacy implementation that returns BatchNormalizationResult.
+    This is kept for backwards compatibility with scripts that call this directly.
+    """
     # Check for enum target fields that don't need normalization
     if target_field.lower() in ["sampletype", "sample_type", "assay_type"]:
         raise NormalizationError(

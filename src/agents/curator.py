@@ -50,7 +50,6 @@ def get_curator_output_type_for_field(target_field: str):
         from src.models.agent_outputs import AssayTypeCuratorOutput
         return AssayTypeCuratorOutput
     elif target_field.lower() == "disease":
-        print("\n\n🔍 DEBUG: DiseaseCuratorOutput\n\n")
         from src.models.agent_outputs import DiseaseCuratorOutput
         return DiseaseCuratorOutput
     from src.models.agent_outputs import CuratorOutput
