@@ -34,7 +34,7 @@ TARGET_FIELDS = [
     "cell_type_final_candidate",
     "developmental_stage_final_candidate",
     "ethnicity_final_candidate",
-    "gender_final_candidate",
+    "sex_final_candidate",
     "age_final_candidate",
     "assay_type_final_candidate",
     "treatment_final_candidate",

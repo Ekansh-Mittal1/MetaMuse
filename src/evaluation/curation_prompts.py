@@ -19,7 +19,7 @@ CRITICAL CURATION CONVENTIONS TO UNDERSTAND:
 3. **None Reported Convention:**
    - "None reported" is CORRECT when no valid candidates are found in metadata
    - This is a standard curation output, not an error
-   - Applies to all fields: age, ethnicity, gender, developmental_stage, etc.
+   - Applies to all fields: age, ethnicity, sex, developmental_stage, etc.
    - Empty strings ("") are INCORRECT - should be "None reported" when no data is available
 
 4. **Cell Line Conventions:**
@@ -38,7 +38,7 @@ CRITICAL CURATION CONVENTIONS TO UNDERSTAND:
 7. **Conditional Curation by Sample Type:**
    - **Primary samples:** All fields are curated EXCEPT cell_line (not applicable)
    - **Cell lines:** Only disease, organ, cell_line, assay_type, treatment are curated
-   - **Cell lines NOT APPLICABLE:** ethnicity, gender, age, tissue, developmental_stage
+   - **Cell lines NOT APPLICABLE:** ethnicity, sex, age, tissue, developmental_stage
    - **Unknown samples:** All fields curated EXCEPT developmental_stage (not applicable)
    - Empty strings in "not applicable" fields are ACCEPTABLE, not errors
 
@@ -62,7 +62,7 @@ SPECIFIC EVALUATION RULES:
 CONDITIONAL FIELD APPLICABILITY:
 - Check sample_type to determine if field should be curated:
   - Primary samples: cell_line field should be empty (not applicable)
-  - Cell lines: ethnicity, gender, age, tissue, developmental_stage should be empty (not applicable)
+  - Cell lines: ethnicity, sex, age, tissue, developmental_stage should be empty (not applicable)
   - Unknown samples: developmental_stage should be empty (not applicable)
 
 FOCUS ONLY ON CURATION EVALUATION:

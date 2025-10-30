@@ -320,7 +320,7 @@ def get_ontology_mapping() -> Dict[str, List[str]]:
         "ethnicity": ["hancestro"],
         "developmental_stage": ["hsapdv"],
         "development_stage": ["hsapdv"],
-        "gender": ["pato"],
+        "sex": ["pato"],
         # Legacy mappings for backwards compatibility
         "organ": ["uberon"],
         "cell_type": ["efo"],
@@ -377,7 +377,7 @@ def get_available_ontologies() -> Dict[str, Dict[str, Any]]:
 
 
 def semantic_search_ontology(
-    query: str, ontology: str, top_k: int = 2, min_score: float = 0.5
+    query: str, ontology: str, top_k: int = 5, min_score: float = 0.5
 ) -> List[OntologyMatch]:
     """
     Perform semantic search against a specific ontology.
@@ -434,7 +434,7 @@ def semantic_search_candidates_impl(
     curation_results_file: str,
     target_field: str = "Disease",
     ontologies: Optional[List[str]] = None,
-    top_k: int = 2,
+    top_k: int = 5,
     min_score: float = 0.5,
 ) -> List[ToolNormalizationOutput]:
     """
@@ -523,11 +523,25 @@ def semantic_search_candidates_impl(
                     )
                     curation_results.append(synthetic_result)
                 except Exception:
-                    # Fall back to regular CurationResult
-                    curation_results.append(CurationResult(**data))
+                    # Fall back to regular CurationResult, skip malformed entries
+                    try:
+                        # Require minimum fields to avoid validation errors
+                        if isinstance(data, dict) and data.get("sample_id") and data.get("target_field"):
+                            curation_results.append(CurationResult(**data))
+                        else:
+                            # Skip entries missing required fields
+                            continue
+                    except Exception:
+                        continue
         else:
-            # Parse as regular CurationResult for all other fields
-            curation_results = [CurationResult(**data) for data in curation_results_data]
+            # Parse as regular CurationResult for all other fields, skip malformed entries
+            curation_results = []
+            for data in curation_results_data:
+                try:
+                    if isinstance(data, dict) and data.get("sample_id") and data.get("target_field"):
+                        curation_results.append(CurationResult(**data))
+                except Exception:
+                    continue
 
         # Determine ontologies to use if not specified
         if ontologies is None:

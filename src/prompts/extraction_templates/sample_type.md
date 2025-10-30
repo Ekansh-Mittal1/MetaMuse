@@ -22,7 +22,7 @@ Look for these indicators in **SAMPLE METADATA FIRST**:
 - **Patient identifiers**: Sample names containing patient IDs, case numbers, or biopsy identifiers
 - **Surgical context**: Mentions of "surgical removal", "patient care", "IRB approval", "tumor sample"
 - **Tissue descriptions**: Direct tissue names like "brain tumor", "pancreatic islets", "tumor sample"
-- **Patient characteristics**: Age, gender, BMI, patient-specific information
+- **Patient characteristics**: Age, sex, BMI, patient-specific information
 - **Clinical context**: References to patient care, clinical procedures, hospital settings
 - **Source descriptions**: "Primary", "tissue", "biopsy", "surgical sample"
 
@@ -78,7 +78,7 @@ Return a valid JSON object with this exact structure:
 ### Primary Sample Examples:
 - **"EPN_507_1"** → {"value": "primary_sample", "confidence": 1.0, "context": "patient identifier in source_name"}
 - **"characteristics_ch1: group: Primary, tissue: brain tumor"** → {"value": "primary_sample", "confidence": 1.0, "context": "explicitly marked as Primary tissue"}
-- **"pancreatic islets, age: 69, gender: Male"** → {"value": "primary_sample", "confidence": 1.0, "context": "patient tissue with demographic info"}
+- **"pancreatic islets, age: 69, sex: Male"** → {"value": "primary_sample", "confidence": 1.0, "context": "patient tissue with demographic info"}
 - **"surgical tumor sample of ependymoma"** → {"value": "primary_sample", "confidence": 1.0, "context": "surgical tumor sample"}
 
 ### Cell Line Examples:

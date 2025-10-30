@@ -83,7 +83,7 @@ uv run python main.py deterministic_sql "GSM1000981,GSM1000984 target_field:dise
 | `sample_count` | 100 | Number of samples to process |
 | `batch_size` | 5 | Samples per batch |
 | `samples_file` | archs4_samples/archs4_gsm_ids.txt | Path to sample IDs file |
-| `target_fields` | All | Comma-separated fields: disease,tissue,organ,cell_line,cell_type,developmental_stage,ethnicity,gender,age,assay_type,treatment |
+| `target_fields` | All | Comma-separated fields: disease,tissue,organ,cell_line,cell_type,developmental_stage,ethnicity,sex,age,assay_type,treatment |
 | `sample_type_filter` | None | Filter by type: primary_sample, cell_line, or unknown |
 | `conditional_mode` | eval | Mode: eval (quality control) or classic (faster) |
 | `max_iterations` | 2 | Arbitrator cycles (eval mode only) |
@@ -96,7 +96,7 @@ uv run python main.py deterministic_sql "GSM1000981,GSM1000984 target_field:dise
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | Input | Required | GSM ID(s), comma-separated |
-| `target_field` | disease | Field to extract: disease,tissue,organ,cell_line,cell_type,developmental_stage,ethnicity,gender,age,assay_type,treatment |
+| `target_field` | disease | Field to extract: disease,tissue,organ,cell_line,cell_type,developmental_stage,ethnicity,sex,age,assay_type,treatment |
 
 **Usage:** `"GSM1000981 target_field:tissue"`
 
@@ -183,7 +183,7 @@ uv sync --reinstall
 
 **Direct extraction:** organism, series_id, pubmed_id, platform_id, instrument
 
-**Curated extraction:** disease, tissue, organ, cell_line, cell_type, developmental_stage, ethnicity, gender, age, assay_type, treatment
+**Curated extraction:** disease, tissue, organ, cell_line, cell_type, developmental_stage, ethnicity, sex, age, assay_type, treatment
 
 **Normalized (ontology-mapped):** disease, tissue, organ
 

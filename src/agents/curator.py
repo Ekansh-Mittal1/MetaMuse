@@ -23,7 +23,7 @@ from src.utils.prompts import load_prompt
 
 # Import Pydantic models for structured data
 from src.models import CuratorOutput, CurationDataPackage
-from src.models.agent_outputs import LinkerOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput
+from src.models.agent_outputs import LinkerOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, TreatmentCuratorOutput
 
 # Module-level variable to store data_intake_output for tool access
 _data_intake_output: Optional[LinkerOutput] = None
@@ -52,6 +52,12 @@ def get_curator_output_type_for_field(target_field: str):
     elif target_field.lower() == "disease":
         from src.models.agent_outputs import DiseaseCuratorOutput
         return DiseaseCuratorOutput
+    elif target_field.lower() == "sex":
+        from src.models.agent_outputs import SexCuratorOutput
+        return SexCuratorOutput
+    elif target_field.lower() == "treatment":
+        from src.models.agent_outputs import TreatmentCuratorOutput
+        return TreatmentCuratorOutput
     from src.models.agent_outputs import CuratorOutput
     return CuratorOutput
 
@@ -234,7 +240,7 @@ def create_curator_agent(
                     or "male" in input_lower
                     or "female" in input_lower
                 ):
-                    target_field = "Gender"
+                    target_field = "Sex"
                 elif (
                     "cell line" in input_lower
                     or "cellline" in input_lower
@@ -254,7 +260,7 @@ def create_curator_agent(
                 "Treatment": "treatment.md",
                 "Organism": "organism.md",
                 "Ethnicity": "ethnicity.md",
-                "Gender": "gender.md",
+                "Sex": "sex.md",
                 "Cell_Line": "cell_line.md",
                 "CellLine": "cell_line.md",
                 "SampleType": "sample_type.md",
@@ -332,7 +338,7 @@ async def run_curator_agent(
     max_turns: int = 100,
     verbose_output: bool = False,
     guidance: dict | None = None,
-) -> Union[CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput]:
+) -> Union[CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, TreatmentCuratorOutput]:
     """
     Run the curator agent and return its structured output.
 
@@ -480,10 +486,10 @@ async def run_curator_agent(
             raise RuntimeError("No result received from curator agent")
 
         # Validate that we got a CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, or AssayTypeCuratorOutput
-        from src.models.agent_outputs import CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput
+        from src.models.agent_outputs import CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, TreatmentCuratorOutput
         
-        if not isinstance(final_result, (CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput)):
-            error_msg = f"Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, or AssayTypeCuratorOutput, got {type(final_result)}"
+        if not isinstance(final_result, (CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, TreatmentCuratorOutput)):
+            error_msg = f"Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got {type(final_result)}"
             print(f"❌ {error_msg}")
             print(f"🔍 DEBUG: Final result content: {final_result}")
             print(f"🔍 DEBUG: Raw response content: {raw_response_content[:1000]}...")

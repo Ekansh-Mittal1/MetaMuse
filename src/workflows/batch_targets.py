@@ -2,12 +2,12 @@
 Batch targets workflow for processing multiple metadata fields simultaneously.
 
 This workflow processes all target metadata fields for samples in a single execution:
-- Disease, Tissue, Organ, Cell Line, Ethnicity, Developmental Stage, Gender/Sex, Organism, PubMed ID, Instrument
+- Disease, Tissue, Organ, Cell Line, Ethnicity, Developmental Stage, Sex, Organism, PubMed ID, Instrument
 
 The workflow uses different processing stages based on field requirements:
 1. All fields: Data Intake (runs once for all fields)
 2. Initial: Sample Type Curation (determines processing path)
-3. Conditional: Field-specific Curation based on sample type (Disease, Organ, Tissue, Cell Line, Developmental Stage, Ethnicity, Gender/Sex)
+3. Conditional: Field-specific Curation based on sample type (Disease, Organ, Tissue, Cell Line, Developmental Stage, Ethnicity, Sex)
 4. Unified: Normalization (Disease, Organ, Tissue)
 
 Final output is a comprehensive JSON file with all extracted metadata.
@@ -244,17 +244,17 @@ TARGET_FIELD_CONFIG = {
     # Conditional processing based on sample_type
     "conditional_processing": {
         "primary_sample": {
-            "curation": ["disease", "organ", "ethnicity", "gender", "age", "tissue", "cell_type", "developmental_stage", "assay_type", "treatment"],
+            "curation": ["disease", "organ", "ethnicity", "sex", "age", "tissue", "cell_type", "developmental_stage", "assay_type", "treatment"],
             "normalization": ["disease", "organ", "tissue"],
             "not_applicable": ["cell_line"]
         },
         "cell_line": {
             "curation": ["disease", "organ", "cell_line", "cell_type", "assay_type", "treatment"], 
             "normalization": ["disease", "organ"],  # Disease, organ, and assay_type are normalized for cell lines
-            "not_applicable": ["ethnicity", "gender", "age", "tissue", "developmental_stage"]
+            "not_applicable": ["ethnicity", "sex", "age", "tissue", "developmental_stage"]
         },
         "unknown": {
-            "curation": ["disease", "organ", "ethnicity", "gender", "age", "tissue", "cell_line", "cell_type", "assay_type", "treatment"],
+            "curation": ["disease", "organ", "ethnicity", "sex", "age", "tissue", "cell_line", "cell_type", "assay_type", "treatment"],
             "normalization": ["disease", "organ", "tissue"],  # Cell line still not normalized for unknown
             "not_applicable": ["developmental_stage"]  # developmental_stage only for primary samples
         }
@@ -403,9 +403,9 @@ async def run_batch_targets_workflow(
     6. Result Assembly - Unified JSON with "not applicable" for excluded fields
 
     CONDITIONAL PROCESSING RULES:
-    - primary_sample: curation[disease, organ, ethnicity, gender, age, tissue, cell_type, developmental_stage] + normalization[disease, organ, tissue]
+    - primary_sample: curation[disease, organ, ethnicity, sex, age, tissue, cell_type, developmental_stage] + normalization[disease, organ, tissue]
     - cell_line: curation[disease, organ, cell_line, cell_type] + normalization[disease, organ]
-    - unknown: curation[disease, organ, ethnicity, gender, age, tissue, cell_line, cell_type] + normalization[disease, organ, tissue]
+    - unknown: curation[disease, organ, ethnicity, sex, age, tissue, cell_line, cell_type] + normalization[disease, organ, tissue]
 
     Parameters
     ----------

@@ -196,7 +196,7 @@ For each field, determine if the curated value is correct according to establish
 
 **Common Errors to Catch:**
 - ❌ Descriptive terms: "man", "woman", "boy", "girl"
-- ❌ Mixed populations: "mixed gender" → should specify or use "unknown"
+- ❌ Mixed populations: "mixed sex" → should specify or use "unknown"
 - ❌ Non-standard formats
 
 ---

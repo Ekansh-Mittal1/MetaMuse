@@ -815,7 +815,7 @@ async def run_eval_conditional(
         # Build guidance per field per sample for re-curation
         field_to_samples: Dict[str, List[str]] = {}
         # Canonicalization and skips
-        alias_map = {"sex": "gender"}
+        alias_map = {"gender": "sex"}
         skip_direct_fields = set(["organism", "pubmed_id", "platform_id", "instrument"])  # handled via direct extraction
         guidance_payload: Dict[str, Dict[str, Any]] = {}
         for (sample_type, sample_id), res in zip(sample_index, results):

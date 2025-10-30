@@ -34,6 +34,14 @@ class AssayType(str, Enum):
     UNKNOWN = "unknown"
 
 
+class Sex(str, Enum):
+    """Enum for biological sex classification."""
+    MALE = "male"
+    FEMALE = "female"
+    INTERSEX = "intersex"
+    NONE_REPORTED = "None reported"
+
+
 class CurationDataPackage(BaseModel):
     """Complete package of cleaned metadata for one sample from all sources."""
 
@@ -94,6 +102,19 @@ class AssayTypeExtractedCandidate(BaseModel):
         ..., description="Explicit reasoning for why this candidate was extracted"
     )
 
+class SexExtractedCandidate(BaseModel):
+    """A single extracted candidate from metadata for Sex target field (enum value)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: Sex = Field(..., description="Extracted candidate value (male, female, or intersex)")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0-1)")
+    source: str = Field(..., description="Source type (series/sample/abstract)")
+    context: str = Field(..., description="Direct context from source where candidate was found")
+    rationale: str = Field(
+        ..., description="Explicit reasoning for why this candidate was extracted"
+    )
+
 class DiseaseExtractedCandidate(BaseModel):
     """A single extracted candidate from metadata for Disease target field (disease name and condition)."""
 
@@ -106,6 +127,21 @@ class DiseaseExtractedCandidate(BaseModel):
     context: str = Field(..., description="Direct context from source where disease candidate was found")
     rationale: str = Field(
         ... , description="Explicit reasoning for why this disease candidate was extracted"
+    )
+
+class TreatmentExtractedCandidate(BaseModel):
+    """A single extracted candidate from metadata for Treatment target field (treatment name, dosage, and time)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: str = Field(..., description="Extracted treatment candidate value (treatment name)")
+    dosage: Optional[str] = Field(None, description="Extracted dosage information if present (e.g., '10 mg/kg')")
+    time: Optional[str] = Field(None, description="Extracted treatment time information if present (e.g., 'for 24h', '3 weeks')")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0-1)")
+    source: str = Field(..., description="Source type (series/sample/abstract)")
+    context: str = Field(..., description="Direct context from source where treatment candidate was found")
+    rationale: str = Field(
+        ... , description="Explicit reasoning for why this treatment candidate was extracted"
     )
 
 class CurationResult(BaseModel):
@@ -245,6 +281,61 @@ class AssayTypeCurationResult(BaseModel):
         ..., ge=0.0, le=1.0, description="Confidence in the assay type classification"
     )
 
+class SexCurationResult(BaseModel):
+    """Result of curation for Sex target field (enum output)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Tool identification
+    tool_name: str = Field(
+        default="Unknown Tool", description="Name of the tool that produced this output"
+    )
+
+    sample_id: str = Field(..., description="Sample ID that was curated")
+    target_field: str = Field(
+        default="Sex", description="Target metadata field (Sex)"
+    )
+
+    # Enum result
+    sex: Sex = Field(
+        ..., description="Curated sex (male, female, or intersex)"
+    )
+    confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Confidence in the sex classification"
+    )
+
+    # Supporting evidence
+    series_candidates: List[SexExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from series metadata"
+    )
+    sample_candidates: List[SexExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from sample metadata"
+    )
+    abstract_candidates: List[SexExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from abstract metadata"
+    )
+
+    # Final result - top 3 candidates across all sources (for reference)
+    final_candidates: List[SexExtractedCandidate] = Field(
+        default_factory=list,
+        description="Top 3 candidates ranked by confidence across all sources",
+    )
+
+    reconciliation_needed: bool = Field(
+        False, description="Whether manual reconciliation is needed"
+    )
+    reconciliation_reason: Optional[str] = Field(
+        None, description="Reason for manual reconciliation"
+    )
+
+    # Processing metadata
+    sources_processed: List[str] = Field(
+        default_factory=list, description="Sources that were processed"
+    )
+    processing_notes: List[str] = Field(
+        default_factory=list, description="Processing notes and warnings"
+    )
+
     # Supporting evidence
     series_candidates: List[AssayTypeExtractedCandidate] = Field(
         default_factory=list, description="Candidates from series metadata"
@@ -317,6 +408,67 @@ class DiseaseCurationResult(BaseModel):
 
     # Final result - top 3 candidates across all sources (for reference)
     final_candidates: List[DiseaseExtractedCandidate] = Field(
+        default_factory=list,
+        description="Top 3 candidates ranked by confidence across all sources",
+    )
+
+    reconciliation_needed: bool = Field(
+        False, description="Whether manual reconciliation is needed"
+    )
+    reconciliation_reason: Optional[str] = Field(
+        None, description="Reason for manual reconciliation"
+    )
+
+    # Processing metadata
+    sources_processed: List[str] = Field(
+        default_factory=list, description="Sources that were processed"
+    )
+    processing_notes: List[str] = Field(
+        default_factory=list, description="Processing notes and warnings"
+    )
+
+class TreatmentCurationResult(BaseModel):
+    """Result of curation for Treatment target field (treatment name, dosage, and time)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Tool identification
+    tool_name: str = Field(
+        default="Unknown Tool", description="Name of the tool that produced this output"
+    )
+
+    sample_id: str = Field(..., description="Sample ID that was curated")
+    target_field: str = Field(
+        default="Treatment", description="Target metadata field (Treatment)"
+    )
+
+    # Treatment result
+    treatment_name: str = Field(
+        ..., description="Treatment name (normalized candidate value)"
+    )
+    dosage: Optional[str] = Field(
+        None, description="Dosage details if available (e.g., '2 μM for 24h')"
+    )
+    time: Optional[str] = Field(
+        None, description="Timing details if available (e.g., 'for 24h', '3 weeks', 'day 2-7')"
+    )
+    confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Confidence in the treatment classification"
+    )
+
+    # Supporting evidence
+    series_candidates: List[TreatmentExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from series metadata"
+    )
+    sample_candidates: List[TreatmentExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from sample metadata"
+    )
+    abstract_candidates: List[TreatmentExtractedCandidate] = Field(
+        default_factory=list, description="Candidates from abstract metadata"
+    )
+
+    # Final result - top 3 candidates across all sources (for reference)
+    final_candidates: List[TreatmentExtractedCandidate] = Field(
         default_factory=list,
         description="Top 3 candidates ranked by confidence across all sources",
     )

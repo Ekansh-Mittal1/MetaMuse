@@ -68,7 +68,7 @@ class ConditionalProcessingWorkflow:
         target_fields : List[str], optional
             List of target fields to process. If None, processes all available fields.
             Available fields: disease, tissue, organ, cell_line, cell_type, developmental_stage,
-            ethnicity, gender, age, organism, pubmed_id, platform_id, instrument
+            ethnicity, sex, age, organism, pubmed_id, platform_id, instrument
         model_provider : ModelProvider, optional
             Base model provider (will be specialized per operation)
         max_tokens : int, optional
@@ -77,7 +77,7 @@ class ConditionalProcessingWorkflow:
         self.session_directory = Path(session_directory)
         self.target_fields = target_fields or [
             "disease", "tissue", "organ", "cell_line", "cell_type", "developmental_stage",
-            "ethnicity", "gender", "age", "organism", "pubmed_id", "platform_id", "instrument"
+            "ethnicity", "sex", "age", "organism", "pubmed_id", "platform_id", "instrument"
         ]
         self.base_model_provider = model_provider
         self.max_tokens = max_tokens

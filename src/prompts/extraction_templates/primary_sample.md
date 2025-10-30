@@ -19,7 +19,7 @@ Look for these indicators in **SAMPLE METADATA FIRST**:
 - **Patient identifiers**: Sample names containing patient IDs, case numbers, or biopsy identifiers
 - **Surgical context**: Mentions of "surgical removal", "patient care", "IRB approval", "tumor sample"
 - **Tissue descriptions**: Direct tissue names like "brain tumor", "pancreatic islets", "tumor sample"
-- **Patient characteristics**: Age, gender, BMI, patient-specific information
+- **Patient characteristics**: Age, sex, BMI, patient-specific information
 - **Clinical context**: References to patient care, clinical procedures, hospital settings
 - **Source descriptions**: "Primary", "tissue", "biopsy", "surgical sample"
 
@@ -64,7 +64,7 @@ Return a valid JSON object with this exact structure:
 ### Primary Sample (TRUE) Examples:
 - **"EPN_507_1"** → {"value": "true", "confidence": 1.0, "context": "patient identifier in source_name", "prenormalized": "primary_sample (TRUE)"}
 - **"characteristics_ch1: group: Primary, tissue: brain tumor"** → {"value": "true", "confidence": 1.0, "context": "explicitly marked as Primary tissue", "prenormalized": "primary_sample (TRUE)"}
-- **"pancreatic islets, age: 69, gender: Male"** → {"value": "true", "confidence": 1.0, "context": "patient tissue with demographic info", "prenormalized": "primary_sample (TRUE)"}
+- **"pancreatic islets, age: 69, sex: Male"** → {"value": "true", "confidence": 1.0, "context": "patient tissue with demographic info", "prenormalized": "primary_sample (TRUE)"}
 - **"surgical tumor sample of ependymoma"** → {"value": "true", "confidence": 1.0, "context": "surgical tumor sample", "prenormalized": "primary_sample (TRUE)"}
 
 ### Established Cell Line (FALSE) Examples:

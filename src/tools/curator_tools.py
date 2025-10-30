@@ -64,7 +64,7 @@ def load_extraction_template(target_field: str) -> str:
         "treatment": "treatment.md",
         "organism": "organism.md",
         "ethnicity": "ethnicity.md",
-        "gender": "gender.md",
+        "sex": "sex.md",
         "cell_line": "cell_line.md",
         # Legacy support for old formats
         "Disease": "disease.md",
@@ -75,7 +75,7 @@ def load_extraction_template(target_field: str) -> str:
         "Treatment": "treatment.md",
         "Organism": "organism.md",
         "Ethnicity": "ethnicity.md",
-        "Gender": "gender.md",
+        "Sex": "sex.md",
         "Cell_Line": "cell_line.md",
         "CellLine": "cell_line.md",
         "Developmental_Stage": "developmental_stage.md",

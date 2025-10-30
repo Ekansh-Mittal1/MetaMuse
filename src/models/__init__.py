@@ -25,9 +25,14 @@ from .curation_models import (
     CurationDataPackage,
     ExtractedCandidate,
     SampleTypeExtractedCandidate,
+    SexExtractedCandidate,
+    TreatmentExtractedCandidate,
     CurationResult,
     SampleTypeCurationResult,
+    SexCurationResult,
+    TreatmentCurationResult,
     SampleType,
+    Sex,
 )
 
 # Normalization models
@@ -51,6 +56,8 @@ from .agent_outputs import (
     LinkerOutput,
     CuratorOutput,
     SampleTypeCuratorOutput,
+    SexCuratorOutput,
+    TreatmentCuratorOutput,
     create_successful_ingestion_output,
     create_successful_linker_output,
     create_successful_curator_output,
@@ -90,9 +97,14 @@ __all__ = [
     "CurationDataPackage",
     "ExtractedCandidate",
     "SampleTypeExtractedCandidate",
+    "SexExtractedCandidate",
+    "TreatmentExtractedCandidate",
     "CurationResult",
     "SampleTypeCurationResult",
+    "SexCurationResult",
+    "TreatmentCurationResult",
     "SampleType",
+    "Sex",
     
     # Normalization models
     "OntologyMatch",
@@ -113,6 +125,8 @@ __all__ = [
     "LinkerOutput", 
     "CuratorOutput",
     "SampleTypeCuratorOutput",
+    "SexCuratorOutput",
+    "TreatmentCuratorOutput",
     
     # Result models
     "WorkflowResult",

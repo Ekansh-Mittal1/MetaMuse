@@ -31,13 +31,20 @@ When extracting Treatment candidates, focus on:
 - **CRITICAL**: For the prenormalized field, provide the exact EFO ontology term with its ID (e.g., "chemotherapy (EFO:0003013)")
 
 ## Output Format
-Return a valid JSON object with this exact structure:
+Return a valid JSON object with this exact structure (include dosage/time when present). For time, return a concise value without filler words:
+
+- Strip filler words like: "for", "from", "during", "over", "within", "between", "through", "lasting", "after", "at", "on", "in", "approximately", "about", "~".
+- Prefer compact forms: "24h", "6 weeks", "12h", "3 days", "days 2-7", "week 3", "2 months".
+- Ranges should be expressed without prepositions: "days 2-7" (not "from days 2 to 7").
+- If only timing is present (no dosage), provide `time` and set `dosage` to "None reported".
 
 ```json
 {
   "candidates": [
     {
       "value": "exact_text_from_input",
+      "dosage": "10 mg/kg",
+      "time": "4 weeks",
       "confidence": 0.85,
       "context": "brief context where found",
       "prenormalized": "efo_normalized_term (EFO:ID)"
@@ -47,10 +54,11 @@ Return a valid JSON object with this exact structure:
 ```
 
 ## Examples
-- "chemotherapy treatment" → {"value": "chemotherapy", "confidence": 0.9, "context": "cancer treatment", "prenormalized": "chemotherapy (EFO:0003013)"}
-- "surgical resection" → {"value": "surgical resection", "confidence": 0.95, "context": "surgical procedure", "prenormalized": "surgical resection (EFO:0020026)"}
-- "radiation therapy" → {"value": "radiation therapy", "confidence": 0.85, "context": "radiotherapy", "prenormalized": "radiotherapy (EFO:0003841)"}
-- "immunotherapy" → {"value": "immunotherapy", "confidence": 0.8, "context": "immune-based treatment", "prenormalized": "immunotherapy (EFO:0003842)"}
+- "chemotherapy treatment" → {"value": "chemotherapy", "dosage": "None reported", "time": "None reported", "confidence": 0.9, "context": "cancer treatment", "prenormalized": "chemotherapy (EFO:0003013)"}
+- "doxycycline 2 μM for 24h" → {"value": "doxycycline", "dosage": "2 μM", "time": "24h", "confidence": 0.95, "context": "treatment conditions", "prenormalized": "doxycycline (EFO:0004770)"}
+- "radiation therapy for 6 weeks" → {"value": "radiation therapy", "dosage": "None reported", "time": "6 weeks", "confidence": 0.85, "context": "radiotherapy", "prenormalized": "radiotherapy (EFO:0003841)"}
+- "PFOS 100 uM for 12h" → {"value": "PFOS", "dosage": "100 uM", "time": "12h", "confidence": 0.9, "context": "treatment conditions", "prenormalized": "perfluorooctanesulfonic acid (EFO:0009858)"}
+- "Doxycycline 1 µg/ml from days 2 to 7 of differentiation" → {"value": "Doxycycline", "dosage": "1 µg/ml", "time": "days 2-7", "confidence": 0.9, "context": "protocol", "prenormalized": "doxycycline (EFO:0004770)"}
 
 ## Important Notes
 - **MANDATORY: If no treatment candidates are found, you MUST report "None reported" with a clear explanation** - blank fields are forbidden
@@ -58,6 +66,8 @@ Return a valid JSON object with this exact structure:
 ## Handling No Candidates Found
 When no treatment candidates can be identified, create a candidate with:
 - `value`: "None reported"
+- `dosage`: "None reported"
+- `time`: "None reported"
 - `confidence`: 1.0 (high confidence that no treatment terms were found)
 - `context`: Brief description of what metadata was available
 - `rationale`: Clear explanation of why no treatment candidates could be identified
@@ -67,6 +77,8 @@ Example:
 ```json
 {
   "value": "None reported",
+  "dosage": "None reported",
+  "time": "None reported",
   "confidence": 1.0,
   "context": "Sample metadata contains cell line and disease information but no treatment terms",
   "rationale": "Thoroughly searched series title, sample characteristics, and metadata fields. No treatment-related terms, drug names, therapeutic interventions, or experimental conditions were mentioned. Sample may be from untreated/baseline condition.",

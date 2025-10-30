@@ -115,7 +115,7 @@ class EfficientBatchSamplesProcessor:
         self.max_tokens = max_tokens
         self.target_fields = target_fields or [
             "disease", "tissue", "organ", "cell_line", "cell_type", "developmental_stage",
-            "ethnicity", "gender", "age", "organism", "pubmed_id", "platform_id", "instrument"
+            "ethnicity", "sex", "age", "organism", "pubmed_id", "platform_id", "instrument"
         ]
         self.sample_type_filter = sample_type_filter
         self.batch_name = batch_name
@@ -678,7 +678,7 @@ class EfficientBatchSamplesProcessor:
                 for field_dir in batch_dir.iterdir():
                     if field_dir.is_dir() and field_dir.name in [
                         "disease", "tissue", "organ", "cell_line", "cell_type", "developmental_stage",
-                        "ethnicity", "gender", "age", "assay_type", "treatment"
+                        "ethnicity", "sex", "age", "assay_type", "treatment"
                     ]:
                         field_name = field_dir.name
                         curator_file = field_dir / "curator_output_primary_sample.json"
@@ -720,6 +720,26 @@ class EfficientBatchSamplesProcessor:
                                                     final_candidate_data = curation_result["final_candidates"][0]
                                                     sample_data["curated_fields"][field_name]["context"] = final_candidate_data.get("context", "")
                                                     sample_data["curated_fields"][field_name]["rationale"] = final_candidate_data.get("rationale", "")
+                                            # Handle treatment field which may include dosage/time
+                                            elif field_name == "treatment" and ("treatment_name" in curation_result or "final_candidate" in curation_result or "final_candidates" in curation_result):
+                                                final_value = curation_result.get("treatment_name") or curation_result.get("final_candidate") or ""
+                                                dosage_val = curation_result.get("dosage", "")
+                                                time_val = curation_result.get("time", "")
+                                                # Fallback to first candidate if needed
+                                                if (not final_value) and curation_result.get("final_candidates"):
+                                                    first = curation_result["final_candidates"][0]
+                                                    if isinstance(first, dict):
+                                                        final_value = first.get("value", final_value)
+                                                        dosage_val = first.get("dosage", dosage_val)
+                                                        time_val = first.get("time", time_val)
+                                                sample_data["curated_fields"][field_name] = {
+                                                    "final_candidate": final_value,
+                                                    "dosage": dosage_val,
+                                                    "time": time_val,
+                                                    "confidence": curation_result.get("confidence", ""),
+                                                    "context": "",
+                                                    "rationale": "",
+                                                }
                                             elif "final_candidate" in curation_result or "final_candidates" in curation_result:
                                                 # Handle cases where final_candidate might be None but final_candidates array exists
                                                 final_candidate_value = curation_result.get("final_candidate")
@@ -862,10 +882,12 @@ class EfficientBatchSamplesProcessor:
             "cell_type_final_candidate": "",
             "developmental_stage_final_candidate": "",
             "ethnicity_final_candidate": "",
-            "gender_final_candidate": "",
+            "sex_final_candidate": "",
             "age_final_candidate": "",
             "assay_type_final_candidate": "",
             "treatment_final_candidate": "",
+            "treatment_dosage": "",
+            "treatment_time": "",
             # Normalized fields
             "disease_normalized_term": "",
             "disease_normalized_id": "",
@@ -898,6 +920,12 @@ class EfficientBatchSamplesProcessor:
             # Special handling for disease condition
             if field_name == "disease" and "disease_condition" in row:
                 row["disease_condition"] = field_data.get("condition", "")
+            # Special handling for treatment dosage
+            if field_name == "treatment":
+                if "treatment_dosage" in row:
+                    row["treatment_dosage"] = field_data.get("dosage", "")
+                if "treatment_time" in row:
+                    row["treatment_time"] = field_data.get("time", "")
         
         # Populate normalized fields
         normalized_fields = sample_data.get("normalized_fields", {})
@@ -948,7 +976,7 @@ class EfficientBatchSamplesProcessor:
         """
         # Define all possible fields and their order
         all_curated_fields = ["disease", "tissue", "organ", "cell_line", "cell_type", "developmental_stage", 
-                             "ethnicity", "gender", "age", "assay_type", "treatment"]
+                             "ethnicity", "sex", "age", "assay_type", "treatment"]
         all_normalized_fields = ["disease", "tissue", "organ"]
         
         # Start with basic metadata
@@ -979,6 +1007,10 @@ class EfficientBatchSamplesProcessor:
             row[f"{field_name}_confidence"] = ""
             row[f"{field_name}_context"] = ""
             row[f"{field_name}_rationale"] = ""
+            # Special handling for treatment extra fields
+            if field_name == "treatment":
+                row["treatment_dosage"] = ""
+                row["treatment_time"] = ""
             
             # Special handling for disease condition
             if field_name == "disease":
@@ -1005,6 +1037,10 @@ class EfficientBatchSamplesProcessor:
                 # Special handling for disease condition
                 if field_name == "disease":
                     row[f"{field_name}_condition"] = field_data.get("condition", "")
+                # Special handling for treatment dosage/time
+                if field_name == "treatment":
+                    row["treatment_dosage"] = field_data.get("dosage", "")
+                    row["treatment_time"] = field_data.get("time", "")
         
         # Populate actual normalized fields
         normalized_fields = sample_data.get("normalized_fields", {})
