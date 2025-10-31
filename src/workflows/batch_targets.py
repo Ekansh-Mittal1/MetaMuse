@@ -245,18 +245,18 @@ TARGET_FIELD_CONFIG = {
     "conditional_processing": {
         "primary_sample": {
             "curation": ["disease", "organ", "ethnicity", "sex", "age", "tissue", "cell_type", "developmental_stage", "assay_type", "treatment"],
-            "normalization": ["disease", "organ", "tissue"],
+            "normalization": ["disease", "organ", "tissue", "cell_type", "developmental_stage", "ethnicity", "treatment"],
             "not_applicable": ["cell_line"]
         },
         "cell_line": {
             "curation": ["disease", "organ", "cell_line", "cell_type", "assay_type", "treatment"], 
-            "normalization": ["disease", "organ"],  # Disease, organ, and assay_type are normalized for cell lines
+            "normalization": ["disease", "organ", "cell_line", "cell_type", "treatment"],
             "not_applicable": ["ethnicity", "sex", "age", "tissue", "developmental_stage"]
         },
         "unknown": {
             "curation": ["disease", "organ", "ethnicity", "sex", "age", "tissue", "cell_line", "cell_type", "assay_type", "treatment"],
-            "normalization": ["disease", "organ", "tissue"],  # Cell line still not normalized for unknown
-            "not_applicable": ["developmental_stage"]  # developmental_stage only for primary samples
+            "normalization": ["disease", "organ", "tissue", "cell_line", "cell_type", "ethnicity", "treatment"],
+            "not_applicable": ["developmental_stage"]
         }
     },
     
@@ -829,7 +829,9 @@ async def run_batch_targets_workflow(
         # ====================================================================
         # PHASE 6: UNIFIED NORMALIZATION (ALL FIELDS)
         # ====================================================================
-        print("🔬 PHASE 6: UNIFIED NORMALIZATION (ALL FIELDS) - RUN_BATCH_TARGETS_WORKFLOW")
+        normalization_phase_start_time = time.time()
+        print(f"🔬 PHASE 6: UNIFIED NORMALIZATION (ALL FIELDS) - RUN_BATCH_TARGETS_WORKFLOW")
+        print(f"⏱️  DEBUG: Normalization phase started at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(normalization_phase_start_time))}")
 
         # Collect all curator outputs for normalization
         all_curator_outputs_for_normalization = {}
@@ -873,14 +875,18 @@ async def run_batch_targets_workflow(
 
         async def run_unified_normalization(target_field: str):
             """Run normalization for a single target field using unified approach."""
+            field_normalization_start_time = time.time()
             try:
                 print(f"🔍 DEBUG: Starting normalization for {target_field}")
+                print(f"⏱️  DEBUG: Field '{target_field}' normalization started at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(field_normalization_start_time))}")
                 print(f"   - Looking for key: {target_field.lower()}")
                 print(f"   - Available keys: {list(all_curator_outputs_for_normalization.keys())}")
                 
                 curator_output = all_curator_outputs_for_normalization.get(target_field.lower())
                 if not curator_output:
                     print(f"⚠️  No curator output available for normalization of {target_field}")
+                    field_normalization_end_time = time.time()
+                    print(f"⏱️  DEBUG: Field '{target_field}' normalization completed (skipped) in {field_normalization_end_time - field_normalization_start_time:.2f} seconds")
                     return target_field, None
                 
                 print(f"🔍 DEBUG: Found curator output for {target_field}")
@@ -890,6 +896,8 @@ async def run_batch_targets_workflow(
                 # Create normalization-specific model provider
                 normalization_model_provider = create_model_provider_for_operation("normalization", model_provider)
                 
+                # Time the actual normalization agent call
+                agent_start_time = time.time()
                 normalizer_output = await run_normalizer_agent(
                     curator_output=curator_output,
                     target_field=target_field,
@@ -900,11 +908,19 @@ async def run_batch_targets_workflow(
                     max_turns=max_turns,
                     verbose_output=False,
                 )
+                agent_end_time = time.time()
+                field_normalization_end_time = time.time()
+                
+                print(f"⏱️  DEBUG: Field '{target_field}' normalization agent call took {agent_end_time - agent_start_time:.2f} seconds")
+                print(f"⏱️  DEBUG: Field '{target_field}' normalization completed in {field_normalization_end_time - field_normalization_start_time:.2f} seconds")
+                
                 return target_field, normalizer_output
 
             except Exception as e:
+                field_normalization_end_time = time.time()
                 error_msg = f"Unified normalization failed for {target_field}: {str(e)}"
                 print(f"❌ {error_msg}")
+                print(f"⏱️  DEBUG: Field '{target_field}' normalization failed after {field_normalization_end_time - field_normalization_start_time:.2f} seconds")
                 
                 if error_tracker and hasattr(error_tracker, 'track_target_field_error'):
                     error_tracker.track_target_field_error(
@@ -917,21 +933,30 @@ async def run_batch_targets_workflow(
                 return target_field, None
 
         # Run unified normalization in parallel
-        normalization_start_time = time.time()
+        normalization_execution_start_time = time.time()
+        print(f"⏱️  DEBUG: Starting normalization execution for {len(available_fields_to_normalize)} fields: {available_fields_to_normalize}")
         unified_normalization_tasks = [run_unified_normalization(field) for field in available_fields_to_normalize]
 
         if enable_parallel_execution:
+            print(f"⏱️  DEBUG: Running normalization in PARALLEL mode for {len(unified_normalization_tasks)} fields")
             unified_normalization_results = await asyncio.gather(
                 *unified_normalization_tasks, return_exceptions=True
             )
         else:
+            print(f"⏱️  DEBUG: Running normalization in SEQUENTIAL mode for {len(unified_normalization_tasks)} fields")
             unified_normalization_results = []
             for task in unified_normalization_tasks:
                 result = await task
                 unified_normalization_results.append(result)
         
-        normalization_end_time = time.time()
-        print(f"✅ Unified normalization completed in {normalization_end_time - normalization_start_time:.2f} seconds")
+        normalization_execution_end_time = time.time()
+        normalization_phase_end_time = time.time()
+        normalization_execution_duration = normalization_execution_end_time - normalization_execution_start_time
+        normalization_phase_duration = normalization_phase_end_time - normalization_phase_start_time
+        
+        print(f"⏱️  DEBUG: Normalization execution completed in {normalization_execution_duration:.2f} seconds")
+        print(f"⏱️  DEBUG: Total normalization phase duration: {normalization_phase_duration:.2f} seconds")
+        print(f"✅ Unified normalization completed - Execution: {normalization_execution_duration:.2f}s, Total Phase: {normalization_phase_duration:.2f}s")
 
         # Process unified normalization results
         unified_normalization_data = {}
@@ -1633,10 +1658,13 @@ async def run_unified_normalization(
     """
     
     start_time = time.time()
+    print(f"⏱️  DEBUG: run_unified_normalization started at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
     
     try:
         if not initial_result.success or not conditional_result.success:
             print("❌ Cannot run normalization: Initial or conditional processing failed")
+            end_time = time.time()
+            print(f"⏱️  DEBUG: run_unified_normalization completed (skipped) in {end_time - start_time:.2f} seconds")
             return {}
         
         
@@ -1686,13 +1714,18 @@ async def run_unified_normalization(
         unified_normalization_data = {}
         
         if available_normalization_fields:
+            print(f"⏱️  DEBUG: Normalizing {len(available_normalization_fields)} fields: {available_normalization_fields}")
             
             async def run_single_normalization(target_field: str):
                 """Run normalization for a single target field with retry logic."""
+                field_start_time = time.time()
+                print(f"⏱️  DEBUG: Starting normalization for field '{target_field}' at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(field_start_time))}")
+                
                 # Create normalization-specific model provider
                 normalization_model_provider = create_model_provider_for_operation("normalization", model_provider)
                 
                 async def _run_normalization():
+                    agent_start_time = time.time()
                     field_key = target_field.lower()
                     curator_output = all_curator_outputs[field_key]
                     
@@ -1708,28 +1741,41 @@ async def run_unified_normalization(
                         max_turns=max_turns,
                         verbose_output=False,
                     )
+                    agent_end_time = time.time()
+                    print(f"⏱️  DEBUG: Field '{target_field}' agent call took {agent_end_time - agent_start_time:.2f} seconds")
                     return normalizer_output
                 
-                return await retry_operation_with_backoff(
+                result = await retry_operation_with_backoff(
                     operation_func=_run_normalization,
                     operation_name="normalization",
                     target_field=target_field,
                     sample_ids=initial_result.sample_ids,
                     error_tracker=error_tracker
                 )
+                field_end_time = time.time()
+                print(f"⏱️  DEBUG: Field '{target_field}' normalization completed in {field_end_time - field_start_time:.2f} seconds")
+                return result
             
             # Run normalization tasks in parallel
+            normalization_execution_start_time = time.time()
+            print(f"⏱️  DEBUG: Starting normalization execution for {len(available_normalization_fields)} fields")
             normalization_tasks = [run_single_normalization(field) for field in available_normalization_fields]
             
             if enable_parallel_execution:
+                print(f"⏱️  DEBUG: Running normalization in PARALLEL mode")
                 normalization_results = await asyncio.gather(
                     *normalization_tasks, return_exceptions=True
                 )
             else:
+                print(f"⏱️  DEBUG: Running normalization in SEQUENTIAL mode")
                 normalization_results = []
                 for task in normalization_tasks:
                     result = await task
                     normalization_results.append(result)
+            
+            normalization_execution_end_time = time.time()
+            normalization_execution_duration = normalization_execution_end_time - normalization_execution_start_time
+            print(f"⏱️  DEBUG: Normalization execution completed in {normalization_execution_duration:.2f} seconds")
             
             # Process normalization results
             for result in normalization_results:
@@ -1755,6 +1801,9 @@ async def run_unified_normalization(
             print("⚠️  No fields available for normalization")
         
         end_time = time.time()
+        total_duration = end_time - start_time
+        print(f"⏱️  DEBUG: run_unified_normalization completed in {total_duration:.2f} seconds")
+        print(f"⏱️  DEBUG: Normalized {len(unified_normalization_data)} fields successfully")
         
         return unified_normalization_data
     

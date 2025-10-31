@@ -617,54 +617,86 @@ class EfficientBatchSamplesProcessor:
                         if isinstance(curator_data, list):
                             for curator_result in curator_data:
                                 if curator_result.get("sample_id") == sample_id:
-                                    # Handle assay_type field which uses 'assay_type' instead of 'final_candidate'
-                                    if field_name == "assay_type" and "assay_type" in curator_result:
-                                        sample_data["curated_fields"][field_name] = {
-                                            "final_candidate": curator_result["assay_type"],
-                                            "confidence": curator_result.get("confidence", ""),
-                                            "context": "",  # assay_type doesn't have context in the same format
-                                            "rationale": ""  # assay_type doesn't have rationale in the same format
-                                        }
-                                    # Handle disease field which uses 'disease_name' and 'condition'
-                                    elif field_name == "disease" and "disease_name" in curator_result:
-                                        sample_data["curated_fields"][field_name] = {
-                                            "final_candidate": curator_result["disease_name"],
-                                            "condition": curator_result.get("condition", ""),
-                                            "confidence": curator_result.get("confidence", ""),
-                                            "context": "",  # Extract from final_candidates if available
-                                            "rationale": ""  # Extract from final_candidates if available
-                                        }
-                                        # Extract context and rationale from final_candidates if available
-                                        if "final_candidates" in curator_result and curator_result["final_candidates"]:
-                                            final_candidate_data = curator_result["final_candidates"][0]
-                                            sample_data["curated_fields"][field_name]["context"] = final_candidate_data.get("context", "")
-                                            sample_data["curated_fields"][field_name]["rationale"] = final_candidate_data.get("rationale", "")
-                                    elif "final_candidate" in curator_result or "final_candidates" in curator_result:
-                                        # Handle cases where final_candidate might be None but final_candidates array exists
+                                    # Unified extraction strategy: check direct fields first, then fallback to final_candidates
+                                    # Field-specific direct field mappings
+                                    direct_field_map = {
+                                        "sex": "sex",
+                                        "assay_type": "assay_type",
+                                        "sample_type": "sample_type",
+                                        "disease": "disease_name",
+                                        "treatment": "treatment_name"
+                                    }
+                                    
+                                    final_candidate_value = None
+                                    final_confidence = None
+                                    context = ""
+                                    rationale = ""
+                                    condition = ""
+                                    dosage = ""
+                                    time_val = ""
+                                    
+                                    # Step 1: Check for direct field (preferred - validated enum/primitive field)
+                                    direct_field = direct_field_map.get(field_name)
+                                    if direct_field and direct_field in curator_result:
+                                        final_candidate_value = curator_result[direct_field]
+                                        final_confidence = curator_result.get("confidence", "")
+                                        
+                                        # Field-specific handling
+                                        if field_name == "sex":
+                                            # Validate and normalize Sex enum value
+                                            if final_candidate_value:
+                                                sex_str = str(final_candidate_value)
+                                                if sex_str.lower() not in ["male", "female", "intersex", "none reported"]:
+                                                    sex_str = "None reported"
+                                                final_candidate_value = sex_str
+                                            else:
+                                                final_candidate_value = "None reported"
+                                        elif field_name == "disease":
+                                            condition = curator_result.get("condition", "")
+                                        elif field_name == "treatment":
+                                            dosage = curator_result.get("dosage", "")
+                                            time_val = curator_result.get("time", "")
+                                    
+                                    # Step 2: Fallback to final_candidate field
+                                    elif "final_candidate" in curator_result:
                                         final_candidate_value = curator_result.get("final_candidate")
                                         final_confidence = curator_result.get("final_confidence")
-                                        context = ""
-                                        rationale = ""
-                                        
-                                        # If final_candidate is None but final_candidates array exists, use the first one
-                                        if (final_candidate_value is None or final_confidence is None) and "final_candidates" in curator_result and curator_result["final_candidates"]:
-                                            final_candidate_data = curator_result["final_candidates"][0]
-                                            final_candidate_value = final_candidate_data.get("value", "")
-                                            final_confidence = final_candidate_data.get("confidence", "")
+                                    
+                                    # Step 3: Fallback to final_candidates array
+                                    if (final_candidate_value is None or final_confidence is None) and "final_candidates" in curator_result and curator_result["final_candidates"]:
+                                        final_candidate_data = curator_result["final_candidates"][0]
+                                        if isinstance(final_candidate_data, dict):
+                                            final_candidate_value = final_candidate_data.get("value", final_candidate_value)
+                                            final_confidence = final_candidate_data.get("confidence", final_confidence)
                                             context = final_candidate_data.get("context", "")
                                             rationale = final_candidate_data.get("rationale", "")
-                                        elif "final_candidates" in curator_result and curator_result["final_candidates"]:
-                                            # Extract context and rationale from final_candidates array
-                                            final_candidate_data = curator_result["final_candidates"][0]
-                                            context = final_candidate_data.get("context", "")
-                                            rationale = final_candidate_data.get("rationale", "")
-                                        
-                                        sample_data["curated_fields"][field_name] = {
-                                            "final_candidate": final_candidate_value or "",
+                                            # Handle treatment-specific fields from final_candidates
+                                            if field_name == "treatment":
+                                                dosage = final_candidate_data.get("dosage", dosage)
+                                                time_val = final_candidate_data.get("time", time_val)
+                                    elif "final_candidates" in curator_result and curator_result["final_candidates"]:
+                                        # Extract context and rationale even if we already have a value
+                                        final_candidate_data = curator_result["final_candidates"][0]
+                                        if isinstance(final_candidate_data, dict):
+                                            context = final_candidate_data.get("context", context)
+                                            rationale = final_candidate_data.get("rationale", rationale)
+                                    
+                                    # Only create entry if we have a value
+                                    if final_candidate_value is not None:
+                                        field_data = {
+                                            "final_candidate": str(final_candidate_value) if final_candidate_value else "",
                                             "confidence": final_confidence or "",
                                             "context": context,
                                             "rationale": rationale
                                         }
+                                        # Add field-specific data
+                                        if field_name == "disease" and condition:
+                                            field_data["condition"] = condition
+                                        if field_name == "treatment":
+                                            field_data["dosage"] = dosage
+                                            field_data["time"] = time_val
+                                        
+                                        sample_data["curated_fields"][field_name] = field_data
                                     break
                     except Exception as e:
                         error_msg = f"Error reading curator file {curator_file}: {e}"
@@ -698,74 +730,86 @@ class EfficientBatchSamplesProcessor:
                                 if "curation_results" in curator_data:
                                     for curation_result in curator_data["curation_results"]:
                                         if curation_result.get("sample_id") == sample_id:
-                                            # Handle assay_type field which uses 'assay_type' instead of 'final_candidate'
-                                            if field_name == "assay_type" and "assay_type" in curation_result:
-                                                sample_data["curated_fields"][field_name] = {
-                                                    "final_candidate": curation_result["assay_type"],
-                                                    "confidence": curation_result.get("confidence", ""),
-                                                    "context": "",  # assay_type doesn't have context in the same format
-                                                    "rationale": ""  # assay_type doesn't have rationale in the same format
-                                                }
-                                            # Handle disease field which uses 'disease_name' and 'condition'
-                                            elif field_name == "disease" and "disease_name" in curation_result:
-                                                sample_data["curated_fields"][field_name] = {
-                                                    "final_candidate": curation_result["disease_name"],
-                                                    "condition": curation_result.get("condition", ""),
-                                                    "confidence": curation_result.get("confidence", ""),
-                                                    "context": "",  # Extract from final_candidates if available
-                                                    "rationale": ""  # Extract from final_candidates if available
-                                                }
-                                                # Extract context and rationale from final_candidates if available
-                                                if "final_candidates" in curation_result and curation_result["final_candidates"]:
-                                                    final_candidate_data = curation_result["final_candidates"][0]
-                                                    sample_data["curated_fields"][field_name]["context"] = final_candidate_data.get("context", "")
-                                                    sample_data["curated_fields"][field_name]["rationale"] = final_candidate_data.get("rationale", "")
-                                            # Handle treatment field which may include dosage/time
-                                            elif field_name == "treatment" and ("treatment_name" in curation_result or "final_candidate" in curation_result or "final_candidates" in curation_result):
-                                                final_value = curation_result.get("treatment_name") or curation_result.get("final_candidate") or ""
-                                                dosage_val = curation_result.get("dosage", "")
-                                                time_val = curation_result.get("time", "")
-                                                # Fallback to first candidate if needed
-                                                if (not final_value) and curation_result.get("final_candidates"):
-                                                    first = curation_result["final_candidates"][0]
-                                                    if isinstance(first, dict):
-                                                        final_value = first.get("value", final_value)
-                                                        dosage_val = first.get("dosage", dosage_val)
-                                                        time_val = first.get("time", time_val)
-                                                sample_data["curated_fields"][field_name] = {
-                                                    "final_candidate": final_value,
-                                                    "dosage": dosage_val,
-                                                    "time": time_val,
-                                                    "confidence": curation_result.get("confidence", ""),
-                                                    "context": "",
-                                                    "rationale": "",
-                                                }
-                                            elif "final_candidate" in curation_result or "final_candidates" in curation_result:
-                                                # Handle cases where final_candidate might be None but final_candidates array exists
+                                            # Unified extraction strategy: check direct fields first, then fallback to final_candidates
+                                            # Field-specific direct field mappings
+                                            direct_field_map = {
+                                                "sex": "sex",
+                                                "assay_type": "assay_type",
+                                                "sample_type": "sample_type",
+                                                "disease": "disease_name",
+                                                "treatment": "treatment_name"
+                                            }
+                                            
+                                            final_candidate_value = None
+                                            final_confidence = None
+                                            context = ""
+                                            rationale = ""
+                                            condition = ""
+                                            dosage = ""
+                                            time_val = ""
+                                            
+                                            # Step 1: Check for direct field (preferred - validated enum/primitive field)
+                                            direct_field = direct_field_map.get(field_name)
+                                            if direct_field and direct_field in curation_result:
+                                                final_candidate_value = curation_result[direct_field]
+                                                final_confidence = curation_result.get("confidence", "")
+                                                
+                                                # Field-specific handling
+                                                if field_name == "sex":
+                                                    # Validate and normalize Sex enum value
+                                                    if final_candidate_value:
+                                                        sex_str = str(final_candidate_value)
+                                                        if sex_str.lower() not in ["male", "female", "intersex", "none reported"]:
+                                                            sex_str = "None reported"
+                                                        final_candidate_value = sex_str
+                                                    else:
+                                                        final_candidate_value = "None reported"
+                                                elif field_name == "disease":
+                                                    condition = curation_result.get("condition", "")
+                                                elif field_name == "treatment":
+                                                    dosage = curation_result.get("dosage", "")
+                                                    time_val = curation_result.get("time", "")
+                                            
+                                            # Step 2: Fallback to final_candidate field
+                                            elif "final_candidate" in curation_result:
                                                 final_candidate_value = curation_result.get("final_candidate")
                                                 final_confidence = curation_result.get("final_confidence")
-                                                context = ""
-                                                rationale = ""
-                                                
-                                                # If final_candidate is None but final_candidates array exists, use the first one
-                                                if (final_candidate_value is None or final_confidence is None) and "final_candidates" in curation_result and curation_result["final_candidates"]:
-                                                    final_candidate_data = curation_result["final_candidates"][0]
-                                                    final_candidate_value = final_candidate_data.get("value", "")
-                                                    final_confidence = final_candidate_data.get("confidence", "")
+                                            
+                                            # Step 3: Fallback to final_candidates array
+                                            if (final_candidate_value is None or final_confidence is None) and "final_candidates" in curation_result and curation_result["final_candidates"]:
+                                                final_candidate_data = curation_result["final_candidates"][0]
+                                                if isinstance(final_candidate_data, dict):
+                                                    final_candidate_value = final_candidate_data.get("value", final_candidate_value)
+                                                    final_confidence = final_candidate_data.get("confidence", final_confidence)
                                                     context = final_candidate_data.get("context", "")
                                                     rationale = final_candidate_data.get("rationale", "")
-                                                elif "final_candidates" in curation_result and curation_result["final_candidates"]:
-                                                    # Extract context and rationale from final_candidates array
-                                                    final_candidate_data = curation_result["final_candidates"][0]
-                                                    context = final_candidate_data.get("context", "")
-                                                    rationale = final_candidate_data.get("rationale", "")
-                                                
-                                                sample_data["curated_fields"][field_name] = {
-                                                    "final_candidate": final_candidate_value or "",
+                                                    # Handle treatment-specific fields from final_candidates
+                                                    if field_name == "treatment":
+                                                        dosage = final_candidate_data.get("dosage", dosage)
+                                                        time_val = final_candidate_data.get("time", time_val)
+                                            elif "final_candidates" in curation_result and curation_result["final_candidates"]:
+                                                # Extract context and rationale even if we already have a value
+                                                final_candidate_data = curation_result["final_candidates"][0]
+                                                if isinstance(final_candidate_data, dict):
+                                                    context = final_candidate_data.get("context", context)
+                                                    rationale = final_candidate_data.get("rationale", rationale)
+                                            
+                                            # Only create entry if we have a value
+                                            if final_candidate_value is not None:
+                                                field_data = {
+                                                    "final_candidate": str(final_candidate_value) if final_candidate_value else "",
                                                     "confidence": final_confidence or "",
                                                     "context": context,
                                                     "rationale": rationale
                                                 }
+                                                # Add field-specific data
+                                                if field_name == "disease" and condition:
+                                                    field_data["condition"] = condition
+                                                if field_name == "treatment":
+                                                    field_data["dosage"] = dosage
+                                                    field_data["time"] = time_val
+                                                
+                                                sample_data["curated_fields"][field_name] = field_data
                                             break
                             except Exception as e:
                                 error_msg = f"Error reading curator file {curator_file}: {e}"
@@ -895,6 +939,16 @@ class EfficientBatchSamplesProcessor:
             "tissue_normalized_id": "",
             "organ_normalized_term": "",
             "organ_normalized_id": "",
+            "cell_line_normalized_term": "",
+            "cell_line_normalized_id": "",
+            "cell_type_normalized_term": "",
+            "cell_type_normalized_id": "",
+            "ethnicity_normalized_term": "",
+            "ethnicity_normalized_id": "",
+            "treatment_normalized_term": "",
+            "treatment_normalized_id": "",
+            "developmental_stage_normalized_term": "",
+            "developmental_stage_normalized_id": "",
             # Metadata fields
             "sandbox_id": batch_name,
             "pubmed_id": "",
@@ -977,7 +1031,7 @@ class EfficientBatchSamplesProcessor:
         # Define all possible fields and their order
         all_curated_fields = ["disease", "tissue", "organ", "cell_line", "cell_type", "developmental_stage", 
                              "ethnicity", "sex", "age", "assay_type", "treatment"]
-        all_normalized_fields = ["disease", "tissue", "organ"]
+        all_normalized_fields = ["disease", "tissue", "organ", "cell_line", "cell_type", "ethnicity", "treatment", "developmental_stage"]
         
         # Start with basic metadata
         row = {

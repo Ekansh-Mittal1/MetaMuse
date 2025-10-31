@@ -1,0 +1,1425 @@
+🎯 Starting efficient batch samples workflow
+✅ Connected to GEOmetadb database
+   Size: 18669.87 MB
+   Tables: 11
+   GSE records: 222961
+   GSM records: 7017233
+✅ Connected to PubMed database
+   Size: 50.42 MB
+   Articles: 18,718
+   Authors: 253,617
+   Year range: 1969-2025
+🚀 Processing 9 GSM IDs with batch optimization
+🔍 Processing 9 GSMs from local database
+🚀 Extracting GSE metadata for 9 series: GSE106540, GSE133996, GSE134375, GSE157544, GSE213370, GSE214331, GSE249377, GSE52529, GSE95588
+🔍 Processing 9 GSEs from local database
+✅ Extracted GSE metadata: GSE134375
+✅ PubMed ID extracted for derived GSE134375: 31534498
+✅ Paper abstract extracted for derived GSE134375: batch/batch_norm_ols_20251030_202820/data_intake/PMID_31534498_metadata.json
+✅ Moved derived paper file to: batch/batch_norm_ols_20251030_202820/data_intake/GSE134375/PMID_31534498_metadata.json
+✅ Extracted GSE metadata: GSE52529
+✅ PubMed ID extracted for derived GSE52529: 24658644
+✅ Paper abstract extracted for derived GSE52529: batch/batch_norm_ols_20251030_202820/data_intake/PMID_24658644_metadata.json
+✅ Moved derived paper file to: batch/batch_norm_ols_20251030_202820/data_intake/GSE52529/PMID_24658644_metadata.json
+✅ Extracted GSE metadata: GSE214331
+⚠️  No PubMed ID found for derived GSE214331
+✅ Extracted GSE metadata: GSE249377
+✅ PubMed ID extracted for derived GSE249377: 38043774
+✅ Paper abstract extracted for derived GSE249377: batch/batch_norm_ols_20251030_202820/data_intake/PMID_38043774_metadata.json
+✅ Moved derived paper file to: batch/batch_norm_ols_20251030_202820/data_intake/GSE249377/PMID_38043774_metadata.json
+✅ Extracted GSE metadata: GSE133996
+✅ PubMed ID extracted for derived GSE133996: 31402335
+✅ Paper abstract extracted for derived GSE133996: batch/batch_norm_ols_20251030_202820/data_intake/PMID_31402335_metadata.json
+✅ Moved derived paper file to: batch/batch_norm_ols_20251030_202820/data_intake/GSE133996/PMID_31402335_metadata.json
+✅ Extracted GSE metadata: GSE157544
+✅ PubMed ID extracted for derived GSE157544: 34645279
+✅ Paper abstract extracted for derived GSE157544: batch/batch_norm_ols_20251030_202820/data_intake/PMID_34645279_metadata.json
+✅ Moved derived paper file to: batch/batch_norm_ols_20251030_202820/data_intake/GSE157544/PMID_34645279_metadata.json
+✅ Extracted GSE metadata: GSE106540
+✅ PubMed ID extracted for derived GSE106540: 29352091
+✅ Paper abstract extracted for derived GSE106540: batch/batch_norm_ols_20251030_202820/data_intake/PMID_29352091_metadata.json
+✅ Moved derived paper file to: batch/batch_norm_ols_20251030_202820/data_intake/GSE106540/PMID_29352091_metadata.json
+✅ Extracted GSE metadata: GSE213370
+✅ PubMed ID extracted for derived GSE213370: 38805639
+✅ Paper abstract extracted for derived GSE213370: batch/batch_norm_ols_20251030_202820/data_intake/PMID_38805639_metadata.json
+✅ Moved derived paper file to: batch/batch_norm_ols_20251030_202820/data_intake/GSE213370/PMID_38805639_metadata.json
+✅ Extracted GSE metadata: GSE95588
+✅ PubMed ID extracted for derived GSE95588: 31068444
+✅ Paper abstract extracted for derived GSE95588: batch/batch_norm_ols_20251030_202820/data_intake/PMID_31068444_metadata.json
+✅ Moved derived paper file to: batch/batch_norm_ols_20251030_202820/data_intake/GSE95588/PMID_31068444_metadata.json
+✅ Updated mapping with 9 ingested samples
+✅ Series-sample mapping saved: batch/batch_norm_ols_20251030_202820/series_sample_mapping.json
+✅ Series-sample mapping copied to: batch/batch_norm_ols_20251030_202820/data_intake/series_sample_mapping.json
+🚀 Processing 9 samples with 50 workers
+✅ Complete SQLite workflow completed successfully in 3.12 seconds
+
+
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='age'
+🔍 run_curator_agent traceback:
+❌ Curation failed for age: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 2.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='cell_type'
+🔍 run_curator_agent traceback:
+❌ Curation failed for cell_type: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 2.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='cell_line'
+🔍 run_curator_agent traceback:
+❌ Curation failed for cell_line: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 2.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='cell_line'
+🔍 run_curator_agent traceback:
+❌ Curation failed for cell_line: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 2.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='organ'
+🔍 run_curator_agent traceback:
+❌ Curation failed for organ: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 2.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='organ'
+🔍 run_curator_agent traceback:
+❌ Curation failed for organ: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 2.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='age'
+🔍 run_curator_agent traceback:
+❌ Curation failed for age: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 2.0 seconds...
+
+❌ Stream error: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemini-2.5-pro is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google'}}, 'user_id': 'org_2xxXyumzh2w0Qzi71jSwQqwp9K1'}
+🔍 DEBUG: Stream error type: <class 'openai.RateLimitError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='cell_line'
+🔍 run_curator_agent traceback:
+❌ Curation failed for cell_line: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 4.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='organ'
+🔍 run_curator_agent traceback:
+❌ Curation failed for organ: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 2.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='developmental_stage'
+🔍 run_curator_agent traceback:
+❌ Curation failed for developmental_stage: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 2.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='disease'
+🔍 run_curator_agent traceback:
+❌ Curation failed for disease: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 2.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='cell_type'
+🔍 run_curator_agent traceback:
+❌ Curation failed for cell_type: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 4.0 seconds...
+
+❌ Stream error: Internal Server Error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='age'
+🔍 run_curator_agent traceback:
+❌ Curation failed for age: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 4.0 seconds...
+
+❌ Stream error: Provider returned error
+🔍 DEBUG: Stream error type: <class 'openai.APIError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: ...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: ...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='age'
+🔍 run_curator_agent traceback:
+❌ Curation failed for age: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 4.0 seconds...
+✅ Curation succeeded for cell_line on attempt 3
+✅ Curation succeeded for organ on attempt 2
+✅ Curation succeeded for organ on attempt 2
+✅ Curation succeeded for cell_line on attempt 2
+✅ Curation succeeded for age on attempt 3
+✅ Curation succeeded for developmental_stage on attempt 2
+✅ Curation succeeded for cell_type on attempt 3
+✅ Successfully saved curator output for disease
+✅ Successfully saved curator output for organ
+✅ Successfully saved curator output for ethnicity
+✅ Successfully saved curator output for sex
+✅ Successfully saved curator output for age
+✅ Successfully saved curator output for tissue
+✅ Successfully saved curator output for cell_line
+✅ Successfully saved curator output for cell_type
+✅ Successfully saved curator output for assay_type
+✅ Successfully saved curator output for treatment
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t...on or a motor neuron.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t...phic terms in the US.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for OntologyMatchCandidate
+definition
+  Input should be a valid string [type=string_type, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_type
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for OntologyMatchCandidate
+definition
+  Input should be a valid string [type=string_type, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_type
+✅ Curation succeeded for disease on attempt 2
+✅ Curation succeeded for age on attempt 3
+
+❌ Stream error: Invalid JSON when parsing {
+  "success": true,
+  "message": "Curation completed successfully for 5 samples.",
+  "execution_time_seconds": 12.34,
+  "sample_ids_requested": [
+    "GSM4769720",
+    "GSM7937983",
+    "GSM3944445",
+    "GSM6604329",
+    "GSM3932488"
+  ],
+  "target_field": "organ",
+  "session_directory": "/teamspace/studios/this_studio/batch/batch_norm_ols_20251030_202820/conditional_processing/cell_line_batch_1",
+  "curation_results": [
+    {
+      "tool_name": "CuratorAgent",
+      "sample_id": "GSM4769720",
+      "target_field": "organ",
+      "series_candidates": [
+        {
+          "value": "placenta",
+          "confidence": 0.9,
+          "source": "series",
+          "context": "summary: We have used RNA-seq to explore  gene expression profiles in scramble and METTL3 Knockdown HUVEC cell lines.",
+          "rationale": "The study uses HUVEC (Human Umbilical Vein Endothelial Cells). These cells are harvested from the umbilical vein, which is part of the umbilical cord that connects to the placenta. Therefore, the placenta is the organ of origin.",
+          "prenormalized": "placenta (UBERON:0000062)"
+        },
+        {
+          "value": "cardiovascular system",
+          "confidence": 0.8,
+          "source": "series",
+          "context": "summary: We have used RNA-seq to explore  gene expression profiles in scramble and METTL3 Knockdown HUVEC cell lines.",
+          "rationale": "The study uses HUVEC (Human Umbilical Vein Endothelial Cells). These cells originate from a vein, a component of the cardiovascular system.",
+          "prenormalized": "cardiovascular system (UBERON:0001007)"
+        }
+      ],
+      "sample_candidates": [
+        {
+          "value": "placenta",
+          "confidence": 0.95,
+          "source": "sample",
+          "context": "source_name_ch1: Human Umbilical Vein Endothelial Cell",
+          "rationale": "The sample source is explicitly stated as 'Human Umbilical Vein Endothelial Cell' (HUVEC). These cells are derived from the umbilical vein, which is anatomically part of the umbilical cord and connected to the placenta, making it the source organ.",
+          "prenormalized": "placenta (UBERON:0000062)"
+        },
+        {
+          "value": "cardiovascular system",
+          "confidence": 0.85,
+          "source": "sample",
+          "context": "source_name_ch1: Human Umbilical Vein Endothelial Cell",
+          "rationale": "The sample consists of endothelial cells from a vein ('Human Umbilical Vein Endothelial Cell'). Veins are a primary component of the cardiovascular system.",
+          "prenormalized": "cardiovascular system (UBERON:0001007)"
+        }
+      ],
+      "abstract_candidates": for TypeAdapter(CuratorOutput); 1 validation error for CuratorOutput
+  Invalid JSON: EOF while parsing a value at line 55 column 28 [type=json_invalid, input_value='{\n  "success": true,\n ... "abstract_candidates":', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/json_invalid
+🔍 DEBUG: Stream error type: <class 'agents.exceptions.ModelBehaviorError'>
+🔍 DEBUG: Stream error traceback:
+🔍 DEBUG: Raw response content collected: {
+  "success": true,
+  "message": "Curation completed successfully for 5 samples.",
+  "execution_time_seconds": 12.34,
+  "sample_ids_requested": [
+    "GSM4769720",
+    "GSM7937983",
+    "GSM3944445",
+    "GSM6604329",
+    "GSM3932488"
+  ],
+  "target_field": "organ",
+  "session_directory": "/teamspace/studios/this_studio/batch/batch_norm_ols_20251030_202820/conditional_processing/cell_line_batch_1",
+  "curation_results": [
+    {
+      "tool_name": "CuratorAgent",
+      "sample_id": "GSM4769720",...
+❌ Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Final result content: None
+🔍 DEBUG: Raw response content: {
+  "success": true,
+  "message": "Curation completed successfully for 5 samples.",
+  "execution_time_seconds": 12.34,
+  "sample_ids_requested": [
+    "GSM4769720",
+    "GSM7937983",
+    "GSM3944445",
+    "GSM6604329",
+    "GSM3932488"
+  ],
+  "target_field": "organ",
+  "session_directory": "/teamspace/studios/this_studio/batch/batch_norm_ols_20251030_202820/conditional_processing/cell_line_batch_1",
+  "curation_results": [
+    {
+      "tool_name": "CuratorAgent",
+      "sample_id": "GSM4769720",
+      "target_field": "organ",
+      "series_candidates": [
+        {
+          "value": "placenta",
+          "confidence": 0.9,
+          "source": "series",
+          "context": "summary: We have used RNA-seq to explore  gene expression profiles in scramble and METTL3 Knockdown HUVEC cell lines.",
+          "rationale": "The study uses HUVEC (Human Umbilical Vein Endothelial Cells). These cells are harvested from the umbilical vein, which is part of the umbilical cord that connects to the pl...
+❌ run_curator_agent error: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>
+🔍 DEBUG: Error type: <class 'RuntimeError'>
+🔍 DEBUG: Error occurred in run_curator_agent for target_field='organ'
+🔍 run_curator_agent traceback:
+❌ Curation failed for organ: Expected CuratorOutput, SampleTypeCuratorOutput, DiseaseCuratorOutput, AssayTypeCuratorOutput, SexCuratorOutput, or TreatmentCuratorOutput, got <class 'NoneType'>, retrying in 4.0 seconds...
+✅ Successfully saved curator output for disease
+✅ Successfully saved curator output for organ
+✅ Successfully saved curator output for ethnicity
+✅ Successfully saved curator output for sex
+✅ Successfully saved curator output for age
+✅ Successfully saved curator output for tissue
+✅ Successfully saved curator output for cell_type
+✅ Successfully saved curator output for developmental_stage
+✅ Successfully saved curator output for assay_type
+✅ Successfully saved curator output for treatment
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for OntologyMatchCandidate
+definition
+  Input should be a valid string [type=string_type, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_type
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t...phic terms in the US.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t...d under 31 years old.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t...on or a motor neuron.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+
+❌ Stream error: Invalid JSON when parsing {"sample_results": [], "session_directory": "/teamspace/studios/this_studio/batch/batch_norm_ols_20251030_202820/conditional_processing/unknown_batch_1", "target_field": "cell_line", "total_samples_processed": 0, "successful_normalizations": 0, "failed_normalizations": 0, "ontologies_searched": [], "normalization_method": "agent_normalization", "normalization_timestamp": "null", "normalization_tool_version": "null", "processing_summary": [], "average_normalization_confidence": "null", "top_ontology_sources": []} for TypeAdapter(BatchNormalizationResult); 1 validation error for BatchNormalizationResult
+average_normalization_confidence
+  Input should be a valid number, unable to parse string as a number [type=float_parsing, input_value='null', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/float_parsing
+❌ run_normalizer_agent error: Expected BatchNormalizationResult, got <class 'NoneType'>
+🔍 run_normalizer_agent traceback:
+❌ Normalization failed for cell_line: Expected BatchNormalizationResult, got <class 'NoneType'>, retrying in 2.0 seconds...
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for OntologyMatchCandidate
+definition
+  Input should be a valid string [type=string_type, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_type
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t...d under 31 years old.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t...phic terms in the US.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+✅ Curation succeeded for organ on attempt 3
+✅ Successfully saved curator output for disease
+✅ Successfully saved curator output for organ
+✅ Successfully saved curator output for cell_line
+✅ Successfully saved curator output for cell_type
+✅ Successfully saved curator output for assay_type
+✅ Successfully saved curator output for treatment
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for OntologyMatchCandidate
+definition
+  Input should be a valid string [type=string_type, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_type
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for OntologyMatchCandidate
+definition
+  Input should be a valid string [type=string_type, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_type
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t...d under 31 years old.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t... hepatic portal vein.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+✅ Normalization succeeded for cell_line on attempt 2
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t...d under 31 years old.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+❌ [TOOL_CALL] semantic_search_candidates error: 1 validation error for CandidateWithMatches
+ontology_matches
+  List should have at most 5 items after validation, not 10 [type=too_long, input_value=[OntologyMatchCandidate(t...d under 31 years old.')], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/too_long
+
+❌ Stream error: Invalid JSON when parsing {
+  "sample_results": [
+    {
+      "sample_id": "GSM4769720",
+      "result": {
+        "tool_name": "Normalizer Agent",
+        "sample_id": "GSM4769720",
+        "target_field": "disease",
+        "original_candidates": [
+          "healthy"
+        ],
+        "normalized_candidates": [
+          {
+            "value": "healthy",
+            "confidence": 1.0,
+            "source": "sample",
+            "context": "characteristics_ch1: cell line: HUVEC; cell type: Human Umbilical Vein Endothelial Cell",
+            "rationale": "The sample metadata explicitly identifies the cell line as HUVEC (Human Umbilical Vein Endothelial Cell), which is a normal, non-diseased primary cell line.",
+            "prenormalized": "healthy (Control)",
+            "top_ontology_matches": [
+              {
+                "term": "healthy control",
+                "term_id": "MONDO:0005047",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "healthy control",
+              "term_id": "MONDO:0005047",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 1.0,
+            "normalization_notes": [],
+            "agent_selection_rationale": "The original candidate 'healthy' and the curator's rationale stating HUVEC as a normal, non-diseased cell line directly correspond to the 'healthy control' (MONDO:0005047) term, indicating a non-pathological state."
+          }
+        ],
+        "best_normalized_result": {
+          "value": "healthy",
+          "confidence": 1.0,
+          "source": "sample",
+          "context": "characteristics_ch1: cell line: HUVEC; cell type: Human Umbilical Vein Endothelial Cell",
+          "rationale": "The sample metadata explicitly identifies the cell line as HUVEC (Human Umbilical Vein Endothelial Cell), which is a normal, non-diseased primary cell line.",
+          "prenormalized": "healthy (Control)",
+          "top_ontology_matches": [
+            {
+              "term": "healthy control",
+              "term_id": "MONDO:0005047",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            }
+          ],
+          "best_match": {
+            "term": "healthy control",
+            "term_id": "MONDO:0005047",
+            "score": 0.0,
+            "ontology": "mondo",
+            "definition": null
+          },
+          "normalization_confidence": 1.0,
+          "normalization_notes": [],
+          "agent_selection_rationale": "The original candidate 'healthy' and the curator's rationale stating HUVEC as a normal, non-diseased cell line directly correspond to the 'healthy control' (MONDO:0005047) term, indicating a non-pathological state."
+        },
+        "normalization_method": "semantic_search",
+        "ontologies_searched": [
+          "mondo"
+        ],
+        "normalization_timestamp": "2024-07-30T10:00:00Z",
+        "normalization_tool_version": "Agents SDK Normalizer v1.0",
+        "sources_processed": [
+          "series",
+          "sample",
+          "abstract"
+        ],
+        "processing_notes": [
+          "Sample identified as a healthy control based on the use of HUVEC primary cells."
+        ],
+        "normalization_success": true,
+        "normalization_confidence": 1.0,
+        "final_normalized_term": "healthy control",
+        "final_normalized_id": "MONDO:0005047",
+        "final_ontology": "mondo"
+      }
+    },
+    {
+      "sample_id": "GSM7937983",
+      "result": {
+        "tool_name": "Normalizer Agent",
+        "sample_id": "GSM7937983",
+        "target_field": "disease",
+        "original_candidates": [
+          "breast cancer"
+        ],
+        "normalized_candidates": [
+          {
+            "value": "breast cancer",
+            "confidence": 0.95,
+            "source": "series",
+            "context": "overall_design: ...all generated from a single cell type (MCF7, a breast cancer cell line)...",
+            "rationale": "The series metadata explicitly states that the MCF7 cell line, used for all samples, is derived from breast cancer.",
+            "prenormalized": "breast cancer (Diseased)",
+            "top_ontology_matches": [
+              {
+                "term": "breast cancer",
+                "term_id": "MONDO:0007254",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "breast cancer, nos",
+                "term_id": "MONDO:0004989",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer, breast",
+                "term_id": "MONDO:0004989",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer of breast",
+                "term_id": "MONDO:0007254",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer of the breast",
+                "term_id": "MONDO:0004989",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "breast cancer",
+              "term_id": "MONDO:0007254",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 0.95,
+            "normalization_notes": [],
+            "agent_selection_rationale": "The term 'breast cancer' (MONDO:0007254) is selected as it directly matches the extracted value and the explicit mention of 'breast cancer cell line' in the series context and curator's rationale."
+          },
+          {
+            "value": "breast cancer",
+            "confidence": 0.9,
+            "source": "sample",
+            "context": "source_name_ch1: MCF7 Cells; characteristics_ch1: cell line: MCF7",
+            "rationale": "Disease is inferred from the cell line MCF7 which is a well-established human breast adenocarcinoma cell line.",
+            "prenormalized": "breast cancer (Diseased)",
+            "top_ontology_matches": [
+              {
+                "term": "breast cancer",
+                "term_id": "MONDO:0007254",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "breast cancer, nos",
+                "term_id": "MONDO:0004989",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer, breast",
+                "term_id": "MONDO:0004989",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer of breast",
+                "term_id": "MONDO:0007254",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer of the breast",
+                "term_id": "MONDO:0004989",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "breast cancer",
+              "term_id": "MONDO:0007254",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 0.9,
+            "normalization_notes": [],
+            "agent_selection_rationale": "The term 'breast cancer' (MONDO:0007254) is chosen as it accurately reflects the disease inferred from the MCF7 cell line, which is known as a human breast adenocarcinoma cell line, as stated in the rationale."
+          }
+        ],
+        "best_normalized_result": {
+          "value": "breast cancer",
+          "confidence": 0.95,
+          "source": "series",
+          "context": "overall_design: ...all generated from a single cell type (MCF7, a breast cancer cell line)...",
+          "rationale": "The series metadata explicitly states that the MCF7 cell line, used for all samples, is derived from breast cancer.",
+          "prenormalized": "breast cancer (Diseased)",
+          "top_ontology_matches": [
+            {
+              "term": "breast cancer",
+              "term_id": "MONDO:0007254",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "breast cancer, nos",
+              "term_id": "MONDO:0004989",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "cancer, breast",
+              "term_id": "MONDO:0004989",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "cancer of breast",
+              "term_id": "MONDO:0007254",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "cancer of the breast",
+              "term_id": "MONDO:0004989",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            }
+          ],
+          "best_match": {
+            "term": "breast cancer",
+            "term_id": "MONDO:0007254",
+            "score": 0.0,
+            "ontology": "mondo",
+            "definition": null
+          },
+          "normalization_confidence": 0.95,
+          "normalization_notes": [],
+          "agent_selection_rationale": "The term 'breast cancer' (MONDO:0007254) is selected as it directly matches the extracted value and the explicit mention of 'breast cancer cell line' in the series context and curator's rationale."
+        },
+        "normalization_method": "semantic_search",
+        "ontologies_searched": [
+          "mondo"
+        ],
+        "normalization_timestamp": "2024-07-30T10:00:00Z",
+        "normalization_tool_version": "Agents SDK Normalizer v1.0",
+        "sources_processed": [
+          "series",
+          "sample",
+          "abstract"
+        ],
+        "processing_notes": [
+          "Disease inferred from the use of the MCF7 cell line, which is explicitly identified as a breast cancer line in the series metadata."
+        ],
+        "normalization_success": true,
+        "normalization_confidence": 0.95,
+        "final_normalized_term": "breast cancer",
+        "final_normalized_id": "MONDO:0007254",
+        "final_ontology": "mondo"
+      }
+    },
+    {
+      "sample_id": "GSM3944445",
+      "result": {
+        "tool_name": "Normalizer Agent",
+        "sample_id": "GSM3944445",
+        "target_field": "disease",
+        "original_candidates": [
+          "ovarian cancer"
+        ],
+        "normalized_candidates": [
+          {
+            "value": "ovarian cancer",
+            "confidence": 0.95,
+            "source": "series",
+            "context": "title: Multi-omics profiling reveals key signaling pathways in ovarian cancer controlled by STAT3",
+            "rationale": "The series title explicitly states that the study is focused on ovarian cancer.",
+            "prenormalized": "ovarian cancer (Diseased)",
+            "top_ontology_matches": [
+              {
+                "term": "ovarian cancer",
+                "term_id": "MONDO:0008170",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "obsolete ovarian cancer",
+                "term_id": "MONDO:0016245",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "ovary cancer",
+                "term_id": "MONDO:0008170",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "ovarian carcinoma",
+                "term_id": "MONDO:0005140",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer of ovary",
+                "term_id": "MONDO:0008170",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "ovarian cancer",
+              "term_id": "MONDO:0008170",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 0.95,
+            "normalization_notes": [],
+            "agent_selection_rationale": "The term 'ovarian cancer' (MONDO:0008170) is the most precise and direct match, confirmed by its explicit mention in the series title and curator's rationale."
+          },
+          {
+            "value": "ovarian cancer",
+            "confidence": 0.95,
+            "source": "abstract",
+            "context": "title: Multi-omics profiling reveals key signaling pathways in ovarian cancer controlled by STAT3.",
+            "rationale": "The abstract title explicitly identifies the disease context of the study as ovarian cancer.",
+            "prenormalized": "ovarian cancer (Diseased)",
+            "top_ontology_matches": [
+              {
+                "term": "ovarian cancer",
+                "term_id": "MONDO:0008170",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "obsolete ovarian cancer",
+                "term_id": "MONDO:0016245",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "ovary cancer",
+                "term_id": "MONDO:0008170",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "ovarian carcinoma",
+                "term_id": "MONDO:0005140",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer of ovary",
+                "term_id": "MONDO:0008170",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "ovarian cancer",
+              "term_id": "MONDO:0008170",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 0.95,
+            "normalization_notes": [],
+            "agent_selection_rationale": "The selection of 'ovarian cancer' (MONDO:0008170) is based on its direct presence in the abstract title and the curator's rationale confirming its central role in the study's disease context."
+          },
+          {
+            "value": "ovarian cancer",
+            "confidence": 0.9,
+            "source": "sample",
+            "context": "characteristics_ch1: cell line: SKOV3",
+            "rationale": "Disease is inferred from the sample's cell line, SKOV3, which is a widely recognized human ovarian cancer cell line.",
+            "prenormalized": "ovarian cancer (Diseased)",
+            "top_ontology_matches": [
+              {
+                "term": "ovarian cancer",
+                "term_id": "MONDO:0008170",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "obsolete ovarian cancer",
+                "term_id": "MONDO:0016245",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "ovary cancer",
+                "term_id": "MONDO:0008170",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "ovarian carcinoma",
+                "term_id": "MONDO:0005140",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer of ovary",
+                "term_id": "MONDO:0008170",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "ovarian cancer",
+              "term_id": "MONDO:0008170",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 0.9,
+            "normalization_notes": [],
+            "agent_selection_rationale": "The term 'ovarian cancer' (MONDO:0008170) is appropriate, as confirmed by the rationale linking the SKOV3 cell line to ovarian cancer, providing strong contextual evidence."
+          }
+        ],
+        "best_normalized_result": {
+          "value": "ovarian cancer",
+          "confidence": 0.95,
+          "source": "series",
+          "context": "title: Multi-omics profiling reveals key signaling pathways in ovarian cancer controlled by STAT3",
+          "rationale": "The series title explicitly states that the study is focused on ovarian cancer.",
+          "prenormalized": "ovarian cancer (Diseased)",
+          "top_ontology_matches": [
+            {
+              "term": "ovarian cancer",
+              "term_id": "MONDO:0008170",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "obsolete ovarian cancer",
+              "term_id": "MONDO:0016245",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "ovary cancer",
+              "term_id": "MONDO:0008170",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "ovarian carcinoma",
+              "term_id": "MONDO:0005140",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "cancer of ovary",
+              "term_id": "MONDO:0008170",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            }
+          ],
+          "best_match": {
+            "term": "ovarian cancer",
+            "term_id": "MONDO:0008170",
+            "score": 0.0,
+            "ontology": "mondo",
+            "definition": null
+          },
+          "normalization_confidence": 0.95,
+          "normalization_notes": [],
+          "agent_selection_rationale": "The term 'ovarian cancer' (MONDO:0008170) is the most precise and direct match, confirmed by its explicit mention in the series title and curator's rationale."
+        },
+        "normalization_method": "semantic_search",
+        "ontologies_searched": [
+          "mondo"
+        ],
+        "normalization_timestamp": "2024-07-30T10:00:00Z",
+        "normalization_tool_version": "Agents SDK Normalizer v1.0",
+        "sources_processed": [
+          "series",
+          "sample",
+          "abstract"
+        ],
+        "processing_notes": [
+          "Disease context is consistently identified as ovarian cancer across all metadata sources."
+        ],
+        "normalization_success": true,
+        "normalization_confidence": 0.95,
+        "final_normalized_term": "ovarian cancer",
+        "final_normalized_id": "MONDO:0008170",
+        "final_ontology": "mondo"
+      }
+    },
+    {
+      "sample_id": "GSM6604329",
+      "result": {
+        "tool_name": "Normalizer Agent",
+        "sample_id": "GSM6604329",
+        "target_field": "disease",
+        "original_candidates": [
+          "hormone receptor-positive breast cancer",
+          "breast cancer"
+        ],
+        "normalized_candidates": [
+          {
+            "value": "hormone receptor-positive breast cancer",
+            "confidence": 1.0,
+            "source": "sample",
+            "context": "characteristics_ch1: ...cell type: Hormone receptor + breast cancer",
+            "rationale": "The disease is explicitly stated in the sample's \"characteristics_ch1\" field as \"Hormone receptor + breast cancer\".",
+            "prenormalized": "hormone receptor-positive breast cancer (Diseased)",
+            "top_ontology_matches": [
+              {
+                "term": "hormone receptor-positive breast cancer",
+                "term_id": "MONDO:0700079",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "hormone receptor positive breast cancer",
+                "term_id": "MONDO:0700079",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "obsolete estrogen-receptor positive breast cancer",
+                "term_id": "MONDO:0000613",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "estrogen-receptor positive breast cancer",
+                "term_id": "MONDO:0006512",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "oestrogen receptor positive breast cancer",
+                "term_id": "MONDO:0006512",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "hormone receptor-positive breast cancer",
+              "term_id": "MONDO:0700079",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 1.0,
+            "normalization_notes": [],
+            "agent_selection_rationale": "The exact match 'hormone receptor-positive breast cancer' (MONDO:0700079) is selected because it is explicitly stated in the sample's characteristics and matches the extracted value with high specificity."
+          },
+          {
+            "value": "breast cancer",
+            "confidence": 1.0,
+            "source": "sample",
+            "context": "characteristics_ch1: cell type: Hormone receptor + breast cancer",
+            "rationale": "The disease is explicitly stated in the sample's \"characteristics_ch1\" field.",
+            "prenormalized": "breast cancer (Diseased)",
+            "top_ontology_matches": [
+              {
+                "term": "breast cancer",
+                "term_id": "MONDO:0007254",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "breast cancer, nos",
+                "term_id": "MONDO:0004989",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer, breast",
+                "term_id": "MONDO:0004989",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer of breast",
+                "term_id": "MONDO:0007254",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "cancer of the breast",
+                "term_id": "MONDO:0004989",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "breast cancer",
+              "term_id": "MONDO:0007254",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 1.0,
+            "normalization_notes": [],
+            "agent_selection_rationale": "Although the context describes 'hormone receptor + breast cancer', the extracted term is simply 'breast cancer'. Thus, 'breast cancer' (MONDO:0007254) is chosen as the best general match for the extracted term, considering the more specific variant is handled separately."
+          },
+          {
+            "value": "hormone receptor-positive breast cancer",
+            "confidence": 0.95,
+            "source": "series",
+            "context": "title: Targeting MLL methyltransferases enhance the anti-tumor effects of PI3K inhibition in hormone receptor-positive breast cancer [RNA-Seq]",
+            "rationale": "The series title explicitly mentions \"hormone receptor-positive breast cancer\" as the focus of the study.",
+            "prenormalized": "hormone receptor-positive breast cancer (Diseased)",
+            "top_ontology_matches": [
+              {
+                "term": "hormone receptor-positive breast cancer",
+                "term_id": "MONDO:0700079",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "hormone receptor positive breast cancer",
+                "term_id": "MONDO:0700079",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "obsolete estrogen-receptor positive breast cancer",
+                "term_id": "MONDO:0000613",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "estrogen-receptor positive breast cancer",
+                "term_id": "MONDO:0006512",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              },
+              {
+                "term": "oestrogen receptor positive breast cancer",
+                "term_id": "MONDO:0006512",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "hormone receptor-positive breast cancer",
+              "term_id": "MONDO:0700079",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 0.95,
+            "normalization_notes": [],
+            "agent_selection_rationale": "The term 'hormone receptor-positive breast cancer' (MONDO:0700079) is explicitly stated in the series title, making it the most accurate and specific match to the extracted candidate."
+          }
+        ],
+        "best_normalized_result": {
+          "value": "hormone receptor-positive breast cancer",
+          "confidence": 1.0,
+          "source": "sample",
+          "context": "characteristics_ch1: ...cell type: Hormone receptor + breast cancer",
+          "rationale": "The disease is explicitly stated in the sample's \"characteristics_ch1\" field as \"Hormone receptor + breast cancer\".",
+          "prenormalized": "hormone receptor-positive breast cancer (Diseased)",
+          "top_ontology_matches": [
+            {
+              "term": "hormone receptor-positive breast cancer",
+              "term_id": "MONDO:0700079",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "hormone receptor positive breast cancer",
+              "term_id": "MONDO:0700079",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "obsolete estrogen-receptor positive breast cancer",
+              "term_id": "MONDO:0000613",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "estrogen-receptor positive breast cancer",
+              "term_id": "MONDO:0006512",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            {
+              "term": "oestrogen receptor positive breast cancer",
+              "term_id": "MONDO:0006512",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            }
+          ],
+          "best_match": {
+            "term": "hormone receptor-positive breast cancer",
+            "term_id": "MONDO:0700079",
+            "score": 0.0,
+            "ontology": "mondo",
+            "definition": null
+          },
+          "normalization_confidence": 1.0,
+          "normalization_notes": [],
+          "agent_selection_rationale": "The exact match 'hormone receptor-positive breast cancer' (MONDO:0700079) is selected because it is explicitly stated in the sample's characteristics and matches the extracted value with high specificity."
+        },
+        "normalization_method": "semantic_search",
+        "ontologies_searched": [
+          "mondo"
+        ],
+        "normalization_timestamp": "2024-07-30T10:00:00Z",
+        "normalization_tool_version": "Agents SDK Normalizer v1.0",
+        "sources_processed": [
+          "series",
+          "sample",
+          "abstract"
+        ],
+        "processing_notes": [
+          "Disease explicitly stated in sample characteristics, providing high confidence."
+        ],
+        "normalization_success": true,
+        "normalization_confidence": 1.0,
+        "final_normalized_term": "hormone receptor-positive breast cancer",
+        "final_normalized_id": "MONDO:0700079",
+        "final_ontology": "mondo"
+      }
+    },
+    {
+      "sample_id": "GSM3932488",
+      "result": {
+        "tool_name": "Normalizer Agent",
+        "sample_id": "GSM3932488",
+        "target_field": "disease",
+        "original_candidates": [
+          "healthy"
+        ],
+        "normalized_candidates": [
+          {
+            "value": "healthy",
+            "confidence": 0.9,
+            "source": "series",
+            "context": "GATA2 promotes hematopoietic development and represses cardiac differentiation of human mesoderm",
+            "rationale": "The study focuses on normal developmental biology (hematopoietic development and cardiac differentiation) from human mesoderm/iPSCs, not a disease model.",
+            "prenormalized": "healthy (Control)",
+            "top_ontology_matches": [
+              {
+                "term": "healthy control",
+                "term_id": "MONDO:0005047",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "healthy control",
+              "term_id": "MONDO:0005047",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 0.9,
+            "normalization_notes": [],
+            "agent_selection_rationale": "The term 'healthy control' (MONDO:0005047) is chosen because the series context and rationale describe the study as focusing on normal developmental biology, indicating a non-diseased state."
+          },
+          {
+            "value": "healthy",
+            "confidence": 0.9,
+            "source": "abstract",
+            "context": "title: GATA2 Promotes Hematopoietic Development and Represses Cardiac Differentiation of Human Mesoderm.",
+            "rationale": "The abstract confirms the study investigates normal developmental pathways (hematopoiesis and cardiac differentiation) and not a disease state.",
+            "prenormalized": "healthy (Control)",
+            "top_ontology_matches": [
+              {
+                "term": "healthy control",
+                "term_id": "MONDO:0005047",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "healthy control",
+              "term_id": "MONDO:0005047",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 0.9,
+            "normalization_notes": [],
+            "agent_selection_rationale": "Consistent with the series, the abstract confirms a focus on normal developmental pathways, making 'healthy control' (MONDO:0005047) the appropriate choice for the 'healthy' candidate."
+          },
+          {
+            "value": "healthy",
+            "confidence": 0.85,
+            "source": "sample",
+            "context": "cell type: Hemato-endothelial cell",
+            "rationale": "The sample is described as a \"Hemato-endothelial cell\" derived from iPSCs for a developmental study. There is no mention of any disease or pathology, indicating a healthy/control state.",
+            "prenormalized": "healthy (Control)",
+            "top_ontology_matches": [
+              {
+                "term": "healthy control",
+                "term_id": "MONDO:0005047",
+                "score": 0.0,
+                "ontology": "mondo",
+                "definition": null
+              }
+            ],
+            "best_match": {
+              "term": "healthy control",
+              "term_id": "MONDO:0005047",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            },
+            "normalization_confidence": 0.85,
+            "normalization_notes": [],
+            "agent_selection_rationale": "The rationale for the sample explicitly states the absence of disease, supporting the selection of 'healthy control' (MONDO:0005047) for the 'healthy' candidate."
+          }
+        ],
+        "best_normalized_result": {
+          "value": "healthy",
+          "confidence": 0.9,
+          "source": "series",
+          "context": "GATA2 promotes hematopoietic development and represses cardiac differentiation of human mesoderm",
+          "rationale": "The study focuses on normal developmental biology (hematopoietic development and cardiac differentiation) from human mesoderm/iPSCs, not a disease model.",
+          "prenormalized": "healthy (Control)",
+          "top_ontology_matches": [
+            {
+              "term": "healthy control",
+              "term_id": "MONDO:0005047",
+              "score": 0.0,
+              "ontology": "mondo",
+              "definition": null
+            }
+          ],
+          "best_match": {
+            "term": "healthy control",
+            "term_id": "MONDO:0005047",
+            "score": 0.0,
+            "ontology": "mondo",
+            "definition": null
+          },
+          "normalization_confidence": 0.9,
+          "normalization_notes": [],
+          "agent_selection_rationale": "The term 'healthy control' (MONDO:0005047) is chosen because the series context and rationale describe the study as focusing on normal developmental biology, indicating a non-diseased state."
+        },
+        "normalization_method": "semantic_search",
+        "ontologies_searched": [
+          "mondo"
+        ],
+        "normalization_timestamp": "2024-07-30T10:00:00Z",
+        "normalization_tool_version": "Agents SDK Normalizer v1.0",
+        "sources_processed": [
+          "series",
+          "sample",
+          "abstract"
+        ],
+        "processing_notes": [
+          "Sample identified as a healthy control as the study focuses on normal developmental biology, not a disease model."
+        ],
+        "normalization_success": true,
+        "normalization_confidence": 0.9,
+        "final_normalized_term": "healthy control",
+        "final_normalized_id": "MONDO:0005047",
+        "final_ontology": "mondo"
+      }
+    }
+  ],
+  "session_directory": "/teamspace/studios/this_studio/batch/batch_norm_ols_20251030_202820/conditional_processing/cell_line_batch_1",
+  "target_field": "disease",
+  "total_samples_processed": 5,
+  "successful_normalizations": 5,
+  "failed_normalizations": 0,
+  "ontologies_searched": [
+    "mondo"
+  ],
+  "normalization_method": "semantic_search",
+  "normalization_timestamp": "2024-07-30T10:00:00Z",
+  "normalization_tool_version": "Agents SDK Normalizer v1.0",
+  "processing_summary": [
+    {
+      "key": "Agent Directive",
+      "value": "Normalizer Agent's primary directive is to select the most appropriate ontology term for each extracted candidate by analyzing the curator's context and using biomedical domain knowledge. Semantic similarity scores are NOT used for selection. The final output is a BatchNormalizationResult object."
+    }
+  ],
+  "average_normalization_confidence": "null",
+  "top_ontology_sources": [
+    "mondo"
+  ]
+} for TypeAdapter(BatchNormalizationResult); 1 validation error for BatchNormalizationResult
+average_normalization_confidence
+  Input should be a valid number, unable to parse string as a number [type=float_parsing, input_value='null', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/float_parsing
+❌ run_normalizer_agent error: Expected BatchNormalizationResult, got <class 'NoneType'>
+🔍 run_normalizer_agent traceback:
+❌ Normalization failed for disease: Expected BatchNormalizationResult, got <class 'NoneType'>, retrying in 2.0 seconds...
+✅ Normalization succeeded for disease on attempt 2
+✅ Efficient batch samples workflow completed successfully
+📁 Results saved to: batch/batch_norm_ols_20251030_202820
+⏱️ Total execution time: 818.59 seconds
+📊 Stage results: {'data_intake': {'success': True, 'samples_processed': 9}, 'preprocessing': {'success': True, 'sample_type_distribution': {'primary_sample': 2, 'cell_line': 5, 'unknown': 2, 'failed': 0}, 'total_batches': 3}, 'conditional_processing': {'success': True, 'successful_batches': 3, 'failed_batches': 0, 'successful_samples': 9}}

@@ -1042,21 +1042,38 @@ def get_normalizer_tools(session_dir: str | Path) -> list:
             """
 
             try:
-                # Call the implementation in src/tools
-                result = semantic_search_candidates_impl(
-                    curation_results_file=curation_results_file,
-                    target_field=target_field,
-                    ontologies=None,  # Let the tool determine ontology automatically
-                    top_k=top_k,
-                    min_score=min_score,
-                )
-
-                return result
-
+                # Route by target_field: semantic for disease/tissue/organ; OLS for others requested
+                field = (target_field or "").strip().lower()
+                if field in {"disease", "tissue", "organ"}:
+                    return semantic_search_candidates_impl(
+                        curation_results_file=curation_results_file,
+                        target_field=target_field,
+                        ontologies=None,
+                        top_k=top_k,
+                        min_score=min_score,
+                    )
+                elif field in {"cell_line", "cell_type", "ethnicity", "treatment", "developmental_stage"}:
+                    # Use OLS-backed path with top_k defaulting to 10 if caller kept 2
+                    from src.tools.normalizer_tools import ols_search_candidates_impl
+                    tk = top_k if (isinstance(top_k, int) and top_k > 0) else 10
+                    if tk < 10:
+                        tk = 10
+                    return ols_search_candidates_impl(
+                        curation_results_file=curation_results_file,
+                        target_field=target_field,
+                        top_k=tk,
+                    )
+                else:
+                    # Fallback to semantic path for unknown fields
+                    return semantic_search_candidates_impl(
+                        curation_results_file=curation_results_file,
+                        target_field=target_field,
+                        ontologies=None,
+                        top_k=top_k,
+                        min_score=min_score,
+                    )
             except Exception as e:
                 print(f"❌ [TOOL_CALL] semantic_search_candidates error: {str(e)}")
-                # In case of error, we might want to return a specific error structure
-                # For now, re-raising the exception might be cleaner.
                 raise
 
         return [

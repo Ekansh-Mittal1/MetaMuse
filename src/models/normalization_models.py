@@ -38,7 +38,7 @@ class OntologyMatchCandidate(BaseModel):
 
 
 class CandidateWithMatches(BaseModel):
-    """Original candidate with top 5 ontology matches for LLM selection."""
+    """Original candidate with top 10 ontology matches for LLM selection."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -54,9 +54,9 @@ class CandidateWithMatches(BaseModel):
         ..., description="Original ontology-normalized term with ID"
     )
 
-    # Top 5 matches (no scores)
+    # Top matches (no scores)
     ontology_matches: List[OntologyMatchCandidate] = Field(
-        default_factory=list, max_length=5, description="Top 5 ontology matches"
+        default_factory=list, max_length=10, description="Top 10 ontology matches"
     )
 
 
@@ -101,9 +101,9 @@ class NormalizedCandidate(BaseModel):
         ..., description="Original ontology-normalized term with ID"
     )
 
-    # Normalization results - top 5 matches only
+    # Normalization results - top matches
     top_ontology_matches: List[OntologyMatch] = Field(
-        default_factory=list, description="Top 5 ranked ontology matches"
+        default_factory=list, description="Top 10 ranked ontology matches"
     )
 
     # Legacy field for backward compatibility

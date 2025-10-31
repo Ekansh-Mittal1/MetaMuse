@@ -10,6 +10,7 @@ import sys
 import os
 import json
 import glob
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -38,6 +39,79 @@ class NormalizationError(Exception):
     """Custom exception for normalization errors."""
 
     pass
+
+
+#############################################
+# OLS-backed normalization (helpers)
+#############################################
+
+try:
+    from ols_map import map_query_to_term  # type: ignore
+except Exception:
+    map_query_to_term = None
+
+
+def _get_ols_ontologies_for_field(target_field: str) -> List[str]:
+    field = (target_field or "").strip().lower()
+    if field == "cell_line":
+        return ["CLO"]
+    if field == "cell_type":
+        return ["CL"]
+    if field == "ethnicity":
+        return ["HANCESTRO"]
+    if field == "treatment":
+        return ["CHEBI", "DRON"]
+    if field == "developmental_stage":
+        return ["HSAPDV"]
+    return []
+
+
+def _ols_map_value_to_candidates(value: str, ontologies: List[str], top_k: int = 10) -> List[OntologyMatchCandidate]:
+    candidates: List[OntologyMatchCandidate] = []
+    if not (value and ontologies and map_query_to_term):
+        return candidates
+
+    combined: List[dict] = []
+    for ont in ontologies:
+        try:
+            ols_call_start = time.time()
+            hits = map_query_to_term(query=value, ontology=ont, rows=25, top_k=top_k, debug=False) or []
+            ols_call_end = time.time()
+            print(f"⏱️  DEBUG: OLS call for value '{value}' in ontology '{ont}' took {ols_call_end - ols_call_start:.3f} seconds (returned {len(hits)} hits)")
+            for h in hits:
+                term = (h.get("label") or "").strip()
+                term_id = (h.get("obo_id") or h.get("short_form") or h.get("iri") or "").strip()
+                ontology_upper = (h.get("ontology") or ont).upper()
+                definition = h.get("description")
+                # Ensure definition is a simple string or None
+                if isinstance(definition, list):
+                    definition = definition[0] if definition else None
+                if definition is not None and not isinstance(definition, str):
+                    definition = None
+                combined.append({
+                    "term": term,
+                    "term_id": term_id,
+                    "ontology": ontology_upper,
+                    "definition": definition,
+                })
+        except Exception:
+            continue
+
+    # Deduplicate by (term, term_id)
+    seen = set()
+    deduped: List[OntologyMatchCandidate] = []
+    for m in combined:
+        key = (m.get("term"), m.get("term_id"))
+        if not key[0] or not key[1]:
+            continue
+        if key not in seen:
+            seen.add(key)
+            deduped.append(OntologyMatchCandidate(
+                term=m["term"], term_id=m["term_id"], ontology=m["ontology"], definition=m.get("definition")
+            ))
+
+    # Cap to 10 to align with schema
+    return deduped[:10]
 
 
 def get_default_ontologies_for_field(target_field: str) -> List[str]:
@@ -405,14 +479,25 @@ def semantic_search_ontology(
     dict_path = available_ontologies[ontology]["path"]
 
     try:
+        search_start_time = time.time()
+        print(f"⏱️  DEBUG: Starting semantic_search_ontology for query '{query}' in ontology '{ontology}'")
+        
         # Initialize semantic search
         semantic_search = OntologySemanticSearch(dict_path)
 
         # Load or build index
+        index_load_start = time.time()
         semantic_search.load_index()
+        index_load_end = time.time()
+        print(f"⏱️  DEBUG: Index load for ontology '{ontology}' took {index_load_end - index_load_start:.3f} seconds")
 
         # Perform search
+        search_exec_start = time.time()
         results = semantic_search.search(query, k=top_k)
+        search_exec_end = time.time()
+        search_total_end = time.time()
+        print(f"⏱️  DEBUG: Semantic search execution for '{query}' in '{ontology}' took {search_exec_end - search_exec_start:.3f} seconds (found {len(results)} results)")
+        print(f"⏱️  DEBUG: Total semantic_search_ontology for '{query}' in '{ontology}' took {search_total_end - search_start_time:.3f} seconds")
 
         # Convert to OntologyMatch objects
         matches = []
@@ -611,16 +696,23 @@ def semantic_search_candidates_impl(
                     continue
                 
                 # Perform semantic search and collect matches
+                candidate_search_start = time.time()
+                print(f"⏱️  DEBUG: Starting semantic search for candidate '{candidate.value}' (sample_id: {curation_result.sample_id}, field: {target_field})")
                 all_matches = []
                 for ontology in ontologies:
+                    ontology_search_start = time.time()
                     searcher = OntologySemanticSearch(
                         f"src/normalization/dictionaries/{ontology}_terms.json"
                     )
                     searcher.load_index()
                     matches = searcher.search(candidate.value, k=top_k)
+                    ontology_search_end = time.time()
+                    print(f"⏱️  DEBUG: Semantic search for '{candidate.value}' in ontology '{ontology}' took {ontology_search_end - ontology_search_start:.3f} seconds (found {len(matches)} matches)")
                     for term, term_id, score in matches:
                         if score >= min_score:
                             all_matches.append((term, term_id, ontology, score))
+                candidate_search_end = time.time()
+                print(f"⏱️  DEBUG: Candidate '{candidate.value}' semantic search completed in {candidate_search_end - candidate_search_start:.3f} seconds (total matches: {len(all_matches)})")
                 
                 # Sort by score and take top 5
                 all_matches.sort(key=lambda x: x[3], reverse=True)
@@ -1049,18 +1141,24 @@ def normalize_candidate_value(
             field_key, ["mondo", "efo"]
         )  # Default fallback
 
+    normalize_start_time = time.time()
+    print(f"⏱️  DEBUG: Starting normalize_candidate_value for '{candidate.value}' (field: {target_field})")
+    
     all_matches = []
     normalization_notes = []
 
     # Search each ontology
     for ontology in ontologies:
         try:
+            ontology_search_start = time.time()
             matches = semantic_search_ontology(
                 query=candidate.value,
                 ontology=ontology,
                 top_k=top_k,
                 min_score=min_score,
             )
+            ontology_search_end = time.time()
+            print(f"⏱️  DEBUG: Ontology '{ontology}' search for '{candidate.value}' took {ontology_search_end - ontology_search_start:.3f} seconds (found {len(matches)} matches)")
             all_matches.extend(matches)
 
             if matches:
@@ -1095,6 +1193,9 @@ def normalize_candidate_value(
         normalization_confidence=normalization_confidence,
         normalization_notes=normalization_notes,
     )
+
+    normalize_end_time = time.time()
+    print(f"⏱️  DEBUG: normalize_candidate_value for '{candidate.value}' completed in {normalize_end_time - normalize_start_time:.3f} seconds (found {len(top_5_matches)} total matches)")
 
     return normalized_candidate
 
@@ -1300,6 +1401,93 @@ def normalize_candidates_file(
 
     return normalization_result
 
+
+# =============================
+# OLS candidates (router target)
+# =============================
+def ols_search_candidates_impl(
+    curation_results_file: str,
+    target_field: str = "cell_type",
+    top_k: int = 10,
+) -> List[ToolNormalizationOutput]:
+    """Build ToolNormalizationOutput using OLS for specified non-semantic fields.
+
+    Reads curator results file (list or dict with curation_results) and builds
+    ontology match candidates via OLS for each sample's curated value(s).
+    """
+    try:
+        with open(curation_results_file, "r") as f:
+            curation_results_data = json.load(f)
+    except Exception as e:
+        print(f"❌ ols_search_candidates_impl: failed to read {curation_results_file}: {e}")
+        return []
+
+    if isinstance(curation_results_data, dict) and "curation_results" in curation_results_data:
+        curation_results_data = curation_results_data["curation_results"]
+
+    outputs: List[ToolNormalizationOutput] = []
+    ont_list = _get_ols_ontologies_for_field(target_field)
+
+    for rec in curation_results_data or []:
+        if not isinstance(rec, dict):
+            continue
+        sample_id = rec.get("sample_id") or ""
+        if not sample_id:
+            continue
+
+        # Extract curated values in priority order
+        values: List[str] = []
+        if target_field.lower() == "treatment" and rec.get("treatment_name"):
+            values.append(str(rec.get("treatment_name")))
+        elif target_field.lower() == "disease" and rec.get("disease_name"):
+            values.append(str(rec.get("disease_name")))
+        elif rec.get("final_candidate"):
+            values.append(str(rec.get("final_candidate")))
+        elif rec.get("final_candidates") and isinstance(rec.get("final_candidates"), list):
+            first = rec.get("final_candidates")[0]
+            if isinstance(first, dict) and first.get("value"):
+                values.append(str(first.get("value")))
+
+        if not values:
+            for key in ("final_candidates", "series_candidates", "sample_candidates", "abstract_candidates"):
+                arr = rec.get(key)
+                if isinstance(arr, list):
+                    for c in arr:
+                        if isinstance(c, dict) and c.get("value"):
+                            values.append(str(c.get("value")))
+                    if values:
+                        break
+
+        candidates_with_matches: List[CandidateWithMatches] = []
+        originals: List[str] = []
+        for val in values[:3]:
+            value_normalization_start = time.time()
+            print(f"⏱️  DEBUG: Starting normalization for value '{val}' (sample_id: {sample_id}, field: {target_field})")
+            originals.append(val)
+            matches = _ols_map_value_to_candidates(val, ontologies=ont_list, top_k=top_k)
+            value_normalization_end = time.time()
+            print(f"⏱️  DEBUG: Value '{val}' normalization completed in {value_normalization_end - value_normalization_start:.3f} seconds (found {len(matches)} matches)")
+            candidates_with_matches.append(CandidateWithMatches(
+                value=val,
+                confidence=rec.get("confidence", 1.0) if isinstance(rec.get("confidence"), (int, float)) else 1.0,
+                source="curator",
+                context="",
+                rationale="",
+                prenormalized=val,
+                ontology_matches=matches,
+            ))
+
+        outputs.append(ToolNormalizationOutput(
+            sample_id=sample_id,
+            target_field=target_field,
+            candidates_with_matches=candidates_with_matches,
+            ontologies_searched=ont_list,
+            original_candidates=originals,
+            sources_processed=[],
+            processing_notes=[],
+        ))
+
+    return outputs
 
 # Example usage and testing
 if __name__ == "__main__":
