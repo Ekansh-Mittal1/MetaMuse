@@ -180,6 +180,11 @@ def create_normalizer_agent(
                     except ValueError:
                         pass
 
+        # Normalize target_field case to ensure consistency (capitalize first letter)
+        # This prevents issues with mixed case (e.g., "disease" vs "Disease")
+        if target_field:
+            target_field = target_field.capitalize()
+
         # Load the base instructions for normalization
         base_instructions = load_prompt(
             "normalizer_agent.md", session_dir=str(session_dir)
@@ -304,9 +309,17 @@ async def run_normalizer_agent(
         )
         curation_results_data = []
         if curator_output.curation_results:
-            curation_results_data = [
-                result.model_dump() for result in curator_output.curation_results
-            ]
+            # Normalize target_field case to ensure consistency (capitalize first letter)
+            # This fixes issues where curator outputs mixed case (e.g., "disease" vs "Disease")
+            normalized_target_field = target_field.capitalize() if target_field else "Disease"
+            
+            curation_results_data = []
+            for result in curator_output.curation_results:
+                result_dict = result.model_dump()
+                # Normalize target_field case in each curation result
+                if "target_field" in result_dict:
+                    result_dict["target_field"] = normalized_target_field
+                curation_results_data.append(result_dict)
 
         with open(curator_results_file, "w") as f:
             json.dump(curation_results_data, f, indent=2)

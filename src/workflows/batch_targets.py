@@ -46,6 +46,7 @@ from src.tools.batch_processing_tools import (
     combine_target_field_results,
     save_batch_results,
     create_target_field_subdirectories,
+    convert_normalization_data_to_unified_format,
 )
 from pydantic import BaseModel
 from typing import Optional
@@ -898,9 +899,13 @@ async def run_batch_targets_workflow(
                 
                 # Time the actual normalization agent call
                 agent_start_time = time.time()
+                # Normalize target_field to ensure consistent capitalization
+                # This prevents issues where curator outputs mixed case (e.g., "disease" vs "Disease")
+                normalized_target_field = target_field.capitalize() if target_field else "Disease"
+                
                 normalizer_output = await run_normalizer_agent(
                     curator_output=curator_output,
-                    target_field=target_field,
+                    target_field=normalized_target_field,
                     session_id=session_id,
                     sandbox_dir=sandbox_dir,
                     model_provider=normalization_model_provider,
@@ -993,6 +998,10 @@ async def run_batch_targets_workflow(
         # Use unified normalization results
         all_normalization_results = unified_normalization_data
 
+        # Convert normalization data to unified format for CSV extraction compatibility
+        # Compute once to use for both sample-type-specific and unified outputs
+        unified_norm_format = convert_normalization_data_to_unified_format(all_normalization_results)
+
         # Create separate outputs for each sample type
         sample_type_outputs = {}
         
@@ -1009,10 +1018,26 @@ async def run_batch_targets_workflow(
                 curation_results=all_curation_results,
                 normalization_results=all_normalization_results,
             )
-
-            # Save batch results for this sample type
+            
+            # Save batch results for this sample type (with normalization_results added)
+            # Load existing file if it exists, otherwise create new structure
+            sample_type_output_path = Path(session_directory) / f"batch_targets_output_{sample_type}.json"
+            if sample_type_output_path.exists():
+                try:
+                    with open(sample_type_output_path, "r") as f:
+                        existing_data = json.load(f)
+                    # Merge normalization_results into existing data
+                    existing_data.update(unified_norm_format)
+                    sample_type_results_with_norm = existing_data
+                except Exception:
+                    # If loading fails, create new structure
+                    sample_type_results_with_norm = {**sample_type_results, **unified_norm_format}
+            else:
+                # Create new structure with both sample-based and normalization_results format
+                sample_type_results_with_norm = {**sample_type_results, **unified_norm_format}
+            
             sample_type_output_file = save_batch_results(
-                results=sample_type_results,
+                results=sample_type_results_with_norm,
                 session_directory=session_directory,
                 filename=f"batch_targets_output_{sample_type}.json"
             )
@@ -1030,10 +1055,26 @@ async def run_batch_targets_workflow(
             curation_results=all_curation_results,
             normalization_results=all_normalization_results,
         )
-
-        # Save unified batch results
+        
+        # Save unified batch results (with normalization_results added)
+        # unified_norm_format was computed above before the loop
+        unified_output_path = Path(session_directory) / "batch_targets_output_unified.json"
+        if unified_output_path.exists():
+            try:
+                with open(unified_output_path, "r") as f:
+                    existing_data = json.load(f)
+                # Merge normalization_results into existing data
+                existing_data.update(unified_norm_format)
+                unified_results_with_norm = existing_data
+            except Exception:
+                # If loading fails, create new structure
+                unified_results_with_norm = {**unified_results, **unified_norm_format}
+        else:
+            # Create new structure with both sample-based and normalization_results format
+            unified_results_with_norm = {**unified_results, **unified_norm_format}
+        
         unified_output_file = save_batch_results(
-            results=unified_results,
+            results=unified_results_with_norm,
             session_directory=session_directory,
             filename="batch_targets_output_unified.json"
         )
@@ -1564,9 +1605,11 @@ async def run_conditional_processing(
                             print(f"🔍 DEBUG: curation_results attribute exists but is: {curator_output.curation_results}")
                         continue
                     
-                    # Store results
+                    # Store results with composite key to avoid overwrites across sample types
+                    # Use "::" as delimiter since sample_type names can contain underscores
                     field_key = target_field.lower()
-                    all_sample_type_outputs[field_key] = curator_output
+                    composite_key = f"{sample_type}::{field_key}"
+                    all_sample_type_outputs[composite_key] = curator_output
                     
                     # Save curator output with robust error handling
                     curator_output_path = Path(conditional_field_subdirs[target_field]) / f"curator_output_{sample_type}.json"
@@ -1658,13 +1701,10 @@ async def run_unified_normalization(
     """
     
     start_time = time.time()
-    print(f"⏱️  DEBUG: run_unified_normalization started at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
     
     try:
         if not initial_result.success or not conditional_result.success:
             print("❌ Cannot run normalization: Initial or conditional processing failed")
-            end_time = time.time()
-            print(f"⏱️  DEBUG: run_unified_normalization completed (skipped) in {end_time - start_time:.2f} seconds")
             return {}
         
         
@@ -1675,9 +1715,29 @@ async def run_unified_normalization(
         # Note: initial_curator_outputs now only contains sample_type (not used for normalization)
         all_curator_outputs = {}
         
-        # Add conditional curator outputs directly (now they have simple field names)
-        for field, curator_output in conditional_result.all_sample_type_outputs.items():
-            all_curator_outputs[field] = curator_output
+        # Determine the current sample type being processed
+        # In eval mode, normalization runs separately per sample type, so we need to filter
+        # curator outputs to only include those from the current sample type
+        current_sample_type = None
+        if grouped_samples:
+            # Get the first (and typically only) sample type in grouped_samples
+            # In eval mode, each call processes one sample type at a time
+            current_sample_type = list(grouped_samples.keys())[0] if grouped_samples else None
+        
+        # Add conditional curator outputs directly (now with composite keys including sample type)
+        for composite_key, curator_output in conditional_result.all_sample_type_outputs.items():
+            # Extract field from composite key (e.g., "primary_sample::disease" -> "disease")
+            # Use "::" as delimiter since sample_type names can contain underscores
+            if "::" in composite_key:
+                parts = composite_key.split("::", 1)
+                if len(parts) == 2:
+                    sample_type_in_key, field = parts
+                    # In eval mode, only use curator outputs from the current sample type
+                    # This prevents using wrong curator outputs when multiple sample types exist
+                    if current_sample_type and sample_type_in_key != current_sample_type:
+                        continue
+                    # Store curator output for this field (only if it matches current sample type)
+                    all_curator_outputs[field] = curator_output
         
         # Determine fields to normalize based on which sample types we have
         fields_to_normalize = set()
@@ -1714,26 +1774,43 @@ async def run_unified_normalization(
         unified_normalization_data = {}
         
         if available_normalization_fields:
-            print(f"⏱️  DEBUG: Normalizing {len(available_normalization_fields)} fields: {available_normalization_fields}")
+            # Calculate total samples that need normalization
+            total_samples = len(initial_result.sample_ids)
+            total_normalizations = len(available_normalization_fields) * total_samples
+            
+            # Import tqdm for progress bar
+            from tqdm import tqdm
+            
+            # Create progress bar to track sample normalization
+            pbar = tqdm(
+                total=total_normalizations,
+                desc="Normalizing samples",
+                unit="sample",
+                leave=True
+            )
             
             async def run_single_normalization(target_field: str):
                 """Run normalization for a single target field with retry logic."""
+                import time
                 field_start_time = time.time()
-                print(f"⏱️  DEBUG: Starting normalization for field '{target_field}' at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(field_start_time))}")
+                print(f"🔄 Starting normalization for field: {target_field} (parallel execution)")
                 
                 # Create normalization-specific model provider
                 normalization_model_provider = create_model_provider_for_operation("normalization", model_provider)
                 
                 async def _run_normalization():
-                    agent_start_time = time.time()
                     field_key = target_field.lower()
                     curator_output = all_curator_outputs[field_key]
+                    
+                    # Normalize target_field to ensure consistent capitalization
+                    # This prevents issues where curator outputs mixed case (e.g., "disease" vs "Disease")
+                    normalized_target_field = target_field.capitalize() if target_field else "Disease"
                     
                     from src.agents.normalizer import run_normalizer_agent
                     
                     normalizer_output = await run_normalizer_agent(
                         curator_output=curator_output,
-                        target_field=target_field,
+                        target_field=normalized_target_field,
                         session_id=initial_result.session_id,
                         sandbox_dir=Path(session_directory).parent,
                         model_provider=normalization_model_provider,
@@ -1741,8 +1818,13 @@ async def run_unified_normalization(
                         max_turns=max_turns,
                         verbose_output=False,
                     )
-                    agent_end_time = time.time()
-                    print(f"⏱️  DEBUG: Field '{target_field}' agent call took {agent_end_time - agent_start_time:.2f} seconds")
+                    
+                    # Update progress bar when field normalization completes
+                    # Each field processes all samples, so increment by total_samples
+                    pbar.update(total_samples)
+                    elapsed = time.time() - field_start_time
+                    pbar.set_postfix_str(f"Field: {target_field} ({elapsed:.1f}s)")
+                    
                     return normalizer_output
                 
                 result = await retry_operation_with_backoff(
@@ -1752,30 +1834,30 @@ async def run_unified_normalization(
                     sample_ids=initial_result.sample_ids,
                     error_tracker=error_tracker
                 )
-                field_end_time = time.time()
-                print(f"⏱️  DEBUG: Field '{target_field}' normalization completed in {field_end_time - field_start_time:.2f} seconds")
+                
+                elapsed = time.time() - field_start_time
+                print(f"✅ Completed normalization for field: {target_field} ({elapsed:.1f}s)")
                 return result
             
             # Run normalization tasks in parallel
-            normalization_execution_start_time = time.time()
-            print(f"⏱️  DEBUG: Starting normalization execution for {len(available_normalization_fields)} fields")
             normalization_tasks = [run_single_normalization(field) for field in available_normalization_fields]
             
             if enable_parallel_execution:
-                print(f"⏱️  DEBUG: Running normalization in PARALLEL mode")
+                print(f"🚀 Running {len(normalization_tasks)} normalization tasks in PARALLEL")
                 normalization_results = await asyncio.gather(
                     *normalization_tasks, return_exceptions=True
                 )
+                print(f"✅ All {len(normalization_tasks)} normalization tasks completed")
             else:
-                print(f"⏱️  DEBUG: Running normalization in SEQUENTIAL mode")
+                print(f"⚠️  Running {len(normalization_tasks)} normalization tasks SEQUENTIALLY (parallel execution disabled)")
                 normalization_results = []
-                for task in normalization_tasks:
+                for i, task in enumerate(normalization_tasks):
                     result = await task
                     normalization_results.append(result)
+                    print(f"  Completed {i+1}/{len(normalization_tasks)} fields")
             
-            normalization_execution_end_time = time.time()
-            normalization_execution_duration = normalization_execution_end_time - normalization_execution_start_time
-            print(f"⏱️  DEBUG: Normalization execution completed in {normalization_execution_duration:.2f} seconds")
+            # Close progress bar
+            pbar.close()
             
             # Process normalization results
             for result in normalization_results:
@@ -1799,11 +1881,6 @@ async def run_unified_normalization(
             
         else:
             print("⚠️  No fields available for normalization")
-        
-        end_time = time.time()
-        total_duration = end_time - start_time
-        print(f"⏱️  DEBUG: run_unified_normalization completed in {total_duration:.2f} seconds")
-        print(f"⏱️  DEBUG: Normalized {len(unified_normalization_data)} fields successfully")
         
         return unified_normalization_data
     

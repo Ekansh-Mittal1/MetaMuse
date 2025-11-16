@@ -37,6 +37,7 @@ from src.workflows.batch_targets import (
     create_model_provider_for_operation,
     TARGET_FIELD_CONFIG
 )
+from src.tools.batch_processing_tools import convert_normalization_data_to_unified_format
 from src.models import LinkerOutput
 
 logger = logging.getLogger(__name__)
@@ -176,7 +177,7 @@ class ConditionalProcessingWorkflow:
             
             # Get sample type-specific configuration
             if sample_type not in TARGET_FIELD_CONFIG["conditional_processing"]:
-                logger.warning(f"⚠️ No configuration found for sample_type: {sample_type}")
+                print(f"⚠️ No configuration found for sample_type: {sample_type}")
                 return {
                     "success": False,
                     "error": f"No TARGET_FIELD_CONFIG found for sample_type: {sample_type}"
@@ -219,7 +220,7 @@ class ConditionalProcessingWorkflow:
             )
             
             if not conditional_result.success:
-                logger.error(f"❌ Conditional processing failed for {batch_name}: {conditional_result.message}")
+                print(f"❌ Conditional processing failed for {batch_name}: {conditional_result.message}")
                 return {
                     "success": False,
                     "batch_name": batch_name,
@@ -246,20 +247,37 @@ class ConditionalProcessingWorkflow:
                         conditional_result=conditional_result,
                         model_provider=normalization_model_provider,
                         max_tokens=self.max_tokens,
+                        enable_parallel_execution=True,  # Explicitly enable parallel normalization
                     )
                     
                     # Handle different result types
                     if hasattr(normalization_result, 'success'):
                         if not normalization_result.success:
-                            logger.warning(f"⚠️ Normalization failed for {batch_name}: {normalization_result.message}")
+                            print(f"⚠️ Normalization failed for {batch_name}: {normalization_result.message}")
                         
                         
                 except Exception as e:
-                    logger.warning(f"⚠️ Normalization failed for {batch_name} with exception: {str(e)}")
+                    print(f"⚠️ Normalization failed for {batch_name} with exception: {str(e)}")
                     normalization_result = None
             else:
-                logger.info(f"⏭️ No normalization fields to process for {batch_name}")
+                print(f"⏭️ No normalization fields to process for {batch_name}")
                 normalization_result = None
+            
+            # Convert normalization_result to unified format for CSV extraction compatibility
+            # normalization_result is already in format: {field_name: {sample_id: {normalized_term, term_id, ...}}}
+            unified_norm_format = {}
+            if normalization_result:
+                # Handle both dict and object types
+                if isinstance(normalization_result, dict):
+                    norm_data = normalization_result
+                elif hasattr(normalization_result, 'model_dump'):
+                    norm_data = normalization_result.model_dump()
+                else:
+                    norm_data = normalization_result
+                
+                # Convert to unified format if we have actual normalization data
+                if norm_data and isinstance(norm_data, dict) and len(norm_data) > 0:
+                    unified_norm_format = convert_normalization_data_to_unified_format(norm_data)
             
             # Save batch results
             batch_output = {
@@ -269,13 +287,16 @@ class ConditionalProcessingWorkflow:
                 "batch_samples": batch_samples,
                 "execution_time_seconds": time.time() - batch_start_time,
                 "conditional_result": conditional_result.model_dump() if hasattr(conditional_result, 'model_dump') else conditional_result,
-                "normalization_result": normalization_result.model_dump() if normalization_result and hasattr(normalization_result, 'model_dump') else normalization_result,
+                "normalization_result": normalization_result.model_dump() if normalization_result and hasattr(normalization_result, 'model_dump') else normalization_result,  # Keep for backward compatibility
                 "batch_directory": str(batch_dir),
                 "target_fields_processed": curation_fields,  # Use sample type-specific curation fields
                 "normalization_fields_processed": fields_to_normalize if fields_to_normalize else [],
                 "not_applicable_fields": not_applicable_fields,  # Track fields that are not applicable for this sample type
                 "timestamp": datetime.now().isoformat(),
             }
+            
+            # Add unified normalization format for CSV extraction
+            batch_output.update(unified_norm_format)
             
             # Save batch targets output
             batch_targets_file = batch_dir / "batch_targets_output.json"
@@ -286,7 +307,7 @@ class ConditionalProcessingWorkflow:
             return batch_output
             
         except Exception as e:
-            logger.error(f"❌ Batch {batch_name} failed with exception: {str(e)}")
+            print(f"❌ Batch {batch_name} failed with exception: {str(e)}")
             
             return {
                 "success": False,
@@ -336,7 +357,7 @@ class ConditionalProcessingWorkflow:
             batch_jobs = []  # (global_index, sample_type, batch_samples)
             for sample_type, batches in sample_type_batches.items():
                 if sample_type not in TARGET_FIELD_CONFIG["conditional_processing"]:
-                    logger.warning(f"⚠️ No configuration found for sample_type: {sample_type}. Skipping {len(batches)} batches.")
+                    print(f"⚠️ No configuration found for sample_type: {sample_type}. Skipping {len(batches)} batches.")
                     try:
                         pbar.update(len(batches))
                     except Exception:
@@ -431,17 +452,17 @@ class ConditionalProcessingWorkflow:
                 json.dump(output, f, indent=2)
             
             if output["success"]:
-                logger.info(f"✅ Conditional processing workflow completed successfully in {execution_time:.2f} seconds")
+                print(f"✅ Conditional processing workflow completed successfully in {execution_time:.2f} seconds")
             else:
-                logger.warning(f"⚠️ Conditional processing workflow completed with {failed_batches} failed batches in {execution_time:.2f} seconds")
+                print(f"⚠️ Conditional processing workflow completed with {failed_batches} failed batches in {execution_time:.2f} seconds")
             
-            logger.info(f"📊 Statistics: {output['statistics']}")
+            print(f"📊 Statistics: {output['statistics']}")
             
             return output
             
         except Exception as e:
             execution_time = time.time() - start_time
-            logger.error(f"❌ Conditional processing workflow failed: {str(e)}")
+            print(f"❌ Conditional processing workflow failed: {str(e)}")
             
             error_output = {
                 "success": False,

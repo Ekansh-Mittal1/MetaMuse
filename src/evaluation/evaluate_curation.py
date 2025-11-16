@@ -165,7 +165,7 @@ async def process_single_sample(
         logger = logging.getLogger("evaluator")
         
         try:
-            logger.info("Processing sample %s", sample_id)
+            print("Processing sample %s", sample_id)
             abstract_text, series_meta, sample_meta = load_raw_context(batch_dir, series_id, sample_id)
 
             curated_dict, normalized_dict = build_curated_and_normalized_dicts(row, target_fields)
@@ -218,7 +218,7 @@ async def process_single_sample(
                     break
                 except Exception as e:
                     last_exception = e
-                    logger.error("Failed sample %s (attempt %d): %s", sample_id, attempt, e)
+                    print("Failed sample %s (attempt %d): %s", sample_id, attempt, e)
                     if attempt < max_retries:
                         await asyncio.sleep(retry_backoff_seconds * attempt)
 
@@ -294,7 +294,7 @@ async def process_single_sample(
                 "traceback": _tb.format_exc(),
             }
             err_path.write_text(json.dumps(err_payload, indent=2), encoding="utf-8")
-            logger.error("Unhandled exception for %s; recorded in %s", sample_id, err_path)
+            print("Unhandled exception for %s; recorded in %s", sample_id, err_path)
             return None
 
 
@@ -365,13 +365,13 @@ async def main() -> None:
         reader = csv.DictReader(f)
         header = reader.fieldnames or []
         target_fields = extract_fields_from_header(header)
-        logger.info("Discovered target fields: %s", ", ".join(target_fields))
+        print("Discovered target fields: %s", ", ".join(target_fields))
         rows = list(reader)
 
     # Create semaphore for concurrency control
     semaphore = asyncio.Semaphore(args.max_workers)
     provider_order = [p.strip() for p in (args.provider_order or "").split(",") if p.strip()]
-    logger.info("Processing %d samples with max %d workers", len(rows), args.max_workers)
+    print("Processing %d samples with max %d workers", len(rows), args.max_workers)
 
     # Process all samples in parallel
     tasks = [
@@ -391,13 +391,13 @@ async def main() -> None:
         if isinstance(result, SampleEvaluation):
             sample_evaluations.append(result)
         elif isinstance(result, Exception):
-            logger.error("Task failed with exception: %s", result)
+            print("Task failed with exception: %s", result)
 
     # Aggregate and render chart
     curated_acc, norm_acc = compute_accuracy(sample_evaluations)
     chart_path = str(Path(output_dir) / "accuracy_barchart.png")
     render_accuracy_barchart(curated_acc, norm_acc, chart_path)
-    logger.info("Saved accuracy chart to %s", chart_path)
+    print("Saved accuracy chart to %s", chart_path)
 
     # Write summary JSON
     summary = {
@@ -409,7 +409,7 @@ async def main() -> None:
     Path(output_dir, "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )
-    logger.info("Saved summary.json with %d samples", len(sample_evaluations))
+    print("Saved summary.json with %d samples", len(sample_evaluations))
 
     # Generate errors report automatically
     generate_errors_report(sample_evaluations, output_dir)

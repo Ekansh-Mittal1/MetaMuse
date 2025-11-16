@@ -167,7 +167,7 @@ class PreprocessingWorkflow:
                             )
                             json.dump(payload, f, indent=2)
                     except Exception as save_err:
-                        logger.warning(f"Failed to save sample type curator output for batch {batch_num}: {save_err}")
+                        print(f"Failed to save sample type curator output for batch {batch_num}: {save_err}")
                     for sample_id in batch_samples:
                         sample_type = batch_sample_types.get(sample_id, "failed")
                         batch_cached[sample_id] = {
@@ -178,7 +178,7 @@ class PreprocessingWorkflow:
                             "initial_curator_outputs": {}
                         }
                 else:
-                    logger.error(f"❌ Discovery batch {batch_num} failed: {getattr(curator_result, 'message', 'unknown error')}")
+                    print(f"❌ Discovery batch {batch_num} failed: {getattr(curator_result, 'message', 'unknown error')}")
                     for sample_id in batch_samples:
                         batch_sample_types[sample_id] = "failed"
                         batch_cached[sample_id] = {
@@ -193,7 +193,7 @@ class PreprocessingWorkflow:
                     pass
                 return batch_sample_types, batch_cached
             except Exception as e:
-                logger.error(f"❌ Discovery batch {batch_num} failed with exception: {str(e)}")
+                print(f"❌ Discovery batch {batch_num} failed with exception: {str(e)}")
                 batch_sample_types = {sid: "failed" for sid in batch_samples}
                 batch_cached = {
                     sid: {
@@ -250,7 +250,7 @@ class PreprocessingWorkflow:
         # Report failed samples
         failed_samples = [sid for sid, stype in all_sample_type_mapping.items() if stype == "failed"]
         if failed_samples:
-            logger.warning(f"⚠️ {len(failed_samples)} samples failed sample type determination: {failed_samples}")
+            print(f"⚠️ {len(failed_samples)} samples failed sample type determination: {failed_samples}")
             
             # Save failed samples for reporting
             try:
@@ -261,7 +261,7 @@ class PreprocessingWorkflow:
                         "timestamp": datetime.now().isoformat()
                     }, f, indent=2)
             except Exception as e:
-                logger.error(f"Failed to save failed samples report: {e}")
+                print(f"Failed to save failed samples report: {e}")
         
         return all_sample_type_mapping
 
@@ -305,7 +305,7 @@ class PreprocessingWorkflow:
                 
             # Apply sample type filter if specified
             if self.sample_type_filter and sample_type != self.sample_type_filter:
-                logger.info(f"⏭️ Skipping {sample_type} samples due to filter (filter: {self.sample_type_filter})")
+                print(f"⏭️ Skipping {sample_type} samples due to filter (filter: {self.sample_type_filter})")
                 continue
                 
             type_batches = []
@@ -383,14 +383,14 @@ class PreprocessingWorkflow:
             with open(self.preprocessing_output_file, "w") as f:
                 json.dump(output, f, indent=2)
             
-            logger.info(f"✅ Preprocessing workflow completed in {execution_time:.2f} seconds")
-            logger.info(f"📊 Statistics: {output['statistics']}\n\n")
+            print(f"✅ Preprocessing workflow completed in {execution_time:.2f} seconds")
+            print(f"📊 Statistics: {output['statistics']}\n\n")
             
             return output
             
         except Exception as e:
             execution_time = time.time() - start_time
-            logger.error(f"❌ Preprocessing workflow failed: {str(e)}")
+            print(f"❌ Preprocessing workflow failed: {str(e)}")
             
             error_output = {
                 "success": False,
@@ -442,7 +442,7 @@ class PreprocessingWorkflow:
                         with open(self.series_sample_mapping_file, "w") as out:
                             json.dump(mapping_data, out, indent=2)
                     except Exception as e:
-                        logger.warning(f"Failed to filter series_sample_mapping.json: {e}")
+                        print(f"Failed to filter series_sample_mapping.json: {e}")
 
     def _filter_data_intake_for_batch(self, data_intake_output: LinkerOutput, batch_samples: List[str]) -> LinkerOutput:
         """
@@ -505,10 +505,10 @@ class PreprocessingWorkflow:
                         sample_type_mapping[sample_id] = sample_type
                         
         except Exception as e:
-            logger.warning(f"Error extracting sample types from curator result: {e}")
-            logger.info(f"🔍 Curator result structure: {type(curator_result)}")
+            print(f"Error extracting sample types from curator result: {e}")
+            print(f"🔍 Curator result structure: {type(curator_result)}")
             if hasattr(curator_result, 'curation_results'):
-                logger.info(f"🔍 Curation results count: {len(curator_result.curation_results) if curator_result.curation_results else 0}")
+                print(f"🔍 Curation results count: {len(curator_result.curation_results) if curator_result.curation_results else 0}")
             
         return sample_type_mapping
 

@@ -11,8 +11,9 @@ import os
 import json
 import glob
 import time
+import asyncio
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
 # Add the normalization module to the path
@@ -67,17 +68,19 @@ def _get_ols_ontologies_for_field(target_field: str) -> List[str]:
 
 
 def _ols_map_value_to_candidates(value: str, ontologies: List[str], top_k: int = 10) -> List[OntologyMatchCandidate]:
+    """Synchronous version kept for backwards compatibility."""
     candidates: List[OntologyMatchCandidate] = []
     if not (value and ontologies and map_query_to_term):
+        return candidates
+    
+    # Skip OLS calls for "None reported" - return empty matches immediately
+    if value.strip().lower() == "none reported":
         return candidates
 
     combined: List[dict] = []
     for ont in ontologies:
         try:
-            ols_call_start = time.time()
             hits = map_query_to_term(query=value, ontology=ont, rows=25, top_k=top_k, debug=False) or []
-            ols_call_end = time.time()
-            print(f"⏱️  DEBUG: OLS call for value '{value}' in ontology '{ont}' took {ols_call_end - ols_call_start:.3f} seconds (returned {len(hits)} hits)")
             for h in hits:
                 term = (h.get("label") or "").strip()
                 term_id = (h.get("obo_id") or h.get("short_form") or h.get("iri") or "").strip()
@@ -96,6 +99,90 @@ def _ols_map_value_to_candidates(value: str, ontologies: List[str], top_k: int =
                 })
         except Exception:
             continue
+
+    # Deduplicate by (term, term_id)
+    seen = set()
+    deduped: List[OntologyMatchCandidate] = []
+    for m in combined:
+        key = (m.get("term"), m.get("term_id"))
+        if not key[0] or not key[1]:
+            continue
+        if key not in seen:
+            seen.add(key)
+            deduped.append(OntologyMatchCandidate(
+                term=m["term"], term_id=m["term_id"], ontology=m["ontology"], definition=m.get("definition")
+            ))
+
+    # Cap to 10 to align with schema
+    return deduped[:10]
+
+
+async def _ols_map_value_to_candidates_async(
+    value: str, 
+    ontologies: List[str], 
+    top_k: int = 10,
+    ols_semaphore: Optional[asyncio.Semaphore] = None
+) -> List[OntologyMatchCandidate]:
+    """Async version that parallelizes OLS calls across multiple ontologies."""
+    candidates: List[OntologyMatchCandidate] = []
+    if not (value and ontologies and map_query_to_term):
+        return candidates
+    
+    # Skip OLS calls for "None reported" - return empty matches immediately
+    if value.strip().lower() == "none reported":
+        return candidates
+
+    async def query_ontology(ont: str) -> Tuple[str, List[dict]]:
+        """Query a single ontology in a thread pool."""
+        try:
+            # Use semaphore if provided to limit concurrent calls
+            if ols_semaphore:
+                async with ols_semaphore:
+                    ols_call_start = time.time()
+                    hits = await asyncio.to_thread(
+                        map_query_to_term, query=value, ontology=ont, rows=25, top_k=top_k, debug=False
+                    ) or []
+                    ols_call_end = time.time()
+            else:
+                ols_call_start = time.time()
+                hits = await asyncio.to_thread(
+                    map_query_to_term, query=value, ontology=ont, rows=25, top_k=top_k, debug=False
+                ) or []
+                ols_call_end = time.time()
+            
+            
+            # Process hits
+            processed_hits = []
+            for h in hits:
+                term = (h.get("label") or "").strip()
+                term_id = (h.get("obo_id") or h.get("short_form") or h.get("iri") or "").strip()
+                ontology_upper = (h.get("ontology") or ont).upper()
+                definition = h.get("description")
+                # Ensure definition is a simple string or None
+                if isinstance(definition, list):
+                    definition = definition[0] if definition else None
+                if definition is not None and not isinstance(definition, str):
+                    definition = None
+                processed_hits.append({
+                    "term": term,
+                    "term_id": term_id,
+                    "ontology": ontology_upper,
+                    "definition": definition,
+                })
+            return ont, processed_hits
+        except Exception as e:
+            return ont, []
+
+    # Query all ontologies in parallel
+    results = await asyncio.gather(*[query_ontology(ont) for ont in ontologies], return_exceptions=True)
+    
+    # Combine results
+    combined: List[dict] = []
+    for result in results:
+        if isinstance(result, Exception):
+            continue
+        ont, processed_hits = result
+        combined.extend(processed_hits)
 
     # Deduplicate by (term, term_id)
     seen = set()
@@ -480,7 +567,6 @@ def semantic_search_ontology(
 
     try:
         search_start_time = time.time()
-        print(f"⏱️  DEBUG: Starting semantic_search_ontology for query '{query}' in ontology '{ontology}'")
         
         # Initialize semantic search
         semantic_search = OntologySemanticSearch(dict_path)
@@ -489,15 +575,12 @@ def semantic_search_ontology(
         index_load_start = time.time()
         semantic_search.load_index()
         index_load_end = time.time()
-        print(f"⏱️  DEBUG: Index load for ontology '{ontology}' took {index_load_end - index_load_start:.3f} seconds")
 
         # Perform search
         search_exec_start = time.time()
         results = semantic_search.search(query, k=top_k)
         search_exec_end = time.time()
         search_total_end = time.time()
-        print(f"⏱️  DEBUG: Semantic search execution for '{query}' in '{ontology}' took {search_exec_end - search_exec_start:.3f} seconds (found {len(results)} results)")
-        print(f"⏱️  DEBUG: Total semantic_search_ontology for '{query}' in '{ontology}' took {search_total_end - search_start_time:.3f} seconds")
 
         # Convert to OntologyMatch objects
         matches = []
@@ -697,7 +780,6 @@ def semantic_search_candidates_impl(
                 
                 # Perform semantic search and collect matches
                 candidate_search_start = time.time()
-                print(f"⏱️  DEBUG: Starting semantic search for candidate '{candidate.value}' (sample_id: {curation_result.sample_id}, field: {target_field})")
                 all_matches = []
                 for ontology in ontologies:
                     ontology_search_start = time.time()
@@ -707,12 +789,10 @@ def semantic_search_candidates_impl(
                     searcher.load_index()
                     matches = searcher.search(candidate.value, k=top_k)
                     ontology_search_end = time.time()
-                    print(f"⏱️  DEBUG: Semantic search for '{candidate.value}' in ontology '{ontology}' took {ontology_search_end - ontology_search_start:.3f} seconds (found {len(matches)} matches)")
                     for term, term_id, score in matches:
                         if score >= min_score:
                             all_matches.append((term, term_id, ontology, score))
                 candidate_search_end = time.time()
-                print(f"⏱️  DEBUG: Candidate '{candidate.value}' semantic search completed in {candidate_search_end - candidate_search_start:.3f} seconds (total matches: {len(all_matches)})")
                 
                 # Sort by score and take top 5
                 all_matches.sort(key=lambda x: x[3], reverse=True)
@@ -776,6 +856,297 @@ def semantic_search_candidates_impl(
 
     except Exception as e:
         print(f"❌ semantic_search_candidates_impl error: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+        # Re-raise to be caught by the tool wrapper
+        raise
+
+
+async def semantic_search_candidates_impl_async(
+    curation_results_file: str,
+    target_field: str = "Disease",
+    ontologies: Optional[List[str]] = None,
+    top_k: int = 5,
+    min_score: float = 0.5,
+    max_concurrent_searches: int = 10,
+    max_concurrent_candidates: int = 10,
+) -> List[ToolNormalizationOutput]:
+    """Async version that parallelizes semantic search across ontologies and candidates.
+
+    This function performs semantic search on extracted candidates from a curation results file
+    and returns a list of ToolNormalizationOutput objects for LLM-based selection.
+    
+    Args:
+        curation_results_file: Path to curation results JSON file
+        target_field: Target metadata field name
+        ontologies: List of ontologies to search (if None, uses defaults)
+        top_k: Number of top matches to return per candidate
+        min_score: Minimum similarity score threshold
+        max_concurrent_searches: Maximum concurrent semantic searches (default: 10)
+        max_concurrent_candidates: Maximum concurrent candidate processing (default: 10)
+    """
+    # Check for enum target fields that don't need normalization
+    if target_field.lower() in ["sampletype", "sample_type", "assay_type"]:
+        raise NormalizationError(
+            f"Target field '{target_field}' is an enum field and does not require normalization. "
+            f"This field should be processed by the curator agent only."
+        )
+
+    try:
+        # 1. Load appropriate curation result objects from the specified file
+        with open(curation_results_file, "r") as f:
+            curation_data = json.load(f)
+
+        # Extract curation_results array from the output structure
+        if isinstance(curation_data, dict) and "curation_results" in curation_data:
+            curation_results_data = curation_data["curation_results"]
+        else:
+            curation_results_data = curation_data
+
+        # Parse based on target field type - try DiseaseCurationResult for disease field
+        curation_results = []
+        if target_field.lower() == "disease":
+            # Try to parse as DiseaseCurationResult, fall back to CurationResult
+            for data in curation_results_data:
+                try:
+                    # Try DiseaseCurationResult first
+                    disease_result = DiseaseCurationResult(**data)
+                    # Convert DiseaseExtractedCandidate to ExtractedCandidate for processing
+                    synthetic_result = CurationResult(
+                        tool_name=disease_result.tool_name,
+                        sample_id=disease_result.sample_id,
+                        target_field=disease_result.target_field,
+                        series_candidates=[
+                            ExtractedCandidate(
+                                value=c.value,
+                                confidence=c.confidence,
+                                source=c.source,
+                                context=c.context,
+                                rationale=c.rationale,
+                                prenormalized=f"{c.value} ({c.condition.value})"
+                            ) for c in disease_result.series_candidates
+                        ],
+                        sample_candidates=[
+                            ExtractedCandidate(
+                                value=c.value,
+                                confidence=c.confidence,
+                                source=c.source,
+                                context=c.context,
+                                rationale=c.rationale,
+                                prenormalized=f"{c.value} ({c.condition.value})"
+                            ) for c in disease_result.sample_candidates
+                        ],
+                        abstract_candidates=[
+                            ExtractedCandidate(
+                                value=c.value,
+                                confidence=c.confidence,
+                                source=c.source,
+                                context=c.context,
+                                rationale=c.rationale,
+                                prenormalized=f"{c.value} ({c.condition.value})"
+                            ) for c in disease_result.abstract_candidates
+                        ],
+                        final_candidates=[
+                            ExtractedCandidate(
+                                value=c.value,
+                                confidence=c.confidence,
+                                source=c.source,
+                                context=c.context,
+                                rationale=c.rationale,
+                                prenormalized=f"{c.value} ({c.condition.value})"
+                            ) for c in disease_result.final_candidates
+                        ],
+                        sources_processed=disease_result.sources_processed,
+                        processing_notes=disease_result.processing_notes,
+                    )
+                    curation_results.append(synthetic_result)
+                except Exception:
+                    # Fall back to regular CurationResult, skip malformed entries
+                    try:
+                        if isinstance(data, dict) and data.get("sample_id") and data.get("target_field"):
+                            curation_results.append(CurationResult(**data))
+                        else:
+                            continue
+                    except Exception:
+                        continue
+        else:
+            # Parse as regular CurationResult for all other fields, skip malformed entries
+            curation_results = []
+            for data in curation_results_data:
+                try:
+                    if isinstance(data, dict) and data.get("sample_id") and data.get("target_field"):
+                        curation_results.append(CurationResult(**data))
+                except Exception:
+                    continue
+
+        # Determine ontologies to use if not specified
+        if ontologies is None:
+            ontologies = get_default_ontologies_for_field(target_field)
+
+        # Create semaphores for concurrency control
+        search_semaphore = asyncio.Semaphore(max_concurrent_searches)
+        candidate_semaphore = asyncio.Semaphore(max_concurrent_candidates)
+
+        async def search_ontology_async(candidate_value: str, ontology: str) -> List[Tuple[str, str, str, float]]:
+            """Search a single ontology for a candidate value."""
+            async with search_semaphore:
+                try:
+                    ontology_search_start = time.time()
+                    dict_path = f"src/normalization/dictionaries/{ontology}_terms.json"
+                    searcher = OntologySemanticSearch(dict_path)
+                    searcher.load_index()
+                    # Run search in thread pool since it's CPU-bound
+                    matches = await asyncio.to_thread(searcher.search, candidate_value, k=top_k)
+                    ontology_search_end = time.time()
+                    # Return matches as tuples: (term, term_id, ontology, score)
+                    return [(term, term_id, ontology, score) for term, term_id, score in matches if score >= min_score]
+                except Exception as e:
+                    return []
+
+        async def process_candidate_async(
+            candidate: ExtractedCandidate, 
+            curation_result: CurationResult
+        ) -> CandidateWithMatches:
+            """Process a single candidate by searching all ontologies in parallel."""
+            async with candidate_semaphore:
+                # Handle special cases
+                if candidate.value == "None reported":
+                    return CandidateWithMatches(
+                        value=candidate.value,
+                        confidence=candidate.confidence,
+                        source=candidate.source,
+                        context=candidate.context,
+                        rationale=candidate.rationale,
+                        prenormalized=candidate.prenormalized,
+                        ontology_matches=[],
+                    )
+                
+                if target_field.lower() in ["disease"] and candidate.value.lower() == "healthy":
+                    synthetic_match = OntologyMatchCandidate(
+                        term="healthy control",
+                        term_id="MONDO:0005047",
+                        ontology="mondo"
+                    )
+                    return CandidateWithMatches(
+                        value=candidate.value,
+                        confidence=candidate.confidence,
+                        source=candidate.source,
+                        context=candidate.context,
+                        rationale=candidate.rationale,
+                        prenormalized=candidate.prenormalized,
+                        ontology_matches=[synthetic_match],
+                    )
+                
+                if target_field.lower() in ["disease"] and "control [healthy]" in candidate.value.lower():
+                    synthetic_match = OntologyMatchCandidate(
+                        term="healthy control",
+                        term_id="MONDO:0005047",
+                        ontology="mondo"
+                    )
+                    return CandidateWithMatches(
+                        value=candidate.value,
+                        confidence=candidate.confidence,
+                        source=candidate.source,
+                        context=candidate.context,
+                        rationale=candidate.rationale,
+                        prenormalized=candidate.prenormalized,
+                        ontology_matches=[synthetic_match],
+                    )
+                
+                # Perform semantic search across all ontologies in parallel
+                candidate_search_start = time.time()
+                
+                # Search all ontologies concurrently
+                search_tasks = [search_ontology_async(candidate.value, ontology) for ontology in ontologies]
+                all_matches_lists = await asyncio.gather(*search_tasks, return_exceptions=True)
+                
+                # Flatten and collect all matches
+                all_matches = []
+                for matches_or_exc in all_matches_lists:
+                    if isinstance(matches_or_exc, Exception):
+                        continue
+                    all_matches.extend(matches_or_exc)
+                
+                candidate_search_end = time.time()
+                
+                # Sort by score and take top 5
+                all_matches.sort(key=lambda x: x[3], reverse=True)
+                top_5_matches = all_matches[:5]
+                
+                # Convert to OntologyMatchCandidate WITHOUT scores
+                ontology_matches_no_scores = [
+                    OntologyMatchCandidate(
+                        term=match[0],
+                        term_id=match[1],
+                        ontology=match[2],
+                        definition=None
+                    )
+                    for match in top_5_matches
+                ]
+                
+                return CandidateWithMatches(
+                    value=candidate.value,
+                    confidence=candidate.confidence,
+                    source=candidate.source,
+                    context=candidate.context,
+                    rationale=candidate.rationale,
+                    prenormalized=candidate.prenormalized,
+                    ontology_matches=ontology_matches_no_scores,
+                )
+
+        # 3. Process all curation results
+        tool_outputs = []
+        
+        for curation_result in curation_results:
+            # Process all candidates in parallel
+            candidate_tasks = [
+                process_candidate_async(candidate, curation_result)
+                for candidate in curation_result.final_candidates
+            ]
+            candidates_with_matches_list = await asyncio.gather(*candidate_tasks, return_exceptions=True)
+            
+            # Filter out exceptions
+            candidates_with_matches = []
+            for candidate_or_exc in candidates_with_matches_list:
+                if isinstance(candidate_or_exc, Exception):
+                    continue
+                candidates_with_matches.append(candidate_or_exc)
+            
+            # Extract original candidate values for this sample
+            original_candidates = []
+            if curation_result.series_candidates:
+                original_candidates.extend([c.value for c in curation_result.series_candidates])
+            if curation_result.sample_candidates:
+                original_candidates.extend([c.value for c in curation_result.sample_candidates])
+            if curation_result.abstract_candidates:
+                original_candidates.extend([c.value for c in curation_result.abstract_candidates])
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_original_candidates = []
+            for candidate in original_candidates:
+                if candidate not in seen:
+                    seen.add(candidate)
+                    unique_original_candidates.append(candidate)
+            
+            # Create ToolNormalizationOutput for this sample
+            tool_output = ToolNormalizationOutput(
+                sample_id=curation_result.sample_id,
+                target_field=target_field,
+                candidates_with_matches=candidates_with_matches,
+                ontologies_searched=ontologies,
+                original_candidates=unique_original_candidates,
+                sources_processed=curation_result.sources_processed,
+                processing_notes=curation_result.processing_notes,
+            )
+            tool_outputs.append(tool_output)
+        
+        # Return the list of tool outputs for LLM-based selection
+        return tool_outputs
+
+    except Exception as e:
+        print(f"❌ semantic_search_candidates_impl_async error: {str(e)}")
         import traceback
 
         traceback.print_exc()
@@ -1142,7 +1513,22 @@ def normalize_candidate_value(
         )  # Default fallback
 
     normalize_start_time = time.time()
-    print(f"⏱️  DEBUG: Starting normalize_candidate_value for '{candidate.value}' (field: {target_field})")
+    
+    # Skip semantic search for "None reported" - return empty matches immediately
+    if candidate.value.strip().lower() == "none reported":
+        normalize_end_time = time.time()
+        return NormalizedCandidate(
+            value=candidate.value,
+            confidence=candidate.confidence,
+            source=candidate.source,
+            context=candidate.context,
+            rationale=candidate.rationale,
+            prenormalized=candidate.prenormalized,
+            top_ontology_matches=[],
+            best_match=None,
+            normalization_confidence=None,
+            normalization_notes=["Skipped normalization - value is 'None reported'"],
+        )
     
     all_matches = []
     normalization_notes = []
@@ -1158,7 +1544,6 @@ def normalize_candidate_value(
                 min_score=min_score,
             )
             ontology_search_end = time.time()
-            print(f"⏱️  DEBUG: Ontology '{ontology}' search for '{candidate.value}' took {ontology_search_end - ontology_search_start:.3f} seconds (found {len(matches)} matches)")
             all_matches.extend(matches)
 
             if matches:
@@ -1195,7 +1580,6 @@ def normalize_candidate_value(
     )
 
     normalize_end_time = time.time()
-    print(f"⏱️  DEBUG: normalize_candidate_value for '{candidate.value}' completed in {normalize_end_time - normalize_start_time:.3f} seconds (found {len(top_5_matches)} total matches)")
 
     return normalized_candidate
 
@@ -1414,6 +1798,8 @@ def ols_search_candidates_impl(
 
     Reads curator results file (list or dict with curation_results) and builds
     ontology match candidates via OLS for each sample's curated value(s).
+    
+    Synchronous version kept for backwards compatibility.
     """
     try:
         with open(curation_results_file, "r") as f:
@@ -1461,12 +1847,21 @@ def ols_search_candidates_impl(
         candidates_with_matches: List[CandidateWithMatches] = []
         originals: List[str] = []
         for val in values[:3]:
-            value_normalization_start = time.time()
-            print(f"⏱️  DEBUG: Starting normalization for value '{val}' (sample_id: {sample_id}, field: {target_field})")
             originals.append(val)
+            # Skip OLS calls for "None reported" - return empty matches immediately
+            if val.strip().lower() == "none reported":
+                candidates_with_matches.append(CandidateWithMatches(
+                    value=val,
+                    confidence=rec.get("confidence", 1.0) if isinstance(rec.get("confidence"), (int, float)) else 1.0,
+                    source="curator",
+                    context="",
+                    rationale="",
+                    prenormalized=val,
+                    ontology_matches=[],  # No matches for "None reported"
+                ))
+                continue
+            
             matches = _ols_map_value_to_candidates(val, ontologies=ont_list, top_k=top_k)
-            value_normalization_end = time.time()
-            print(f"⏱️  DEBUG: Value '{val}' normalization completed in {value_normalization_end - value_normalization_start:.3f} seconds (found {len(matches)} matches)")
             candidates_with_matches.append(CandidateWithMatches(
                 value=val,
                 confidence=rec.get("confidence", 1.0) if isinstance(rec.get("confidence"), (int, float)) else 1.0,
@@ -1481,6 +1876,133 @@ def ols_search_candidates_impl(
             sample_id=sample_id,
             target_field=target_field,
             candidates_with_matches=candidates_with_matches,
+            ontologies_searched=ont_list,
+            original_candidates=originals,
+            sources_processed=[],
+            processing_notes=[],
+        ))
+
+    return outputs
+
+
+async def ols_search_candidates_impl_async(
+    curation_results_file: str,
+    target_field: str = "cell_type",
+    top_k: int = 10,
+    max_concurrent_ols: int = 10,
+    max_concurrent_values: int = 10,
+) -> List[ToolNormalizationOutput]:
+    """Async version that parallelizes value processing and OLS calls.
+
+    Reads curator results file (list or dict with curation_results) and builds
+    ontology match candidates via OLS for each sample's curated value(s).
+    Values are processed in parallel, and OLS calls across ontologies are also parallelized.
+    
+    Args:
+        curation_results_file: Path to curation results JSON file
+        target_field: Target metadata field name
+        top_k: Number of top matches to return
+        max_concurrent_ols: Maximum concurrent OLS API calls (default: 10)
+        max_concurrent_values: Maximum concurrent value normalizations (default: 10)
+    """
+    try:
+        with open(curation_results_file, "r") as f:
+            curation_results_data = json.load(f)
+    except Exception as e:
+        print(f"❌ ols_search_candidates_impl_async: failed to read {curation_results_file}: {e}")
+        return []
+
+    if isinstance(curation_results_data, dict) and "curation_results" in curation_results_data:
+        curation_results_data = curation_results_data["curation_results"]
+
+    outputs: List[ToolNormalizationOutput] = []
+    ont_list = _get_ols_ontologies_for_field(target_field)
+    
+    # Create semaphores for concurrency control
+    ols_semaphore = asyncio.Semaphore(max_concurrent_ols)
+    value_semaphore = asyncio.Semaphore(max_concurrent_values)
+
+    async def normalize_value_async(val: str, sample_id: str, rec: dict) -> CandidateWithMatches:
+        """Normalize a single value asynchronously."""
+        async with value_semaphore:
+            # Skip OLS calls for "None reported" - return empty matches immediately
+            if val.strip().lower() == "none reported":
+                return CandidateWithMatches(
+                    value=val,
+                    confidence=rec.get("confidence", 1.0) if isinstance(rec.get("confidence"), (int, float)) else 1.0,
+                    source="curator",
+                    context="",
+                    rationale="",
+                    prenormalized=val,
+                    ontology_matches=[],  # No matches for "None reported"
+                )
+            
+            matches = await _ols_map_value_to_candidates_async(val, ontologies=ont_list, top_k=top_k, ols_semaphore=ols_semaphore)
+            return CandidateWithMatches(
+                value=val,
+                confidence=rec.get("confidence", 1.0) if isinstance(rec.get("confidence"), (int, float)) else 1.0,
+                source="curator",
+                context="",
+                rationale="",
+                prenormalized=val,
+                ontology_matches=matches,
+            )
+
+    for rec in curation_results_data or []:
+        if not isinstance(rec, dict):
+            continue
+        sample_id = rec.get("sample_id") or ""
+        if not sample_id:
+            continue
+
+        # Extract curated values in priority order
+        values: List[str] = []
+        if target_field.lower() == "treatment" and rec.get("treatment_name"):
+            values.append(str(rec.get("treatment_name")))
+        elif target_field.lower() == "disease" and rec.get("disease_name"):
+            values.append(str(rec.get("disease_name")))
+        elif rec.get("final_candidate"):
+            values.append(str(rec.get("final_candidate")))
+        elif rec.get("final_candidates") and isinstance(rec.get("final_candidates"), list):
+            first = rec.get("final_candidates")[0]
+            if isinstance(first, dict) and first.get("value"):
+                values.append(str(first.get("value")))
+
+        if not values:
+            for key in ("final_candidates", "series_candidates", "sample_candidates", "abstract_candidates"):
+                arr = rec.get(key)
+                if isinstance(arr, list):
+                    for c in arr:
+                        if isinstance(c, dict) and c.get("value"):
+                            values.append(str(c.get("value")))
+                    if values:
+                        break
+
+        # Process all values in parallel (limit to first 3)
+        values_to_process = values[:3]
+        if values_to_process:
+            normalization_tasks = [
+                normalize_value_async(val, sample_id, rec) 
+                for val in values_to_process
+            ]
+            candidates_with_matches = await asyncio.gather(*normalization_tasks, return_exceptions=True)
+            
+            # Filter out exceptions and create valid candidates
+            valid_candidates: List[CandidateWithMatches] = []
+            originals: List[str] = []
+            for val, candidate_or_exc in zip(values_to_process, candidates_with_matches):
+                if isinstance(candidate_or_exc, Exception):
+                    continue
+                valid_candidates.append(candidate_or_exc)
+                originals.append(val)
+        else:
+            valid_candidates = []
+            originals = []
+
+        outputs.append(ToolNormalizationOutput(
+            sample_id=sample_id,
+            target_field=target_field,
+            candidates_with_matches=valid_candidates,
             ontologies_searched=ont_list,
             original_candidates=originals,
             sources_processed=[],

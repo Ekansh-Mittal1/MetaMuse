@@ -92,7 +92,7 @@ async def process_single_sample_normalization(
         logger = logging.getLogger("norm_evaluator")
         
         try:
-            logger.info("Processing normalization for sample %s", sample_id)
+            print("Processing normalization for sample %s", sample_id)
             
             curated_dict, normalized_dict = build_normalization_dicts(row, normalized_fields)
 
@@ -150,7 +150,7 @@ async def process_single_sample_normalization(
                     break
                 except Exception as e:
                     last_exception = e
-                    logger.error("Failed normalization eval for %s (attempt %d): %s", sample_id, attempt, e)
+                    print("Failed normalization eval for %s (attempt %d): %s", sample_id, attempt, e)
                     if attempt < max_retries:
                         await asyncio.sleep(retry_backoff_seconds * attempt)
 
@@ -208,7 +208,7 @@ async def process_single_sample_normalization(
                 "traceback": _tb.format_exc(),
             }
             err_path.write_text(json.dumps(err_payload, indent=2), encoding="utf-8")
-            logger.error("Unhandled exception for normalization eval %s; recorded in %s", sample_id, err_path)
+            print("Unhandled exception for normalization eval %s; recorded in %s", sample_id, err_path)
             return None
 
 
@@ -356,17 +356,17 @@ async def main() -> None:
         reader = csv.DictReader(f)
         header = reader.fieldnames or []
         normalized_fields = extract_normalized_fields_from_header(header)
-        logger.info("Discovered normalized fields: %s", ", ".join(normalized_fields))
+        print("Discovered normalized fields: %s", ", ".join(normalized_fields))
         rows = list(reader)
 
     if not normalized_fields:
-        logger.warning("No normalized fields found in batch_results.csv")
+        print("No normalized fields found in batch_results.csv")
         return
 
     # Create semaphore for concurrency control
     semaphore = asyncio.Semaphore(args.max_workers)
     provider_order = [p.strip() for p in (args.provider_order or "").split(",") if p.strip()]
-    logger.info("Processing %d samples with max %d workers for normalization evaluation", len(rows), args.max_workers)
+    print("Processing %d samples with max %d workers for normalization evaluation", len(rows), args.max_workers)
 
     # Process all samples in parallel
     tasks = [
@@ -386,7 +386,7 @@ async def main() -> None:
         if isinstance(result, SampleNormalizationEvaluation):
             sample_evaluations.append(result)
         elif isinstance(result, Exception):
-            logger.error("Normalization task failed with exception: %s", result)
+            print("Normalization task failed with exception: %s", result)
 
     # Compute accuracy and render chart
     norm_acc = compute_normalization_accuracy(sample_evaluations)
@@ -408,7 +408,7 @@ async def main() -> None:
     fig.savefig(chart_path)
     plt.close(fig)
     
-    logger.info("Saved normalization accuracy chart to %s", chart_path)
+    print("Saved normalization accuracy chart to %s", chart_path)
 
     # Write summary JSON
     summary = {
@@ -419,7 +419,7 @@ async def main() -> None:
     Path(output_dir, "normalization_summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )
-    logger.info("Saved normalization_summary.json with %d samples", len(sample_evaluations))
+    print("Saved normalization_summary.json with %d samples", len(sample_evaluations))
 
     # Generate errors report automatically
     generate_normalization_errors_report(sample_evaluations, output_dir)

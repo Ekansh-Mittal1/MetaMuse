@@ -65,7 +65,7 @@ def extract_direct_fields_from_data_intake(
         # Use proper logging instead of print
         import logging
         logger = logging.getLogger(__name__)
-        logger.warning(f"⚠️No curation packages found for samples: {sample_ids}")
+        print(f"⚠️No curation packages found for samples: {sample_ids}")
         # Return empty results structure instead of crashing
         return {sample_id: {} for sample_id in sample_ids}
 
@@ -86,7 +86,7 @@ def extract_direct_fields_from_data_intake(
             # Use proper logging instead of print
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(f"⚠️ No curation package found for sample {sample_id}")
+            print(f"⚠️ No curation package found for sample {sample_id}")
             results[sample_id] = {}
             continue
 
@@ -266,7 +266,7 @@ def extract_curation_candidates(
             # Use proper logging instead of print
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(f"⚠️ No curation result found for sample {sample_id}, target field {target_field}")
+            print(f"⚠️ No curation result found for sample {sample_id}, target field {target_field}")
             
             # Track missing curation result for rerun capability
             if error_tracker and hasattr(error_tracker, 'track_missing_result'):
@@ -386,7 +386,7 @@ def extract_normalization_results(
             # Use proper logging instead of print
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(f"⚠️ No normalization result found for sample {sample_id}, target field {target_field}")
+            print(f"⚠️ No normalization result found for sample {sample_id}, target field {target_field}")
             
             # Track missing normalization result for rerun capability
             if error_tracker and hasattr(error_tracker, 'track_missing_result'):
@@ -530,6 +530,95 @@ def save_batch_results(
         json.dump(results, f, indent=2)
 
     return str(output_path)
+
+
+def convert_normalization_data_to_unified_format(
+    normalization_data: Dict[str, Dict[str, Dict[str, Any]]]
+) -> Dict[str, Any]:
+    """
+    Convert normalization data from field_name -> sample_id -> results format
+    to unified normalization_results format with sample_results array.
+    
+    This function creates a consistent format that matches eval mode's output structure,
+    making it compatible with CSV extraction code.
+    
+    Parameters
+    ----------
+    normalization_data : Dict[str, Dict[str, Dict[str, Any]]]
+        Normalization data in format: {field_name: {sample_id: {normalized_term, term_id, ...}}}
+    
+    Returns
+    -------
+    Dict[str, Any]
+        Normalization data in format: {normalization_results: {field_name: {sample_results: [...]}}}
+    
+    Example
+    -------
+    Input:
+    {
+        "disease": {
+            "GSM123": {"normalized_term": "cancer", "term_id": "MONDO:0000001", ...},
+            "GSM456": {"normalized_term": "diabetes", "term_id": "MONDO:0000002", ...}
+        }
+    }
+    
+    Output:
+    {
+        "normalization_results": {
+            "disease": {
+                "sample_results": [
+                    {"sample_id": "GSM123", "result": {"normalized_term": "cancer", "term_id": "MONDO:0000001", ...}},
+                    {"sample_id": "GSM456", "result": {"normalized_term": "diabetes", "term_id": "MONDO:0000002", ...}}
+                ]
+            }
+        }
+    }
+    """
+    
+    def _safe_serialize(obj):
+        """
+        Convert objects (including Pydantic models) into plain JSON-serializable structures.
+        """
+        # Fast path for already serializable primitives
+        if obj is None or isinstance(obj, (str, int, float, bool)):
+            return obj
+        if isinstance(obj, list):
+            return [_safe_serialize(item) for item in obj]
+        if isinstance(obj, dict):
+            return {str(k): _safe_serialize(v) for k, v in obj.items()}
+        
+        # Pydantic v2 models
+        if hasattr(obj, "model_dump") and callable(getattr(obj, "model_dump")):
+            try:
+                data = obj.model_dump()
+                return _safe_serialize(data)
+            except Exception:
+                pass
+        
+        # Pydantic v1 models
+        if hasattr(obj, "dict") and callable(getattr(obj, "dict")):
+            try:
+                data = obj.dict()
+                return _safe_serialize(data)
+            except Exception:
+                pass
+        
+        # Fallback: convert to string
+        return str(obj)
+    
+    norm_payload = {}
+    
+    for field_name, per_sample in (normalization_data or {}).items():
+        sample_results = []
+        if isinstance(per_sample, dict):
+            for sample_id, result in per_sample.items():
+                sample_results.append({
+                    "sample_id": sample_id,
+                    "result": _safe_serialize(result),
+                })
+        norm_payload[field_name] = {"sample_results": sample_results}
+    
+    return {"normalization_results": norm_payload}
 
 
 def create_target_field_subdirectories(

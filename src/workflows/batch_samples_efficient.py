@@ -179,7 +179,7 @@ class EfficientBatchSamplesProcessor:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if self.batch_name:
             self.batch_dir = self.output_dir / f"batch_{self.batch_name}_{timestamp}"
-            logger.info(f"🎯 Using custom batch name: batch_{self.batch_name}_{timestamp}")
+            print(f"🎯 Using custom batch name: batch_{self.batch_name}_{timestamp}")
         else:
             self.batch_dir = self.output_dir / f"batch_{timestamp}"
         
@@ -233,28 +233,28 @@ class EfficientBatchSamplesProcessor:
         List[str]
             List of selected GSM sample IDs
         """
-        logger.info(f"📂 Loading samples from {self.samples_file}")
+        print(f"📂 Loading samples from {self.samples_file}")
         
         try:
             with open(self.samples_file, "r") as f:
                 all_samples = [line.strip() for line in f if line.strip() and line.strip().startswith("GSM")]
             
             if len(all_samples) < self.sample_count:
-                logger.warning(f"⚠️ Only {len(all_samples)} samples available, requesting {self.sample_count}")
+                print(f"⚠️ Only {len(all_samples)} samples available, requesting {self.sample_count}")
                 selected_samples = all_samples
             else:
                 # Randomly select samples
                 random.seed(42)  # For reproducibility
                 selected_samples = random.sample(all_samples, self.sample_count)
             
-            logger.info(f"✅ Selected {len(selected_samples)} samples for processing")
+            print(f"✅ Selected {len(selected_samples)} samples for processing")
             return selected_samples
             
         except FileNotFoundError:
-            logger.error(f"❌ Samples file not found: {self.samples_file}")
+            print(f"❌ Samples file not found: {self.samples_file}")
             raise
         except Exception as e:
-            logger.error(f"❌ Error loading samples: {e}")
+            print(f"❌ Error loading samples: {e}")
             raise
 
     async def run_data_intake_stage(self, samples: List[str]) -> LinkerOutput:
@@ -271,7 +271,7 @@ class EfficientBatchSamplesProcessor:
         LinkerOutput
             Data intake workflow output
         """
-        logger.info(f"🚀 Stage 1: Running data intake for {len(samples)} samples")
+        print(f"🚀 Stage 1: Running data intake for {len(samples)} samples")
         stage_start_time = time.time()
         
         try:
@@ -293,7 +293,7 @@ class EfficientBatchSamplesProcessor:
                 raise RuntimeError(f"Data intake failed: {data_intake_result.message}")
             
             stage_duration = time.time() - stage_start_time
-            logger.info(f"✅ Stage 1 completed in {stage_duration:.2f} seconds")
+            print(f"✅ Stage 1 completed in {stage_duration:.2f} seconds")
             
             # Save data intake output under data_intake/
             data_intake_dir = self.batch_dir / "data_intake"
@@ -310,7 +310,7 @@ class EfficientBatchSamplesProcessor:
             return data_intake_result
             
         except Exception as e:
-            logger.error(f"❌ Stage 1 (Data Intake) failed: {str(e)}")
+            print(f"❌ Stage 1 (Data Intake) failed: {str(e)}")
             raise
 
     async def run_preprocessing_stage(self, data_intake_output: LinkerOutput, samples: List[str]) -> Dict[str, Any]:
@@ -329,7 +329,7 @@ class EfficientBatchSamplesProcessor:
         Dict[str, Any]
             Preprocessing workflow output
         """
-        logger.info("🚀 Stage 2: Running preprocessing (sample type curation and batching)")
+        print("🚀 Stage 2: Running preprocessing (sample type curation and batching)")
         stage_start_time = time.time()
         
         try:
@@ -352,7 +352,7 @@ class EfficientBatchSamplesProcessor:
                 raise RuntimeError(f"Preprocessing failed: {preprocessing_result['message']}")
             
             stage_duration = time.time() - stage_start_time
-            logger.info(f"✅ Stage 2 completed in {stage_duration:.2f} seconds")
+            print(f"✅ Stage 2 completed in {stage_duration:.2f} seconds")
             
             # Save preprocessing output under preprocessing/
             preprocessing_dir = self.batch_dir / "preprocessing"
@@ -364,7 +364,7 @@ class EfficientBatchSamplesProcessor:
             return preprocessing_result
             
         except Exception as e:
-            logger.error(f"❌ Stage 2 (Preprocessing) failed: {str(e)}")
+            print(f"❌ Stage 2 (Preprocessing) failed: {str(e)}")
             raise
 
     async def run_conditional_processing_stage(
@@ -388,7 +388,7 @@ class EfficientBatchSamplesProcessor:
         Dict[str, Any]
             Conditional processing workflow output
         """
-        logger.info("🚀 Stage 3: Running conditional processing (curation and normalization)")
+        print("🚀 Stage 3: Running conditional processing (curation and normalization)")
         stage_start_time = time.time()
         
         try:
@@ -399,7 +399,7 @@ class EfficientBatchSamplesProcessor:
             _, curation_provider, _ = self._create_sample_type_model_providers()
             
             # Run conditional processing workflow (classic or eval)
-            logger.info(f"🔧 Using conditional processing mode: {self.conditional_mode}")
+            print(f"🔧 Using conditional processing mode: {self.conditional_mode}")
             if self.conditional_mode == "eval":
                 # Pass batch structure to eval workflow - DON'T flatten, let eval workflow handle batch sizing
                 conditional_result = await run_eval_conditional(
@@ -417,12 +417,12 @@ class EfficientBatchSamplesProcessor:
             else:
                 # 🚀 ADVANCED SAMPLE TYPE PARALLELIZATION: Process sample types concurrently
                 if len(sample_type_batches) > 1:
-                    logger.info(f"🔧 Processing {len(sample_type_batches)} sample types with advanced parallelization")
+                    print(f"🔧 Processing {len(sample_type_batches)} sample types with advanced parallelization")
                     
                     # Process each sample type concurrently when they don't interdepend
                     async def process_sample_type_concurrent(sample_type, batches):
                         """Process a single sample type with all its batches."""
-                        logger.info(f"🔧 Starting concurrent processing for sample type: {sample_type}")
+                        print(f"🔧 Starting concurrent processing for sample type: {sample_type}")
                         
                         # Create isolated sample type batches structure
                         isolated_batches = {sample_type: batches}
@@ -437,7 +437,7 @@ class EfficientBatchSamplesProcessor:
                             max_workers=max(1, self.max_workers // len(sample_type_batches)) if self.max_workers else None,
                         )
                         
-                        logger.info(f"🔧 Completed concurrent processing for sample type: {sample_type}")
+                        print(f"🔧 Completed concurrent processing for sample type: {sample_type}")
                         return sample_type, result
                     
                     # Run all sample types concurrently
@@ -478,7 +478,7 @@ class EfficientBatchSamplesProcessor:
                             "statistics": merged_statistics
                         }
                         
-                        logger.info(f"🔧 Merged results from {len(sample_type_results)} concurrent sample type processes")
+                        print(f"🔧 Merged results from {len(sample_type_results)} concurrent sample type processes")
                     else:
                         # Fallback to standard processing
                         conditional_result = await run_conditional_processing_workflow(
@@ -504,10 +504,10 @@ class EfficientBatchSamplesProcessor:
                     )
             
             if not conditional_result.get("success", True):
-                logger.warning(f"⚠️ Conditional processing completed with errors: {conditional_result['message']}")
+                print(f"⚠️ Conditional processing completed with errors: {conditional_result['message']}")
             
             stage_duration = time.time() - stage_start_time
-            logger.info(f"✅ Stage 3 completed in {stage_duration:.2f} seconds")
+            print(f"✅ Stage 3 completed in {stage_duration:.2f} seconds")
             
             # Save conditional processing output under conditional_processing/
             conditional_dir = self.batch_dir / "conditional_processing"
@@ -519,7 +519,7 @@ class EfficientBatchSamplesProcessor:
             return conditional_result
             
         except Exception as e:
-            logger.error(f"❌ Stage 3 (Conditional Processing) failed: {str(e)}")
+            print(f"❌ Stage 3 (Conditional Processing) failed: {str(e)}")
             raise
 
     async def extract_sample_results_from_batch(self, batch_dir: Path) -> Dict[str, Dict[str, Any]]:
@@ -537,7 +537,7 @@ class EfficientBatchSamplesProcessor:
             # Load data intake output to get sample list
             data_intake_file = batch_dir / "data_intake_output.json"
             if not data_intake_file.exists():
-                logger.warning(f"No data_intake_output.json found in {batch_dir}")
+                print(f"No data_intake_output.json found in {batch_dir}")
                 return batch_results
                 
             with open(data_intake_file, "r") as f:
@@ -700,7 +700,7 @@ class EfficientBatchSamplesProcessor:
                                     break
                     except Exception as e:
                         error_msg = f"Error reading curator file {curator_file}: {e}"
-                        logger.error(error_msg)
+                        print(error_msg)
                         # If this is a critical curator file (contains actual results), fail the consolidation
                         if "curator_output_primary_sample.json" in str(curator_file) or "curator_output_cell_line.json" in str(curator_file):
                             if curator_file.exists() and curator_file.stat().st_size > 100:  # File exists but is corrupted
@@ -813,7 +813,7 @@ class EfficientBatchSamplesProcessor:
                                             break
                             except Exception as e:
                                 error_msg = f"Error reading curator file {curator_file}: {e}"
-                                logger.error(error_msg)
+                                print(error_msg)
                                 # If this is a critical curator file (contains actual results), fail the consolidation
                                 if "curator_output_primary_sample.json" in str(curator_file) or "curator_output_cell_line.json" in str(curator_file):
                                     if curator_file.exists() and curator_file.stat().st_size > 100:  # File exists but is corrupted
@@ -851,11 +851,20 @@ class EfficientBatchSamplesProcessor:
                                         if sr.get("sample_id") == sample_id:
                                             result = sr.get("result", {})
                                             # Check for either new format (normalized_term) or legacy format (final_normalized_term)
-                                            # Use 'in' to check key existence rather than truthy check (handles null values)
-                                            if "normalized_term" in result or "final_normalized_term" in result:
+                                            # Only add if we have an actual normalized value (not null/None)
+                                            normalized_term = result.get("normalized_term") or result.get("final_normalized_term")
+                                            normalized_id = result.get("term_id") or result.get("final_normalized_id")
+                                            if normalized_term is not None and normalized_term != "":
                                                 sample_data["normalized_fields"][field_name] = {
-                                                    "normalized_term": result.get("normalized_term") or result.get("final_normalized_term") or "",
-                                                    "normalized_id": result.get("term_id") or result.get("final_normalized_id") or "",
+                                                    "normalized_term": str(normalized_term),
+                                                    "normalized_id": str(normalized_id) if normalized_id else "",
+                                                    "ontology": result.get("ontology") or result.get("final_ontology") or ""
+                                                }
+                                            elif normalized_id is not None and normalized_id != "":
+                                                # If we have an ID but no term, still include it
+                                                sample_data["normalized_fields"][field_name] = {
+                                                    "normalized_term": "",
+                                                    "normalized_id": str(normalized_id),
                                                     "ontology": result.get("ontology") or result.get("final_ontology") or ""
                                                 }
                                             break
@@ -868,23 +877,31 @@ class EfficientBatchSamplesProcessor:
                                         # field_map expected: sample_id -> {normalized_term, term_id, ontology, original_value}
                                         single = field_map.get(sample_id)
                                         if isinstance(single, dict):
-                                            term = single.get("normalized_term") or ""
-                                            term_id = single.get("term_id") or ""
+                                            term = single.get("normalized_term")
+                                            term_id = single.get("term_id")
                                             ontology = single.get("ontology") or ""
-                                            if term or term_id:
+                                            # Only add if we have an actual value (not null/None)
+                                            if term is not None and term != "":
                                                 sample_data["normalized_fields"][field_name] = {
-                                                    "normalized_term": term,
-                                                    "normalized_id": term_id,
+                                                    "normalized_term": str(term),
+                                                    "normalized_id": str(term_id) if term_id else "",
+                                                    "ontology": ontology,
+                                                }
+                                            elif term_id is not None and term_id != "":
+                                                # If we have an ID but no term, still include it
+                                                sample_data["normalized_fields"][field_name] = {
+                                                    "normalized_term": "",
+                                                    "normalized_id": str(term_id),
                                                     "ontology": ontology,
                                                 }
                     except Exception as e:
-                        logger.warning(f"Error reading batch targets file {batch_targets_file}: {e}")
+                        print(f"Error reading batch targets file {batch_targets_file}: {e}")
                 
                 batch_results[sample_id] = sample_data
             
-            logger.info(f"🔧 Extracted results for {len(batch_results)} samples using parallel processing")
+            print(f"🔧 Extracted results for {len(batch_results)} samples using parallel processing")
         except Exception as e:
-            logger.error(f"Error extracting results from batch {batch_dir}: {e}")
+            print(f"Error extracting results from batch {batch_dir}: {e}")
         
         return batch_results
 
@@ -1132,7 +1149,7 @@ class EfficientBatchSamplesProcessor:
         conditional_output : Dict[str, Any]
             Output from conditional processing stage
         """
-        logger.info(f"📊 Consolidating output files into {self.output_format} format")
+        print(f"📊 Consolidating output files into {self.output_format} format")
         
         try:
             # Create workflow summary
@@ -1253,7 +1270,7 @@ class EfficientBatchSamplesProcessor:
                     comprehensive_file = self.batch_dir / "comprehensive_batch_results.parquet"
                     comprehensive_df.to_parquet(comprehensive_file, index=False)
                     
-                    logger.info(f"✅ Saved parquet files: {streamlined_file} and {comprehensive_file}")
+                    print(f"✅ Saved parquet files: {streamlined_file} and {comprehensive_file}")
                 
             elif self.output_format == "csv":
                 # 🚀 PARALLELIZATION IMPROVEMENT: Process all batch results concurrently
@@ -1352,12 +1369,12 @@ class EfficientBatchSamplesProcessor:
                     files_saved = [f for f in completed_files if f is not None]
                     
                     if files_saved:
-                        logger.info(f"✅ Saved CSV files: {' and '.join(files_saved)}")
+                        print(f"✅ Saved CSV files: {' and '.join(files_saved)}")
             
-            logger.info(f"📁 All results saved to: {self.batch_dir}")
+            print(f"📁 All results saved to: {self.batch_dir}")
             
         except Exception as e:
-            logger.error(f"❌ Error consolidating output files: {e}")
+            print(f"❌ Error consolidating output files: {e}")
             raise
 
     async def run_complete_workflow(self, arbitrator_test_mode: bool = False) -> Dict[str, Any]:
@@ -1371,15 +1388,15 @@ class EfficientBatchSamplesProcessor:
         """
         start_time = time.time()
         
-        logger.info("🚀 Starting efficient batch samples workflow")
-        logger.info("📋 Configuration: %s", self.batch_config)
+        print("🚀 Starting efficient batch samples workflow")
+        print("📋 Configuration: %s", self.batch_config)
         
         try:
             # Load samples
             samples = self.load_samples()
             
             # 🚀 ADVANCED PIPELINE PARALLELIZATION: Overlapping stage preparation
-            logger.info("🔧 Using advanced pipeline parallelization for maximum performance")
+            print("🔧 Using advanced pipeline parallelization for maximum performance")
             
             # 🔧 PERFORMANCE MONITORING: Track parallelization effectiveness
             perf_monitor = {
@@ -1390,7 +1407,7 @@ class EfficientBatchSamplesProcessor:
             }
             
             # Stage 1: Data Intake with concurrent resource preparation
-            logger.info("🚀 Stage 1: Running data intake with pipeline preparation")
+            print("🚀 Stage 1: Running data intake with pipeline preparation")
             
             # Start data intake and begin preparing downstream resources concurrently
             data_intake_task = asyncio.create_task(self.run_data_intake_stage(samples))
@@ -1409,10 +1426,10 @@ class EfficientBatchSamplesProcessor:
                     conditional_dir = self.batch_dir / "conditional_processing"
                     conditional_dir.mkdir(exist_ok=True)
                     
-                    logger.info("🔧 Preprocessing resources prepared concurrently")
+                    print("🔧 Preprocessing resources prepared concurrently")
                     return True
                 except Exception as e:
-                    logger.warning(f"⚠️ Resource preparation failed: {e}")
+                    print(f"⚠️ Resource preparation failed: {e}")
                     return False
             
             # Start resource preparation concurrently with data intake
@@ -1426,7 +1443,7 @@ class EfficientBatchSamplesProcessor:
             # Ensure resource preparation is complete
             prep_success = await prep_task
             if prep_success:
-                logger.info("🔧 Pipeline resource preparation successful")
+                print("🔧 Pipeline resource preparation successful")
             
             # Get successfully processed samples from data intake
             successful_samples = data_intake_output.sample_ids_requested
@@ -1435,10 +1452,10 @@ class EfficientBatchSamplesProcessor:
             
             if len(successful_samples) != len(samples):
                 failed_count = len(samples) - len(successful_samples)
-                logger.warning(f"⚠️ {failed_count} samples failed during data intake and will be excluded from processing")
+                print(f"⚠️ {failed_count} samples failed during data intake and will be excluded from processing")
             
             # Stage 2: Preprocessing with pre-prepared resources
-            logger.info("🚀 Stage 2: Running preprocessing with prepared resources")
+            print("🚀 Stage 2: Running preprocessing with prepared resources")
             preprocessing_task = asyncio.create_task(
                 self.run_preprocessing_stage(data_intake_output, successful_samples)
             )
@@ -1452,10 +1469,10 @@ class EfficientBatchSamplesProcessor:
                         _, curation_provider, _ = self._create_sample_type_model_providers()
                         self._conditional_providers = curation_provider
                     
-                    logger.info("🔧 Conditional processing resources prepared concurrently")
+                    print("🔧 Conditional processing resources prepared concurrently")
                     return True
                 except Exception as e:
-                    logger.warning(f"⚠️ Conditional resource preparation failed: {e}")
+                    print(f"⚠️ Conditional resource preparation failed: {e}")
                     return False
             
             # Start conditional resource preparation
@@ -1471,10 +1488,10 @@ class EfficientBatchSamplesProcessor:
             # Ensure conditional resources are ready
             conditional_prep_success = await conditional_prep_task
             if conditional_prep_success:
-                logger.info("🔧 Conditional processing resources ready")
+                print("🔧 Conditional processing resources ready")
             
             # Stage 3: Conditional Processing with pre-prepared resources
-            logger.info("🚀 Stage 3: Running conditional processing with prepared resources")
+            print("🚀 Stage 3: Running conditional processing with prepared resources")
             conditional_task = asyncio.create_task(
                 self.run_conditional_processing_stage(
                     preprocessing_output, data_intake_output, 
@@ -1497,10 +1514,10 @@ class EfficientBatchSamplesProcessor:
                         for path in output_paths:
                             path.parent.mkdir(parents=True, exist_ok=True)
                         
-                        logger.info("🔧 Consolidation resources prepared concurrently")
+                        print("🔧 Consolidation resources prepared concurrently")
                     return True
                 except Exception as e:
-                    logger.warning(f"⚠️ Consolidation preparation failed: {e}")
+                    print(f"⚠️ Consolidation preparation failed: {e}")
                     return False
             
             # Start consolidation preparation
@@ -1514,10 +1531,10 @@ class EfficientBatchSamplesProcessor:
             # Ensure consolidation is ready
             consolidation_prep_success = await consolidation_prep_task
             if consolidation_prep_success:
-                logger.info("🔧 Consolidation resources ready")
+                print("🔧 Consolidation resources ready")
             
             # Consolidation with parallel processing (already implemented)
-            logger.info("🚀 Stage 4: Running consolidation with parallel processing")
+            print("🚀 Stage 4: Running consolidation with parallel processing")
             await self.consolidate_output_files(
                 data_intake_output, preprocessing_output, conditional_output
             )
@@ -1525,10 +1542,10 @@ class EfficientBatchSamplesProcessor:
             total_execution_time = time.time() - start_time
             
             # 📊 PERFORMANCE REPORTING: Log parallelization effectiveness
-            logger.info("🔧 Performance Summary:")
-            logger.info(f"   Pipeline overlaps used: {perf_monitor['pipeline_overlaps']}")
-            logger.info(f"   Concurrent tasks launched: {perf_monitor['concurrent_tasks']}")
-            logger.info(f"   Total parallelization optimizations: {len(perf_monitor['parallel_operations'])}")
+            print("🔧 Performance Summary:")
+            print(f"   Pipeline overlaps used: {perf_monitor['pipeline_overlaps']}")
+            print(f"   Concurrent tasks launched: {perf_monitor['concurrent_tasks']}")
+            print(f"   Total parallelization optimizations: {len(perf_monitor['parallel_operations'])}")
             
             # Create final workflow result
             workflow_result = {
@@ -1558,14 +1575,14 @@ class EfficientBatchSamplesProcessor:
                 "timestamp": datetime.now().isoformat(),
             }
             
-            logger.info("✅ Efficient batch samples workflow completed successfully in %.2f seconds", total_execution_time)
-            logger.info("📊 Final results: %s", workflow_result['stage_results'])
+            print("✅ Efficient batch samples workflow completed successfully in %.2f seconds", total_execution_time)
+            print("📊 Final results: %s", workflow_result['stage_results'])
             
             return workflow_result
             
         except Exception as e:
             total_execution_time = time.time() - start_time
-            logger.error(f"❌ Efficient batch samples workflow failed: {str(e)}")
+            print(f"❌ Efficient batch samples workflow failed: {str(e)}")
             
             return {
                 "success": False,

@@ -21,12 +21,15 @@ from src.workflows.batch_targets import (
     create_model_provider_for_operation,
     InitialProcessingResult,
     run_conditional_processing as bt_run_conditional_processing,
+    retry_operation_with_backoff,
 )
 from src.agents.Arbitrator import run_arbitration_for_sample
 from src.agents.curator import run_curator_agent
 # Normalization is invoked later via utilities; direct import not needed here
 from src.evaluation.loader import load_raw_context
 from src.workflows.batch_targets import run_unified_normalization
+from src.tools.batch_processing_tools import convert_normalization_data_to_unified_format
+
 
 
 def _safe_serialize(obj):
@@ -969,7 +972,7 @@ async def run_eval_conditional(
                         curation_packages=filtered_curation_packages,
                     )
 
-                    async def _fix_batch(st_local=st, field_local=field_name, linker_local=batch_filtered_linker, batch_idx_local=batch_idx):
+                    async def _fix_batch(st_local=st, field_local=field_name, linker_local=batch_filtered_linker, batch_idx_local=batch_idx, batch_sids_local=batch_sids):
                         async with sem_fix:
                             # Save corrective results to the original batch directory for proper integration
                             corrective_batch_dir = Path(session_directory) / "conditional_processing" / f"{st_local}_batch_1"
@@ -979,8 +982,10 @@ async def run_eval_conditional(
                             if hasattr(linker_local, 'session_directory'):
                                 linker_local.session_directory = str(corrective_batch_dir)
                             
-                            try:
-                                corrective_result = await run_curator_agent(
+                            # Define corrective curation operation with retry logic (same pattern as original curation)
+                            async def _run_corrective_curation():
+                                """Run corrective curation for a batch with retry logic."""
+                                return await run_curator_agent(
                                     data_intake_output=linker_local,
                                     target_field=field_local,
                                     session_id=f"{st_local}_corrective_batch_{batch_idx_local}",
@@ -990,15 +995,23 @@ async def run_eval_conditional(
                                     max_turns=100,
                                     guidance=guidance_payload.get(field_local),
                                 )
-                                
-                                # Store corrective result for later integration
-                                corrective_results_per_field_st[(field_local, st_local, batch_idx_local)] = corrective_result
+                            
+                            # Use retry logic with exponential backoff (same as original curation)
+                            _, corrective_result = await retry_operation_with_backoff(
+                                operation_func=_run_corrective_curation,
+                                operation_name="corrective curation",
+                                target_field=field_local,
+                                sample_ids=batch_sids_local,
+                                # error_tracker=None,  # Could add error tracking if needed
+                            )
+                            
+                            # Store corrective result for later integration
+                            corrective_results_per_field_st[(field_local, st_local, batch_idx_local)] = corrective_result
+                            
+                            if corrective_result:
                                 print(f"🔧 DEBUG[eval_conditional]: corrective batch {batch_idx_local+1} completed for {field_local} {st_local}")
-                                
-                            except Exception as e:
-                                print(f"❌ DEBUG[eval_conditional]: corrective batch {batch_idx_local+1} failed for {field_local} {st_local}: {e}")
-                                # Continue with other batches instead of failing completely
-                                corrective_results_per_field_st[(field_local, st_local, batch_idx_local)] = None
+                            else:
+                                print(f"❌ DEBUG[eval_conditional]: corrective batch {batch_idx_local+1} failed for {field_local} {st_local} after retries")
                     
                     fix_tasks.append(_fix_batch())
                     total_queued += 1
@@ -1050,24 +1063,39 @@ async def run_eval_conditional(
         # In this iteration, stop after one corrective pass
         print("🔧 DEBUG[eval_conditional]: stopping after corrective curation pass")
         break
+    
 
-    # After iterations, run unified normalization per sample type (to populate normalized terms)
+        # After iterations, run unified normalization per sample type (to populate normalized terms)
     try:
         for st in list(initial_results_per_st.keys()):
             initial_for_st = initial_results_per_st.get(st)
             cond_for_st = cond_results_per_st.get(st)
             if not (initial_for_st and cond_for_st):
                 continue
+
+            # Run unified normalization once per sample type
             normalization_data = await run_unified_normalization(
                 initial_result=initial_for_st,
                 conditional_result=cond_for_st,
                 model_provider=model_provider,
                 max_tokens=max_tokens,
                 max_turns=100,
+                enable_parallel_execution=True,  # Explicitly enable parallel normalization
             )
-            # Persist normalization results where consolidator expects them
-            norm_payload = {}
-            for field_name, per_sample in (normalization_data or {}).items():
+
+            # --- NEW: build classic-style unified normalization format ---
+            unified_norm_format: Dict[str, Any] = {}
+            norm_data = normalization_data
+            if hasattr(norm_data, "model_dump"):
+                norm_data = norm_data.model_dump()
+
+            if norm_data and isinstance(norm_data, dict) and len(norm_data) > 0:
+                # This produces the same shape classic mode writes into batch_targets_output.json
+                unified_norm_format = convert_normalization_data_to_unified_format(norm_data)
+
+            # --- OPTIONAL: keep eval-specific normalization_results wrapper for debugging ---
+            norm_payload: Dict[str, Any] = {}
+            for field_name, per_sample in (norm_data or {}).items():
                 sample_results = []
                 if isinstance(per_sample, dict):
                     for sid, result in per_sample.items():
@@ -1076,9 +1104,13 @@ async def run_eval_conditional(
                             "result": _safe_serialize(result),
                         })
                 norm_payload[field_name] = {"sample_results": sample_results}
+
             bt_out = {"normalization_results": norm_payload}
+
+            # Write both unified normalization format and normalization_results into the batch_targets file
             st_batch_dir = Path(session_directory) / "conditional_processing" / f"{st}_batch_1"
             bt_file = st_batch_dir / "batch_targets_output.json"
+
             if bt_file.exists():
                 try:
                     existing = json.loads(bt_file.read_text())
@@ -1086,45 +1118,64 @@ async def run_eval_conditional(
                     existing = {}
             else:
                 existing = {}
+
+            # Unified format first, then optional eval-specific wrapper
+            existing.update(unified_norm_format)
             existing.update(bt_out)
+
             _atomic_write_json(bt_file, existing, indent=2)
+
     except Exception as _norm_err:
         print(f"🔧 DEBUG[eval_conditional]: unified normalization phase failed: {_norm_err}")
 
-    # For compatibility, return a result dict similar to ConditionalProcessingResult
-    # For compatibility, return a result dict similar to ConditionalProcessingResult
+        # For compatibility, return a result dict similar to ConditionalProcessingResult
     # After iterative evaluation, produce classic-like output so downstream consolidation writes CSVs
-    # Build a synthetic structure similar to conditional_processing output to leverage existing consolidation
-    batch_results = []
+    batch_results: List[Dict[str, Any]] = []
     try:
+        # Use the original sample_type_batches structure so eval and classic
+        # expose the same batching externally.
         for st, cond_result in cond_results_per_st.items():
             if not cond_result:
                 continue
-            # Attempt to locate the batch directory we created earlier
-            batch_dir = Path(session_directory) / "conditional_processing" / f"{st}_batch_1"
-            # Collect sample list back from initial mock results
-            samples_list = list(initial_results_per_st.get(st).sample_ids) if initial_results_per_st.get(st) else []
-            batch_result = {
-                "success": True,
-                "batch_name": f"{st}_batch_1",
-                "sample_type": st,
-                "batch_samples": samples_list,
-                "batch_directory": str(batch_dir),
-                # Don't include the actual CuratorOutput objects as they're not JSON serializable
-                # The updated results are now written to files for CSV consolidation
-            }
-            batch_results.append(batch_result)
-            
-            # Call incremental CSV callback if provided
-            if incremental_csv_callback:
-                try:
-                    await incremental_csv_callback(batch_result)
-                except Exception as e:
-                    print(f"🔧 DEBUG[eval_conditional]: CSV callback failed for {st}: {e}")
-                    # Continue processing even if CSV callback fails
+
+            batches_list = sample_type_batches.get(st, [])
+            if not batches_list:
+                # Fallback: treat all samples for this sample type as a single batch
+                batches_list = [
+                    list(initial_results_per_st.get(st).sample_ids)
+                    if initial_results_per_st.get(st)
+                    else []
+                ]
+
+            # All eval batches for this sample type share a single consolidated directory
+            # that contains the curated + normalized files.
+            shared_batch_dir = Path(session_directory) / "conditional_processing" / f"{st}_batch_1"
+
+            for batch_idx, batch_samples in enumerate(batches_list, start=1):
+                batch_name = f"{st}_batch_{batch_idx}"
+
+                batch_result = {
+                    "success": True,
+                    "batch_name": batch_name,
+                    "sample_type": st,
+                    "batch_samples": list(batch_samples),
+                    "batch_directory": str(shared_batch_dir),
+                    # No CuratorOutput objects here; they are written to disk already
+                }
+                batch_results.append(batch_result)
+
+                # Call incremental CSV callback if provided (once per batch)
+                if incremental_csv_callback:
+                    try:
+                        await incremental_csv_callback(batch_result)
+                    except Exception as e:
+                        print(f"🔧 DEBUG[eval_conditional]: CSV callback failed for {st}, batch {batch_idx}: {e}")
+                        # Continue processing even if CSV callback fails
     except Exception:
+        # Fail-safe: if something goes wrong constructing batch_results,
+        # downstream consolidation should still not crash.
         pass
-    
+
     # Ensure curated (and corrective) results are written to the batch directories for CSV consolidation
     try:
         for st in curated_outputs_per_st:
