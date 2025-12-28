@@ -1373,22 +1373,17 @@ def semantic_search_candidates_impl_legacy(
                 final_normalized_term = "sterile"
                 final_normalized_id = "MONDO:0005047"
                 final_ontology = "mondo"
+            elif best_overall_match and best_overall_match.best_match:
+                # Valid match found
+                final_normalized_term = best_overall_match.best_match.term
+                final_normalized_id = best_overall_match.best_match.term_id
+                final_ontology = best_overall_match.best_match.ontology
             else:
-                final_normalized_term = (
-                    best_overall_match.best_match.term
-                    if best_overall_match and best_overall_match.best_match
-                    else None
-                )
-                final_normalized_id = (
-                    best_overall_match.best_match.term_id
-                    if best_overall_match and best_overall_match.best_match
-                    else None
-                )
-                final_ontology = (
-                    best_overall_match.best_match.ontology
-                    if best_overall_match and best_overall_match.best_match
-                    else None
-                )
+                # No match found (best_overall_match is None or has no best_match)
+                # Report "No Match" instead of None to indicate normalization was attempted but no match found
+                final_normalized_term = "No Match"
+                final_normalized_id = ""
+                final_ontology = ""
 
             # Extract original candidate values from the curation result
             original_candidates = []
@@ -1663,6 +1658,16 @@ def normalize_curation_result(
                 final_normalized_term = top_normalized.best_match.term
                 final_normalized_id = top_normalized.best_match.term_id
                 final_ontology = top_normalized.best_match.ontology
+            else:
+                # No match found - report "No Match" instead of None
+                final_normalized_term = "No Match"
+                final_normalized_id = ""
+                final_ontology = ""
+        else:
+            # No normalized candidates at all - report "No Match"
+            final_normalized_term = "No Match"
+            final_normalized_id = ""
+            final_ontology = ""
 
     # Create the normalization result with both new and legacy fields
     normalization_result = NormalizationResult(
@@ -1822,18 +1827,25 @@ def ols_search_candidates_impl(
             continue
 
         # Extract curated values in priority order
+        # Enhanced fallback: always check final_candidates as safety net
         values: List[str] = []
+        
+        # Try type-specific fields first
         if target_field.lower() == "treatment" and rec.get("treatment_name"):
             values.append(str(rec.get("treatment_name")))
         elif target_field.lower() == "disease" and rec.get("disease_name"):
             values.append(str(rec.get("disease_name")))
         elif rec.get("final_candidate"):
             values.append(str(rec.get("final_candidate")))
-        elif rec.get("final_candidates") and isinstance(rec.get("final_candidates"), list):
+        
+        # Fallback to final_candidates if no value found yet
+        # This handles cases where type-specific fields are missing from merged outputs
+        if not values and rec.get("final_candidates") and isinstance(rec.get("final_candidates"), list):
             first = rec.get("final_candidates")[0]
             if isinstance(first, dict) and first.get("value"):
                 values.append(str(first.get("value")))
 
+        # Ultimate fallback: iterate through all candidate arrays
         if not values:
             for key in ("final_candidates", "series_candidates", "sample_candidates", "abstract_candidates"):
                 arr = rec.get(key)
@@ -1956,18 +1968,25 @@ async def ols_search_candidates_impl_async(
             continue
 
         # Extract curated values in priority order
+        # Enhanced fallback: always check final_candidates as safety net
         values: List[str] = []
+        
+        # Try type-specific fields first
         if target_field.lower() == "treatment" and rec.get("treatment_name"):
             values.append(str(rec.get("treatment_name")))
         elif target_field.lower() == "disease" and rec.get("disease_name"):
             values.append(str(rec.get("disease_name")))
         elif rec.get("final_candidate"):
             values.append(str(rec.get("final_candidate")))
-        elif rec.get("final_candidates") and isinstance(rec.get("final_candidates"), list):
+        
+        # Fallback to final_candidates if no value found yet
+        # This handles cases where type-specific fields are missing from merged outputs
+        if not values and rec.get("final_candidates") and isinstance(rec.get("final_candidates"), list):
             first = rec.get("final_candidates")[0]
             if isinstance(first, dict) and first.get("value"):
                 values.append(str(first.get("value")))
 
+        # Ultimate fallback: iterate through all candidate arrays
         if not values:
             for key in ("final_candidates", "series_candidates", "sample_candidates", "abstract_candidates"):
                 arr = rec.get(key)

@@ -408,11 +408,12 @@ def extract_normalization_results(
         final_ontology = sample_result.get("final_ontology")
 
         # Use final_normalized results if available, otherwise fall back to final_candidate
-        if final_normalized_term and final_normalized_id:
+        # Handle "No Match" case - it's a valid result indicating no ontology match was found
+        if final_normalized_term and (final_normalized_id or final_normalized_term == "No Match"):
             sample_results["normalized_term"] = final_normalized_term
-            sample_results["term_id"] = final_normalized_id
+            sample_results["term_id"] = final_normalized_id if final_normalized_id else ""
             sample_results["confidence"] = final_confidence
-            sample_results["ontology"] = final_ontology
+            sample_results["ontology"] = final_ontology if final_ontology else ""
             sample_results["original_value"] = final_candidate
         elif final_candidate:
             # Fallback: if we have a final_candidate but no normalized results,

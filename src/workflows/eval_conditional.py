@@ -20,15 +20,24 @@ from src.workflows.batch_targets import (
     TARGET_FIELD_CONFIG,
     create_model_provider_for_operation,
     InitialProcessingResult,
+    ConditionalProcessingResult,
     run_conditional_processing as bt_run_conditional_processing,
     retry_operation_with_backoff,
 )
 from src.agents.Arbitrator import run_arbitration_for_sample
 from src.agents.curator import run_curator_agent
-# Normalization is invoked later via utilities; direct import not needed here
+# Normalization is invoked later via utilities
 from src.evaluation.loader import load_raw_context
 from src.workflows.batch_targets import run_unified_normalization
 from src.tools.batch_processing_tools import convert_normalization_data_to_unified_format
+from src.models.agent_outputs import CuratorOutput
+from src.workflows.batch_output_utils import (
+    BatchContext,
+    build_batch_targets_output,
+    write_batch_targets_output,
+    filter_normalization_for_batch,
+    ensure_composite_keys,
+)
 
 
 
@@ -138,25 +147,6 @@ def merge_corrective_with_original_results(original_result, corrective_result, c
     if not corrective_result:
         return original_result
     
-    # Create a merged result
-    class MergedCuratorOutput:
-        def __init__(self):
-            self.success = True
-            self.message = "Merged original and corrective curation results"
-            self.execution_time_seconds = 0
-            self.sample_ids_requested = []
-            self.target_field = getattr(original_result, 'target_field', getattr(corrective_result, 'target_field', ''))
-            self.session_directory = getattr(original_result, 'session_directory', getattr(corrective_result, 'session_directory', ''))
-            self.curation_results = []
-            self.total_samples_processed = 0
-            self.samples_needing_review = 0
-            self.files_created = []
-            self.curation_results_file = getattr(original_result, 'curation_results_file', None)
-            self.average_confidence = None
-            self.warnings = []
-    
-    merged = MergedCuratorOutput()
-    
     # Build a map of corrected samples
     corrective_map = {}
     if hasattr(corrective_result, 'curation_results'):
@@ -165,25 +155,79 @@ def merge_corrective_with_original_results(original_result, corrective_result, c
             if sample_id:
                 corrective_map[sample_id] = curation
     
-    # Add all samples: use corrective version if available, otherwise original
+    # Build merged curation_results list: use corrective version if available, otherwise original
+    merged_curation_results = []
     if hasattr(original_result, 'curation_results'):
         for curation in original_result.curation_results:
             sample_id = getattr(curation, 'sample_id', None)
             if sample_id in corrective_map:
                 # Use corrected version
-                merged.curation_results.append(corrective_map[sample_id])
+                merged_curation_results.append(corrective_map[sample_id])
                 print(f"🔍 DEBUG[merge_corrective]: Using corrected version for {sample_id}")
             else:
                 # Keep original version
-                merged.curation_results.append(curation)
+                merged_curation_results.append(curation)
                 print(f"🔍 DEBUG[merge_corrective]: Keeping original version for {sample_id}")
     
-    merged.total_samples_processed = len(merged.curation_results)
-    merged.sample_ids_requested = [getattr(c, 'sample_id', '') for c in merged.curation_results]
+    # Calculate successful_curations: count results with non-None final_candidate
+    successful_curations = sum(
+        1 for cr in merged_curation_results 
+        if hasattr(cr, 'final_candidate') and cr.final_candidate is not None
+    )
     
-    print(f"🔍 DEBUG[merge_corrective]: Final merged result has {len(merged.curation_results)} samples")
+    # Calculate samples_needing_review: sum from both
+    samples_needing_review = (
+        getattr(original_result, 'samples_needing_review', 0) +
+        getattr(corrective_result, 'samples_needing_review', 0)
+    )
     
-    return merged
+    # Calculate average_confidence: weighted average if available
+    avg_conf = None
+    orig_conf = getattr(original_result, 'average_confidence', None)
+    corr_conf = getattr(corrective_result, 'average_confidence', None)
+    if orig_conf is not None or corr_conf is not None:
+        # Simple average if both exist, otherwise use the one that exists
+        if orig_conf is not None and corr_conf is not None:
+            avg_conf = (orig_conf + corr_conf) / 2
+        else:
+            avg_conf = orig_conf if orig_conf is not None else corr_conf
+    
+    # Combine files_created
+    files_created = list(set(
+        getattr(original_result, 'files_created', []) +
+        getattr(corrective_result, 'files_created', [])
+    ))
+    
+    # Combine warnings
+    warnings = list(set(
+        getattr(original_result, 'warnings', []) +
+        getattr(corrective_result, 'warnings', [])
+    ))
+    
+    print(f"🔍 DEBUG[merge_corrective]: Final merged result has {len(merged_curation_results)} samples")
+    
+    # Use model_construct to bypass validation for curation_results
+    # This allows us to pass DiseaseCurationResult, SexCurationResult, etc.
+    # which are not subclasses of CurationResult but are valid curation result types
+    return CuratorOutput.model_construct(
+        success=True,
+        message="Merged original and corrective curation results",
+        execution_time_seconds=(
+            getattr(original_result, 'execution_time_seconds', 0) +
+            getattr(corrective_result, 'execution_time_seconds', 0)
+        ),
+        sample_ids_requested=[getattr(c, 'sample_id', '') for c in merged_curation_results],
+        target_field=getattr(original_result, 'target_field', getattr(corrective_result, 'target_field', '')),
+        session_directory=getattr(original_result, 'session_directory', getattr(corrective_result, 'session_directory', '')),
+        total_samples_processed=len(merged_curation_results),
+        successful_curations=successful_curations,
+        samples_needing_review=samples_needing_review,
+        curation_results=merged_curation_results,
+        files_created=files_created,
+        curation_results_file=getattr(original_result, 'curation_results_file', None),
+        average_confidence=avg_conf,
+        warnings=warnings,
+    )
 
 
 def merge_batch_curator_results(batch_results: list, field_name: str):
@@ -211,45 +255,89 @@ def merge_batch_curator_results(batch_results: list, field_name: str):
         if hasattr(batch_result, 'curation_results'):
             merged_curation_results.extend(batch_result.curation_results)
     
-    # Create a merged result using the structure of the first result
-    class MergedCuratorOutput:
-        def __init__(self):
-            self.success = True
-            self.target_field = field_name
-            self.curation_results = merged_curation_results
-            self.total_samples_processed = len(merged_curation_results)
-            self.execution_time_seconds = sum(
-                getattr(br, 'execution_time_seconds', 0) for br in batch_results
-            )
-            self.message = f"Merged corrective curation from {len(batch_results)} batches"
-            # Add session_directory from first batch result to fix normalization errors
-            self.session_directory = getattr(batch_results[0], 'session_directory', '') if batch_results else ''
-            self.sample_ids_requested = [getattr(r, 'sample_id', '') for r in merged_curation_results]
-            self.curation_results_file = None
-            self.files_created = []
-            self.average_confidence = None
-            self.warnings = []
-            self.samples_needing_review = 0
-        
-        def model_dump(self):
-            return {
-                "success": self.success,
-                "target_field": self.target_field,
-                "curation_results": [
-                    {
-                        "sample_id": r.sample_id if hasattr(r, 'sample_id') else r.get('sample_id'),
-                        "final_candidate": r.final_candidate if hasattr(r, 'final_candidate') else r.get('final_candidate'),
-                        "final_confidence": r.final_confidence if hasattr(r, 'final_confidence') else r.get('final_confidence'),
-                        "final_candidates": r.final_candidates if hasattr(r, 'final_candidates') else r.get('final_candidates', []),
-                        "processing_notes": getattr(r, 'processing_notes', [])
-                    } for r in self.curation_results
-                ],
-                "message": self.message,
-                "total_samples_processed": self.total_samples_processed,
-                "execution_time_seconds": self.execution_time_seconds
-            }
+    # Calculate successful_curations
+    successful_curations = sum(
+        1 for cr in merged_curation_results 
+        if hasattr(cr, 'final_candidate') and cr.final_candidate is not None
+    )
     
-    return MergedCuratorOutput()
+    # Sum samples_needing_review
+    samples_needing_review = sum(
+        getattr(br, 'samples_needing_review', 0) for br in batch_results
+    )
+    
+    # Combine files_created
+    files_created = []
+    for br in batch_results:
+        files_created.extend(getattr(br, 'files_created', []))
+    files_created = list(set(files_created))
+    
+    # Combine warnings
+    warnings = []
+    for br in batch_results:
+        warnings.extend(getattr(br, 'warnings', []))
+    warnings = list(set(warnings))
+    
+    # Calculate average_confidence: weighted average
+    avg_conf = None
+    confidences = [getattr(br, 'average_confidence', None) for br in batch_results]
+    confidences = [c for c in confidences if c is not None]
+    if confidences:
+        avg_conf = sum(confidences) / len(confidences)
+    
+    # Use the same type as the input results to preserve type-specific fields
+    # (e.g., DiseaseCuratorOutput has disease_name, condition fields in curation_results)
+    output_type = type(batch_results[0])
+    
+    # Build common fields for all output types
+    common_fields = {
+        'success': True,
+        'target_field': field_name,
+        'curation_results': merged_curation_results,
+        'total_samples_processed': len(merged_curation_results),
+        'execution_time_seconds': sum(
+            getattr(br, 'execution_time_seconds', 0) for br in batch_results
+        ),
+        'message': f"Merged corrective curation from {len(batch_results)} batches",
+        'session_directory': getattr(batch_results[0], 'session_directory', '') if batch_results else '',
+        'sample_ids_requested': [getattr(r, 'sample_id', '') for r in merged_curation_results],
+        'curation_results_file': None,
+        'files_created': files_created,
+        'average_confidence': avg_conf,
+        'warnings': warnings,
+        'samples_needing_review': samples_needing_review,
+        'successful_curations': successful_curations,
+    }
+    
+    # Add type-specific fields for DiseaseCuratorOutput
+    if output_type.__name__ == 'DiseaseCuratorOutput':
+        # Count control vs diseased samples
+        control_count = sum(
+            1 for cr in merged_curation_results 
+            if hasattr(cr, 'condition') and getattr(cr, 'condition', None) == 'Control'
+        )
+        diseased_count = sum(
+            1 for cr in merged_curation_results 
+            if hasattr(cr, 'condition') and getattr(cr, 'condition', None) == 'Diseased'
+        )
+        common_fields['control_samples_count'] = control_count
+        common_fields['diseased_samples_count'] = diseased_count
+    
+    # Add type-specific fields for TreatmentCuratorOutput
+    elif output_type.__name__ == 'TreatmentCuratorOutput':
+        common_fields['samples_with_treatment'] = sum(
+            1 for cr in merged_curation_results 
+            if hasattr(cr, 'treatment_name') and getattr(cr, 'treatment_name', None)
+        )
+        common_fields['unique_treatments_found'] = len(set(
+            getattr(cr, 'treatment_name', '') for cr in merged_curation_results 
+            if hasattr(cr, 'treatment_name') and getattr(cr, 'treatment_name', None)
+        ))
+    
+    # Use model_construct to bypass validation for curation_results
+    # This allows us to pass DiseaseCurationResult, SexCurationResult, etc.
+    # which are not subclasses of CurationResult but are valid curation result types
+    return output_type.model_construct(**common_fields)
 
 
 def load_corrective_curator_results(session_directory: str, sample_id: str, sample_type: str) -> Dict[str, str]:
@@ -327,6 +415,7 @@ async def run_eval_conditional(
     print(f"🔧 DEBUG[eval_conditional]: target_fields={target_fields}")
     print(f"🔧 DEBUG[eval_conditional]: max_workers={max_workers}, max_iterations={max_iterations}")
     print(f"🔧 DEBUG[eval_conditional]: arbitrator_test_mode={arbitrator_test_mode}")
+    print(f"🔍 DEBUG[eval_conditional]: Function entry - will always return a dict, never None")
     
     # Handle both new batch structure and legacy grouped_samples for backward compatibility
     if sample_type_batches is not None:
@@ -382,12 +471,6 @@ async def run_eval_conditional(
         
         print(f"🔧 DEBUG[eval_conditional]: Processing {sample_type} with {len(batches_list)} batches")
         
-        # For eval mode, we'll still create a single consolidated batch directory per sample type
-        # but process the samples in smaller chunks for curation
-        batch_name = f"{sample_type}_batch_1"
-        batch_dir = conditional_dir / batch_name
-        batch_dir.mkdir(parents=True, exist_ok=True)
-        
         # Get all samples for this sample type (flattened for directory creation)
         samples_list = []
         for batch in batches_list:
@@ -407,12 +490,15 @@ async def run_eval_conditional(
             filtered_curation_packages = []
 
         # Create consolidated data intake for the entire sample type (used for arbitration)
+        # Use a dedicated consolidated directory (not batch-specific) for consolidated operations
+        consolidated_dir = conditional_dir / f"{sample_type}_consolidated"
+        consolidated_dir.mkdir(parents=True, exist_ok=True)
         consolidated_data_intake = LinkerOutput(
             success=True,
             message=f"Consolidated for {sample_type} processing",
             execution_time_seconds=0.0,
             sample_ids_requested=list(samples_list),
-            session_directory=str(batch_dir),
+            session_directory=str(consolidated_dir),
             fields_removed_during_cleaning=getattr(data_intake_output, "fields_removed_during_cleaning", []) or [],
             linked_data=getattr(data_intake_output, "linked_data", None),
             files_created=getattr(data_intake_output, "files_created", []) or [],
@@ -429,8 +515,9 @@ async def run_eval_conditional(
         )
 
         # Save consolidated data intake output JSON for audit consistency
+        # Write to consolidated directory (not batch-specific)
         try:
-            (batch_dir / "data_intake_output.json").write_text(consolidated_data_intake.model_dump_json(indent=2), encoding="utf-8")
+            (consolidated_dir / "data_intake_output.json").write_text(consolidated_data_intake.model_dump_json(indent=2), encoding="utf-8")
         except Exception:
             pass
 
@@ -554,6 +641,11 @@ async def run_eval_conditional(
                 """Process a single batch concurrently."""
                 print(f"🔧 DEBUG[eval_conditional]: Processing batch {batch_idx + 1}/{len(batches_list)} for {sample_type} ({len(batch_samples)} samples)")
                 
+                # Create batch-specific directory for this batch
+                batch_name = f"{sample_type}_batch_{batch_idx + 1}"
+                batch_dir = conditional_dir / batch_name
+                batch_dir.mkdir(parents=True, exist_ok=True)
+                
                 # Create batch-specific curation packages
                 batch_filtered_packages = []
                 try:
@@ -588,6 +680,12 @@ async def run_eval_conditional(
                     cleaned_abstract_metadata=getattr(data_intake_output, "cleaned_abstract_metadata", None),
                     curation_packages=batch_filtered_packages,
                 )
+                
+                # Save batch-specific data intake output JSON for CSV extraction
+                try:
+                    (batch_dir / "data_intake_output.json").write_text(batch_data_intake.model_dump_json(indent=2), encoding="utf-8")
+                except Exception:
+                    pass
                 
                 # Create batch-specific mock initial result
                 batch_mock_initial = InitialProcessingResult(
@@ -626,19 +724,23 @@ async def run_eval_conditional(
             # Merge batch results into sample type outputs
             for batch_cond_result, batch_idx in batch_results:
                 batch_outputs = getattr(batch_cond_result, "all_sample_type_outputs", {}) or {}
-                for field_name, curator_output in batch_outputs.items():
-                    if field_name not in sample_type_outputs:
-                        sample_type_outputs[field_name] = []
-                    sample_type_outputs[field_name].append(curator_output)
+                # Ensure all keys are in composite format (sample_type::field)
+                normalized_batch_outputs = ensure_composite_keys(batch_outputs, sample_type)
+                for composite_key, curator_output in normalized_batch_outputs.items():
+                    if composite_key not in sample_type_outputs:
+                        sample_type_outputs[composite_key] = []
+                    sample_type_outputs[composite_key].append(curator_output)
             
             # Merge multiple batch outputs per field
             merged_outputs = {}
-            for field_name, curator_outputs_list in sample_type_outputs.items():
+            for composite_key, curator_outputs_list in sample_type_outputs.items():
                 if len(curator_outputs_list) == 1:
-                    merged_outputs[field_name] = curator_outputs_list[0]
+                    merged_outputs[composite_key] = curator_outputs_list[0]
                 else:
                     # Merge multiple curator outputs for the same field
-                    merged_outputs[field_name] = merge_batch_curator_results(curator_outputs_list, field_name)
+                    # Extract field name from composite key for merge function
+                    field_name = composite_key.split("::", 1)[1] if "::" in composite_key else composite_key
+                    merged_outputs[composite_key] = merge_batch_curator_results(curator_outputs_list, field_name)
             
             curated_outputs_per_st[sample_type] = merged_outputs
             
@@ -655,7 +757,7 @@ async def run_eval_conditional(
         consolidated_mock_initial = InitialProcessingResult(
             success=True,
             session_id=f"{sample_type}_eval",
-            session_directory=str(batch_dir),
+            session_directory=str(consolidated_dir),
             data_intake_output=consolidated_data_intake,  # Use the consolidated data intake
             sample_ids=list(samples_list),  # All samples for this sample type
             direct_fields={},
@@ -698,6 +800,17 @@ async def run_eval_conditional(
     # Iterative arbitration and correction
     for iteration in range(1, max_iterations + 1):
         print(f"🔧 DEBUG[eval_conditional]: iteration {iteration} starting")
+        
+        # Create mapping from sample_id to batch_idx for each sample type
+        # This is used to determine which batch directory to use for corrective curation
+        sample_to_batch_idx: Dict[str, Dict[str, int]] = {}
+        if sample_type_batches:
+            for st, batches_list in sample_type_batches.items():
+                sample_to_batch_idx[st] = {}
+                for batch_idx, batch_samples in enumerate(batches_list, start=1):
+                    for sample_id in batch_samples:
+                        sample_to_batch_idx[st][sample_id] = batch_idx
+        
         iter_dir = conditional_dir / f"iteration_{iteration}"
         arb_dir = iter_dir / "arbitrator"
         corr_dir = iter_dir / "curation_corrections"
@@ -974,8 +1087,17 @@ async def run_eval_conditional(
 
                     async def _fix_batch(st_local=st, field_local=field_name, linker_local=batch_filtered_linker, batch_idx_local=batch_idx, batch_sids_local=batch_sids):
                         async with sem_fix:
+                            # Determine which batch directory to use for corrective curation
+                            # Use the batch index of the first sample in this corrective batch
+                            # (all samples in a corrective batch should belong to the same original batch)
+                            corrective_batch_idx = 1  # Default to batch 1
+                            if batch_sids_local and sample_to_batch_idx.get(st_local):
+                                first_sample_batch = sample_to_batch_idx[st_local].get(batch_sids_local[0])
+                                if first_sample_batch:
+                                    corrective_batch_idx = first_sample_batch
+                            
                             # Save corrective results to the original batch directory for proper integration
-                            corrective_batch_dir = Path(session_directory) / "conditional_processing" / f"{st_local}_batch_1"
+                            corrective_batch_dir = Path(session_directory) / "conditional_processing" / f"{st_local}_batch_{corrective_batch_idx}"
                             corrective_batch_dir.mkdir(parents=True, exist_ok=True)
                             
                             # Update the linker to point to the correct session directory for output
@@ -1046,26 +1168,70 @@ async def run_eval_conditional(
                         # Get list of corrected sample IDs from field_to_samples
                         corrected_sample_ids = field_to_samples.get(field_name, [])
                         
+                        # Use composite key format to match how curated_outputs_per_st stores results
+                        # curated_outputs_per_st uses composite keys like "primary_sample::tissue"
+                        composite_key = f"{sample_type}::{field_name}"
+                        
                         # Merge corrective results WITH original results (preserve uncorrected samples)
-                        if field_name in curated_outputs_per_st[sample_type]:
-                            original_result = curated_outputs_per_st[sample_type][field_name]
+                        # Check for both composite key and simple key for backward compatibility
+                        if composite_key in curated_outputs_per_st[sample_type]:
+                            original_result = curated_outputs_per_st[sample_type][composite_key]
                             print(f"🔧 DEBUG[eval_conditional]: merging {len(batch_results)} corrective batches for {field_name}/{sample_type} with original (preserving uncorrected samples)")
                             merged_result = merge_corrective_with_original_results(
                                 original_result, 
                                 final_corrective_result, 
                                 corrected_sample_ids
                             )
-                            curated_outputs_per_st[sample_type][field_name] = merged_result
+                            curated_outputs_per_st[sample_type][composite_key] = merged_result
+                        elif field_name in curated_outputs_per_st[sample_type]:
+                            # Fallback: check for simple key (backward compatibility)
+                            original_result = curated_outputs_per_st[sample_type][field_name]
+                            print(f"🔧 DEBUG[eval_conditional]: merging {len(batch_results)} corrective batches for {field_name}/{sample_type} with original (simple key)")
+                            merged_result = merge_corrective_with_original_results(
+                                original_result, 
+                                final_corrective_result, 
+                                corrected_sample_ids
+                            )
+                            # Store with composite key to ensure normalization can find it
+                            curated_outputs_per_st[sample_type][composite_key] = merged_result
+                            # Remove the old simple key to avoid duplicates
+                            del curated_outputs_per_st[sample_type][field_name]
                         else:
-                            print(f"🔧 DEBUG[eval_conditional]: adding new {field_name} for {sample_type} from merged corrective result")
-                            curated_outputs_per_st[sample_type][field_name] = final_corrective_result
+                            # No original result found - add with composite key
+                            print(f"🔧 DEBUG[eval_conditional]: adding new {composite_key} for {sample_type} from merged corrective result")
+                            curated_outputs_per_st[sample_type][composite_key] = final_corrective_result
 
         # In this iteration, stop after one corrective pass
         print("🔧 DEBUG[eval_conditional]: stopping after corrective curation pass")
         break
     
 
-        # After iterations, run unified normalization per sample type (to populate normalized terms)
+    # After iterations, MERGE corrected values into cond_results_per_st for normalization
+    # This ensures normalization uses the final corrected curator values while preserving original outputs
+    for st in curated_outputs_per_st:
+        if st in cond_results_per_st:
+            # Start with existing outputs (preserve all original curation results)
+            existing_outputs = cond_results_per_st[st].all_sample_type_outputs or {}
+            merged_outputs = dict(existing_outputs)  # Copy to avoid mutation
+            
+            # Merge corrected values into existing outputs (overwriting where needed)
+            corrections_applied = 0
+            for field_name, curator_output in curated_outputs_per_st[st].items():
+                # Check if field_name is already a composite key (contains "::")
+                if "::" in field_name:
+                    # Already a composite key, use as-is
+                    composite_key = field_name
+                else:
+                    # Simple field name, add sample type prefix
+                    composite_key = f"{st}::{field_name}"
+                merged_outputs[composite_key] = curator_output
+                corrections_applied += 1
+            
+            # Update cond_results_per_st with merged values (preserves original + corrections)
+            cond_results_per_st[st].all_sample_type_outputs = merged_outputs
+            print(f"🔧 DEBUG[eval_conditional]: Merged {corrections_applied} corrected values into cond_results_per_st[{st}] (total keys: {len(merged_outputs)})")
+
+    # After iterations, run unified normalization per sample type (to populate normalized terms)
     try:
         for st in list(initial_results_per_st.keys()):
             initial_for_st = initial_results_per_st.get(st)
@@ -1073,64 +1239,109 @@ async def run_eval_conditional(
             if not (initial_for_st and cond_for_st):
                 continue
 
-            # Run unified normalization once per sample type
-            normalization_data = await run_unified_normalization(
-                initial_result=initial_for_st,
-                conditional_result=cond_for_st,
-                model_provider=model_provider,
-                max_tokens=max_tokens,
-                max_turns=100,
-                enable_parallel_execution=True,  # Explicitly enable parallel normalization
-            )
-
-            # --- NEW: build classic-style unified normalization format ---
-            unified_norm_format: Dict[str, Any] = {}
-            norm_data = normalization_data
-            if hasattr(norm_data, "model_dump"):
-                norm_data = norm_data.model_dump()
-
-            if norm_data and isinstance(norm_data, dict) and len(norm_data) > 0:
-                # This produces the same shape classic mode writes into batch_targets_output.json
-                unified_norm_format = convert_normalization_data_to_unified_format(norm_data)
-
-            # --- OPTIONAL: keep eval-specific normalization_results wrapper for debugging ---
-            norm_payload: Dict[str, Any] = {}
-            for field_name, per_sample in (norm_data or {}).items():
-                sample_results = []
-                if isinstance(per_sample, dict):
-                    for sid, result in per_sample.items():
-                        sample_results.append({
-                            "sample_id": sid,
-                            "result": _safe_serialize(result),
-                        })
-                norm_payload[field_name] = {"sample_results": sample_results}
-
-            bt_out = {"normalization_results": norm_payload}
-
-            # Write both unified normalization format and normalization_results into the batch_targets file
-            st_batch_dir = Path(session_directory) / "conditional_processing" / f"{st}_batch_1"
-            bt_file = st_batch_dir / "batch_targets_output.json"
-
-            if bt_file.exists():
+            # Get the exact batch structure used during curation for this sample type
+            # This ensures normalization uses the same batches as curation
+            batches_list = None
+            if sample_type_batches and st in sample_type_batches:
+                batches_list = sample_type_batches[st]
+                print(f"🔍 DEBUG[NORM_CALL]: Sample type '{st}' has {len(batches_list)} batches from curation")
+            
+            # Initialize normalization_data to None to handle cases where normalization fails
+            normalization_data = None
+            
+            # Use batched normalization if we have multiple batches, otherwise use direct call
+            if batches_list and len(batches_list) > 1:
+                # Use batched normalization with SAME batch structure as curation
+                print(f"🔍 DEBUG[NORM_CALL]: Using batched normalization for '{st}' with {len(batches_list)} batches")
                 try:
-                    existing = json.loads(bt_file.read_text())
-                except Exception:
-                    existing = {}
+                    normalization_data = await run_batched_normalization_for_sample_type(
+                        initial_result=initial_for_st,
+                        conditional_result=cond_for_st,
+                        sample_type_batches=batches_list,  # Pass exact batch structure from curation
+                        model_provider=model_provider,
+                        max_tokens=max_tokens,
+                        max_turns=100,
+                        enable_parallel_execution=True,
+                    )
+                except Exception as e:
+                    print(f"❌ ERROR[NORM_CALL]: Batched normalization failed for '{st}': {e}")
+                    normalization_data = None
             else:
-                existing = {}
+                # Single batch or no batch structure - use direct call (no batching needed)
+                print(f"🔍 DEBUG[NORM_CALL]: Using direct normalization call for '{st}' (single batch or no batch structure)")
+                try:
+                    normalization_data = await run_unified_normalization(
+                        initial_result=initial_for_st,
+                        conditional_result=cond_for_st,
+                        model_provider=model_provider,
+                        max_tokens=max_tokens,
+                        max_turns=100,
+                        enable_parallel_execution=True,  # Explicitly enable parallel normalization
+                    )
+                except Exception as e:
+                    print(f"❌ ERROR[NORM_CALL]: Direct normalization failed for '{st}': {e}")
+                    normalization_data = None
 
-            # Unified format first, then optional eval-specific wrapper
-            existing.update(unified_norm_format)
-            existing.update(bt_out)
+            # Only write normalization if we used run_unified_normalization directly
+            # (run_batched_normalization_for_sample_type already handles per-batch writes)
+            used_batched_normalization = batches_list and len(batches_list) > 1
+            
+            if not used_batched_normalization and normalization_data:
+                # Convert normalization_data to dict if needed
+                norm_data = normalization_data
+                if hasattr(norm_data, "model_dump"):
+                    norm_data = norm_data.model_dump()
 
-            _atomic_write_json(bt_file, existing, indent=2)
+                # Write normalization data to EACH batch directory
+                # This handles the single-batch or direct normalization case
+                write_batches_list = sample_type_batches.get(st, [])
+                if not write_batches_list:
+                    # Fallback: treat all samples as a single batch
+                    write_batches_list = [list(initial_for_st.sample_ids) if initial_for_st else []]
+                
+                for batch_idx, batch_samples in enumerate(write_batches_list, start=1):
+                    # Filter normalization data for this batch's samples
+                    batch_norm_data = filter_normalization_for_batch(
+                        norm_data if isinstance(norm_data, dict) else {},
+                        batch_samples
+                    )
+                    
+                    if batch_norm_data:
+                        # Use shared utilities for consistent output format
+                        batch_context = BatchContext(
+                            session_directory=Path(session_directory),
+                            sample_type=st,
+                            batch_idx=batch_idx,
+                            batch_samples=list(batch_samples),
+                        )
+                        
+                        # Build batch output using shared utility (includes both flat and nested formats)
+                        batch_output = build_batch_targets_output(
+                            batch_context=batch_context,
+                            conditional_result=None,  # Curation already written
+                            normalization_data=batch_norm_data,
+                            execution_time_seconds=0,
+                            target_fields_processed=[],
+                            normalization_fields_processed=list(batch_norm_data.keys()),
+                        )
+                        
+                        # Write using shared utility (merges with existing data)
+                        write_batch_targets_output(batch_context, batch_output, merge_with_existing=True)
+                        print(f"✅ DEBUG[NORM_WRITE]: Wrote normalization to {batch_context.batch_name} ({len(batch_samples)} samples, {len(batch_norm_data)} fields)")
 
     except Exception as _norm_err:
         print(f"🔧 DEBUG[eval_conditional]: unified normalization phase failed: {_norm_err}")
+        import traceback
+        print(f"🔍 DEBUG[eval_conditional]: Normalization exception traceback:")
+        traceback.print_exc()
+        # Continue execution - normalization failure shouldn't prevent output generation
+
+    print(f"🔍 DEBUG[eval_conditional]: After normalization phase, continuing to build output...")
 
         # For compatibility, return a result dict similar to ConditionalProcessingResult
     # After iterative evaluation, produce classic-like output so downstream consolidation writes CSVs
     batch_results: List[Dict[str, Any]] = []
+    print(f"🔍 DEBUG[eval_conditional]: Starting to build batch_results...")
     try:
         # Use the original sample_type_batches structure so eval and classic
         # expose the same batching externally.
@@ -1147,19 +1358,18 @@ async def run_eval_conditional(
                     else []
                 ]
 
-            # All eval batches for this sample type share a single consolidated directory
-            # that contains the curated + normalized files.
-            shared_batch_dir = Path(session_directory) / "conditional_processing" / f"{st}_batch_1"
-
+            # Each batch has its own directory for curation and normalization files
+            # batch_targets_output.json is still written to the shared directory (st_batch_1)
             for batch_idx, batch_samples in enumerate(batches_list, start=1):
                 batch_name = f"{st}_batch_{batch_idx}"
+                batch_dir = Path(session_directory) / "conditional_processing" / batch_name
 
                 batch_result = {
                     "success": True,
                     "batch_name": batch_name,
                     "sample_type": st,
                     "batch_samples": list(batch_samples),
-                    "batch_directory": str(shared_batch_dir),
+                    "batch_directory": str(batch_dir),
                     # No CuratorOutput objects here; they are written to disk already
                 }
                 batch_results.append(batch_result)
@@ -1179,28 +1389,82 @@ async def run_eval_conditional(
     # Ensure curated (and corrective) results are written to the batch directories for CSV consolidation
     try:
         for st in curated_outputs_per_st:
-            batch_dir = Path(session_directory) / "conditional_processing" / f"{st}_batch_1"
-            if batch_dir.exists():
+            # Get batches for this sample type
+            batches_list = sample_type_batches.get(st, [])
+            if not batches_list:
+                continue
+            
+            # Write curator outputs to each batch directory
+            for batch_idx, batch_samples in enumerate(batches_list, start=1):
+                batch_dir = Path(session_directory) / "conditional_processing" / f"{st}_batch_{batch_idx}"
+                batch_samples_set = set(batch_samples)
+                
+                if not batch_dir.exists():
+                    batch_dir.mkdir(parents=True, exist_ok=True)
+                
                 # Write updated curation results back to the batch directory files
                 for field_name, curator_output in curated_outputs_per_st[st].items():
-                    field_dir = batch_dir / field_name
-                    field_dir.mkdir(exist_ok=True)
+                    if not curator_output or not hasattr(curator_output, 'curation_results'):
+                        continue
                     
-                    # Write the curator output to the expected file location
-                    output_file = field_dir / f"curator_output_{st}.json"
-                    if curator_output:
-                        try:
-                            output_dict = _safe_serialize(curator_output)
-                            _atomic_write_json(output_file, output_dict, indent=2)
-                            print(f"🔧 DEBUG[eval_conditional]: updated curator output written to {output_file}")
-                            
-                        except Exception as e:
-                            print(f"🔧 DEBUG[eval_conditional]: error writing curator output to {output_file}: {e}")
-                            # Continue processing other fields instead of failing completely
-                            continue
+                    # Filter curation results to only samples in this batch
+                    batch_curation_results = [
+                        cr for cr in curator_output.curation_results
+                        if getattr(cr, 'sample_id', None) in batch_samples_set
+                    ]
+                    
+                    if not batch_curation_results:
+                        continue
+                    
+                    # Create filtered curator output for this batch
+                    try:
+                        if hasattr(curator_output, 'model_copy'):
+                            batch_curator_output = curator_output.model_copy(
+                                update={
+                                    'curation_results': batch_curation_results,
+                                    'total_samples_processed': len(batch_curation_results),
+                                    'sample_ids_requested': [getattr(cr, 'sample_id', '') for cr in batch_curation_results],
+                                },
+                                deep=True
+                            )
+                        else:
+                            # Fallback: create new CuratorOutput manually
+                            from src.models.agent_outputs import CuratorOutput
+                            batch_curator_output = CuratorOutput(
+                                success=getattr(curator_output, 'success', True),
+                                target_field=getattr(curator_output, 'target_field', field_name),
+                                curation_results=batch_curation_results,
+                                total_samples_processed=len(batch_curation_results),
+                                execution_time_seconds=getattr(curator_output, 'execution_time_seconds', 0),
+                                message=f"Filtered for batch {batch_idx}",
+                                session_directory=str(batch_dir),
+                                sample_ids_requested=[getattr(cr, 'sample_id', '') for cr in batch_curation_results],
+                                curation_results_file=getattr(curator_output, 'curation_results_file', None),
+                                files_created=getattr(curator_output, 'files_created', []),
+                                average_confidence=getattr(curator_output, 'average_confidence', None),
+                                warnings=getattr(curator_output, 'warnings', []),
+                                samples_needing_review=getattr(curator_output, 'samples_needing_review', 0),
+                                successful_curations=sum(
+                                    1 for cr in batch_curation_results 
+                                    if hasattr(cr, 'final_candidate') and cr.final_candidate is not None
+                                ),
+                            )
+                        
+                        # Write to batch-specific directory
+                        field_dir = batch_dir / field_name
+                        field_dir.mkdir(exist_ok=True)
+                        output_file = field_dir / f"curator_output_{st}.json"
+                        output_dict = _safe_serialize(batch_curator_output)
+                        _atomic_write_json(output_file, output_dict, indent=2)
+                        print(f"🔧 DEBUG[eval_conditional]: updated curator output written to {output_file}")
+                    except Exception as e:
+                        print(f"🔧 DEBUG[eval_conditional]: error writing curator output to batch {batch_idx} for field {field_name}: {e}")
+                        # Continue processing other fields instead of failing completely
+                        continue
     except Exception as e:
         print(f"🔧 DEBUG[eval_conditional]: error writing updated curator outputs: {e}")
 
+    print(f"🔍 DEBUG[eval_conditional]: Building output dict with {len(batch_results)} batch_results...")
     # Build classic-like output structure for downstream consolidation
     total_batches = len(batch_results)
     total_samples = sum(len(b.get("batch_samples", [])) for b in batch_results)
@@ -1213,6 +1477,7 @@ async def run_eval_conditional(
     conditional_processing_dir = str(conditional_dir)
     stage_output_path = Path(session_directory) / "conditional_processing" / "conditional_processing_output.json"
 
+    print(f"🔍 DEBUG[eval_conditional]: Creating output dict...")
     output = {
         "success": failed_batches == 0,
         "message": f"Conditional processing completed: {successful_batches}/{total_batches} batches successful",
@@ -1240,11 +1505,434 @@ async def run_eval_conditional(
         "timestamp": __import__("datetime").datetime.now().isoformat(),
     }
 
+    print(f"🔍 DEBUG[eval_conditional]: Output dict created, writing to file...")
     try:
         _atomic_write_json(stage_output_path, output, indent=2)
-    except Exception:
+        print(f"🔍 DEBUG[eval_conditional]: Output JSON written successfully")
+    except Exception as e:
+        print(f"🔍 DEBUG[eval_conditional]: Failed to write output JSON: {e}")
         pass
 
+    print(f"🔍 DEBUG[eval_conditional]: About to return output - type={type(output)}, success={output.get('success')}, batch_results_count={len(output.get('batch_results', []))}")
+    if output is None:
+        print(f"❌ ERROR[eval_conditional]: output is None! This should never happen!")
+        import traceback
+        traceback.print_stack()
+    return output
+
+
+async def run_batched_normalization_for_sample_type(
+    initial_result: InitialProcessingResult,
+    conditional_result: ConditionalProcessingResult,
+    sample_type_batches: List[List[str]],  # EXACT batch structure from curation
+    model_provider=None,
+    max_tokens: Optional[int] = None,
+    max_turns: int = 100,
+    enable_parallel_execution: bool = True,
+) -> Dict[str, Any]:
+    """
+    Run normalization in batches for eval mode.
+    
+    This function splits the merged curator outputs back into batches
+    and calls run_unified_normalization for each batch, ensuring the
+    same batch structure is used as during curation.
+    
+    Args:
+        initial_result: InitialProcessingResult containing all samples for the sample type
+        conditional_result: ConditionalProcessingResult with merged curator outputs
+        sample_type_batches: List of batches, each containing sample IDs (same structure as curation)
+        model_provider: Model provider for normalization
+        max_tokens: Maximum tokens for LLM responses
+        max_turns: Maximum conversation turns
+        enable_parallel_execution: Whether to run batches in parallel
+        
+    Returns:
+        Dict mapping field names to per-sample normalization results
+    """
+    from src.workflows.batch_targets import run_unified_normalization
+    
+    # Extract all curator outputs
+    all_curator_outputs = conditional_result.all_sample_type_outputs
+    
+    # Validate batch structure: collect all samples from batches
+    all_batch_samples = set()
+    for batch_samples in sample_type_batches:
+        all_batch_samples.update(batch_samples)
+    
+    # Collect all samples from curator outputs for validation
+    all_curator_samples = set()
+    for composite_key, curator_output in all_curator_outputs.items():
+        if curator_output and hasattr(curator_output, 'curation_results'):
+            for curation_result in curator_output.curation_results:
+                sample_id = getattr(curation_result, 'sample_id', None)
+                if sample_id:
+                    all_curator_samples.add(sample_id)
+    
+    # Log batch structure for validation
+    print(f"🔍 DEBUG[NORM_BATCHED]: Processing {len(sample_type_batches)} batches for normalization")
+    print(f"🔍 DEBUG[NORM_BATCHED]: Total samples in batches: {len(all_batch_samples)}")
+    print(f"🔍 DEBUG[NORM_BATCHED]: Total samples in curator outputs: {len(all_curator_samples)}")
+    
+    # Warn if there are samples in batches that don't have curation results
+    missing_samples = all_batch_samples - all_curator_samples
+    if missing_samples:
+        print(f"⚠️  WARNING[NORM_BATCHED]: {len(missing_samples)} samples in batches have no curation results: {sorted(list(missing_samples))[:10]}")
+    
+    # Process each batch separately
+    all_batch_results = {}
+    
+    for batch_idx, batch_samples in enumerate(sample_type_batches):
+        batch_samples_set = set(batch_samples)
+        print(f"🔍 DEBUG[NORM_BATCHED]: Processing normalization batch {batch_idx + 1}/{len(sample_type_batches)} ({len(batch_samples)} samples)")
+        print(f"🔍 DEBUG[NORM_BATCHED]: Batch {batch_idx} sample IDs: {sorted(batch_samples)[:5]}..." if len(batch_samples) > 5 else f"🔍 DEBUG[NORM_BATCHED]: Batch {batch_idx} sample IDs: {sorted(batch_samples)}")
+        
+        # Compute batch-specific directory path EARLY so it can be used in curator output filtering
+        # This ensures normalizer writes files to correct batch location
+        current_sample_type = list(initial_result.grouped_samples.keys())[0] if initial_result.grouped_samples else None
+        consolidated_path = Path(initial_result.session_directory)
+        conditional_dir = consolidated_path.parent  # {root}/conditional_processing/
+        batch_dir = conditional_dir / f"{current_sample_type}_batch_{batch_idx + 1}"
+        
+        # Filter curator outputs for this batch
+        batch_curator_outputs = {}
+        for composite_key, curator_output in all_curator_outputs.items():
+            if not curator_output or not hasattr(curator_output, 'curation_results'):
+                continue
+                
+            # Extract field from composite key (e.g., "primary_sample::disease" -> "disease")
+            if "::" in composite_key:
+                _, field = composite_key.split("::", 1)
+            else:
+                field = composite_key
+                
+            # Filter curation results for this batch
+            batch_curation_results = [
+                cr for cr in curator_output.curation_results
+                if getattr(cr, 'sample_id', None) in batch_samples_set
+            ]
+            
+            if batch_curation_results:
+                # Verify all samples in batch have curation results for this field
+                batch_samples_with_results = {getattr(cr, 'sample_id', None) for cr in batch_curation_results}
+                missing_in_batch = batch_samples_set - batch_samples_with_results
+                if missing_in_batch:
+                    print(f"⚠️  WARNING[NORM_BATCHED]: Batch {batch_idx}, field '{field}': {len(missing_in_batch)} samples missing curation results: {sorted(list(missing_in_batch))[:5]}")
+                
+                # Create filtered CuratorOutput using model_copy to preserve subclass types
+                # (e.g., DiseaseCurationResult, SexCurationResult are subclasses of CurationResult)
+                try:
+                    # Check if it's a CuratorOutput (Pydantic model) or MergedCuratorOutput (legacy)
+                    if hasattr(curator_output, 'model_copy'):
+                        # Use model_copy for Pydantic models
+                        # CRITICAL: Update session_directory to batch-specific directory
+                        # so normalizer writes files to correct batch location
+                        batch_curator_output = curator_output.model_copy(
+                            update={
+                                'curation_results': batch_curation_results,
+                                'total_samples_processed': len(batch_curation_results),
+                                'message': f"Filtered for normalization batch {batch_idx + 1}",
+                                'sample_ids_requested': list(batch_samples),
+                                'session_directory': str(batch_dir),  # Fix: write to correct batch directory
+                            },
+                            deep=True
+                        )
+                    else:
+                        # Fallback: create new CuratorOutput manually (shouldn't happen after replacement)
+                        print(f"⚠️  WARNING[NORM_BATCHED]: curator_output for field '{field}' does not have model_copy(), creating new CuratorOutput manually")
+                        batch_curator_output = CuratorOutput(
+                            success=getattr(curator_output, 'success', True),
+                            target_field=getattr(curator_output, 'target_field', field),
+                            curation_results=batch_curation_results,
+                            total_samples_processed=len(batch_curation_results),
+                            execution_time_seconds=getattr(curator_output, 'execution_time_seconds', 0),
+                            message=f"Filtered for normalization batch {batch_idx + 1}",
+                            session_directory=getattr(curator_output, 'session_directory', ''),
+                            sample_ids_requested=list(batch_samples),
+                            curation_results_file=getattr(curator_output, 'curation_results_file', None),
+                            files_created=getattr(curator_output, 'files_created', []),
+                            average_confidence=getattr(curator_output, 'average_confidence', None),
+                            warnings=getattr(curator_output, 'warnings', []),
+                            samples_needing_review=getattr(curator_output, 'samples_needing_review', 0),
+                            successful_curations=sum(
+                                1 for cr in batch_curation_results 
+                                if hasattr(cr, 'final_candidate') and cr.final_candidate is not None
+                            ),
+                        )
+                    batch_curator_outputs[composite_key] = batch_curator_output
+                except Exception as e:
+                    print(f"❌ ERROR[NORM_BATCHED]: Failed to create filtered CuratorOutput for batch {batch_idx}, field '{field}': {e}")
+                    continue
+        
+        if not batch_curator_outputs:
+            print(f"⚠️  WARNING[NORM_BATCHED]: Batch {batch_idx} has no curator outputs after filtering, skipping")
+            continue
+        
+        # Create batch-specific initial_result
+        # Note: current_sample_type, consolidated_path, conditional_dir, and batch_dir
+        # are computed at the start of this for loop iteration
+        batch_initial_result = InitialProcessingResult(
+            success=initial_result.success,
+            session_id=f"{initial_result.session_id}_norm_batch_{batch_idx}",
+            session_directory=str(batch_dir),
+            data_intake_output=initial_result.data_intake_output,
+            sample_ids=list(batch_samples),
+            direct_fields=initial_result.direct_fields,
+            initial_curation_data=initial_result.initial_curation_data,
+            initial_curator_outputs=initial_result.initial_curator_outputs,
+            sample_type_mapping={sid: initial_result.sample_type_mapping.get(sid) 
+                               for sid in batch_samples if sid in initial_result.sample_type_mapping},
+            grouped_samples={current_sample_type: list(batch_samples)} if current_sample_type else {},
+        )
+        
+        # Create batch-specific conditional_result
+        batch_conditional_result = ConditionalProcessingResult(
+            success=conditional_result.success,
+            conditional_curation_data={},
+            unified_normalization_data={},
+            all_sample_type_outputs=batch_curator_outputs,
+            error_message=None,
+        )
+        
+        # Call run_unified_normalization for this batch
+        try:
+            batch_normalization_data = await run_unified_normalization(
+                initial_result=batch_initial_result,
+                conditional_result=batch_conditional_result,
+                model_provider=model_provider,
+                max_tokens=max_tokens,
+                max_turns=max_turns,
+                enable_parallel_execution=enable_parallel_execution,
+            )
+            
+            # Merge batch results
+            if batch_normalization_data:
+                for field_name, field_data in batch_normalization_data.items():
+                    if field_name not in all_batch_results:
+                        all_batch_results[field_name] = {}
+                    if isinstance(field_data, dict):
+                        all_batch_results[field_name].update(field_data)
+                    else:
+                        print(f"⚠️  WARNING[NORM_BATCHED]: Unexpected field_data type for {field_name} in batch {batch_idx}")
+                
+                # Write batch-specific batch_targets_output.json using shared utilities
+                try:
+                    batch_context = BatchContext(
+                        session_directory=conditional_dir.parent,
+                        sample_type=current_sample_type,
+                        batch_idx=batch_idx + 1,  # 1-indexed
+                        batch_samples=list(batch_samples),
+                    )
+                    
+                    # Build batch output using shared utility (includes both flat and nested formats)
+                    batch_output = build_batch_targets_output(
+                        batch_context=batch_context,
+                        conditional_result=None,  # Curation already written
+                        normalization_data=batch_normalization_data,
+                        execution_time_seconds=0,
+                        target_fields_processed=[],
+                        normalization_fields_processed=list(batch_normalization_data.keys()),
+                    )
+                    
+                    # Write using shared utility (merges with existing data)
+                    write_batch_targets_output(batch_context, batch_output, merge_with_existing=True)
+                except Exception as write_err:
+                    print(f"⚠️  WARNING[NORM_BATCHED]: Failed to write batch_targets_output.json for batch {batch_idx}: {write_err}")
+                
+                print(f"✅ DEBUG[NORM_BATCHED]: Batch {batch_idx + 1} completed, merged {len(batch_normalization_data)} fields")
+            else:
+                print(f"⚠️  WARNING[NORM_BATCHED]: Batch {batch_idx + 1} returned no normalization data")
+                
+        except Exception as e:
+            print(f"❌ ERROR[NORM_BATCHED]: Batch {batch_idx} normalization failed: {e}")
+            import traceback
+            print(f"🔍 DEBUG[NORM_BATCHED]: Batch {batch_idx} traceback:")
+            traceback.print_exc()
+            # Continue processing other batches even if one fails
+            continue
+    
+    print(f"🔍 DEBUG[NORM_BATCHED]: Completed all batches, returning merged results with {len(all_batch_results)} fields")
+    return all_batch_results
+
+
+    # For compatibility, return a result dict similar to ConditionalProcessingResult
+    # After iterative evaluation, produce classic-like output so downstream consolidation writes CSVs
+    batch_results: List[Dict[str, Any]] = []
+    try:
+        # Use the original sample_type_batches structure so eval and classic
+        # expose the same batching externally.
+        for st, cond_result in cond_results_per_st.items():
+            if not cond_result:
+                continue
+
+            batches_list = sample_type_batches.get(st, [])
+            if not batches_list:
+                # Fallback: treat all samples for this sample type as a single batch
+                batches_list = [
+                    list(initial_results_per_st.get(st).sample_ids)
+                    if initial_results_per_st.get(st)
+                    else []
+                ]
+
+            # Each batch has its own directory for curation and normalization files
+            # batch_targets_output.json is still written to the shared directory (st_batch_1)
+            for batch_idx, batch_samples in enumerate(batches_list, start=1):
+                batch_name = f"{st}_batch_{batch_idx}"
+                batch_dir = Path(session_directory) / "conditional_processing" / batch_name
+
+                batch_result = {
+                    "success": True,
+                    "batch_name": batch_name,
+                    "sample_type": st,
+                    "batch_samples": list(batch_samples),
+                    "batch_directory": str(batch_dir),
+                    # No CuratorOutput objects here; they are written to disk already
+                }
+                batch_results.append(batch_result)
+
+                # Call incremental CSV callback if provided (once per batch)
+                if incremental_csv_callback:
+                    try:
+                        await incremental_csv_callback(batch_result)
+                    except Exception as e:
+                        print(f"🔧 DEBUG[eval_conditional]: CSV callback failed for {st}, batch {batch_idx}: {e}")
+                        # Continue processing even if CSV callback fails
+    except Exception:
+        # Fail-safe: if something goes wrong constructing batch_results,
+        # downstream consolidation should still not crash.
+        pass
+
+    # Ensure curated (and corrective) results are written to the batch directories for CSV consolidation
+    try:
+        for st in curated_outputs_per_st:
+            # Get batches for this sample type
+            batches_list = sample_type_batches.get(st, [])
+            if not batches_list:
+                continue
+            
+            # Write curator outputs to each batch directory
+            for batch_idx, batch_samples in enumerate(batches_list, start=1):
+                batch_dir = Path(session_directory) / "conditional_processing" / f"{st}_batch_{batch_idx}"
+                batch_samples_set = set(batch_samples)
+                
+                if not batch_dir.exists():
+                    batch_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Write updated curation results back to the batch directory files
+                for field_name, curator_output in curated_outputs_per_st[st].items():
+                    if not curator_output or not hasattr(curator_output, 'curation_results'):
+                        continue
+                    
+                    # Filter curation results to only samples in this batch
+                    batch_curation_results = [
+                        cr for cr in curator_output.curation_results
+                        if getattr(cr, 'sample_id', None) in batch_samples_set
+                    ]
+                    
+                    if not batch_curation_results:
+                        continue
+                    
+                    # Create filtered curator output for this batch
+                    try:
+                        if hasattr(curator_output, 'model_copy'):
+                            batch_curator_output = curator_output.model_copy(
+                                update={
+                                    'curation_results': batch_curation_results,
+                                    'total_samples_processed': len(batch_curation_results),
+                                    'sample_ids_requested': [getattr(cr, 'sample_id', '') for cr in batch_curation_results],
+                                },
+                                deep=True
+                            )
+                        else:
+                            # Fallback: create new CuratorOutput manually
+                            from src.models.agent_outputs import CuratorOutput
+                            batch_curator_output = CuratorOutput(
+                                success=getattr(curator_output, 'success', True),
+                                target_field=getattr(curator_output, 'target_field', field_name),
+                                curation_results=batch_curation_results,
+                                total_samples_processed=len(batch_curation_results),
+                                execution_time_seconds=getattr(curator_output, 'execution_time_seconds', 0),
+                                message=f"Filtered for batch {batch_idx}",
+                                session_directory=str(batch_dir),
+                                sample_ids_requested=[getattr(cr, 'sample_id', '') for cr in batch_curation_results],
+                                curation_results_file=getattr(curator_output, 'curation_results_file', None),
+                                files_created=getattr(curator_output, 'files_created', []),
+                                average_confidence=getattr(curator_output, 'average_confidence', None),
+                                warnings=getattr(curator_output, 'warnings', []),
+                                samples_needing_review=getattr(curator_output, 'samples_needing_review', 0),
+                                successful_curations=sum(
+                                    1 for cr in batch_curation_results 
+                                    if hasattr(cr, 'final_candidate') and cr.final_candidate is not None
+                                ),
+                            )
+                        
+                        # Write to batch-specific directory
+                        field_dir = batch_dir / field_name
+                        field_dir.mkdir(exist_ok=True)
+                        output_file = field_dir / f"curator_output_{st}.json"
+                        output_dict = _safe_serialize(batch_curator_output)
+                        _atomic_write_json(output_file, output_dict, indent=2)
+                        print(f"🔧 DEBUG[eval_conditional]: updated curator output written to {output_file}")
+                    except Exception as e:
+                        print(f"🔧 DEBUG[eval_conditional]: error writing curator output to batch {batch_idx} for field {field_name}: {e}")
+                        # Continue processing other fields instead of failing completely
+                        continue
+    except Exception as e:
+        print(f"🔧 DEBUG[eval_conditional]: error writing updated curator outputs: {e}")
+
+    print(f"🔍 DEBUG[eval_conditional]: Building output dict with {len(batch_results)} batch_results...")
+    # Build classic-like output structure for downstream consolidation
+    total_batches = len(batch_results)
+    total_samples = sum(len(b.get("batch_samples", [])) for b in batch_results)
+    successful_batches = total_batches
+    failed_batches = 0
+    successful_samples = total_samples
+    failed_samples = 0
+
+    execution_time_seconds = _time.time() - _start_ts
+    conditional_processing_dir = str(conditional_dir)
+    stage_output_path = Path(session_directory) / "conditional_processing" / "conditional_processing_output.json"
+
+    print(f"🔍 DEBUG[eval_conditional]: Creating output dict...")
+    output = {
+        "success": failed_batches == 0,
+        "message": f"Conditional processing completed: {successful_batches}/{total_batches} batches successful",
+        "execution_time_seconds": execution_time_seconds,
+        "statistics": {
+            "total_batches": total_batches,
+            "successful_batches": successful_batches,
+            "failed_batches": failed_batches,
+            "total_samples": total_samples,
+            "successful_samples": successful_samples,
+            "failed_samples": failed_samples,
+            "target_fields_processed": list(target_fields) if isinstance(target_fields, list) else target_fields,
+        },
+        "batch_results": batch_results,
+        "failed_items": {
+            "curation_failures": {},
+            "normalization_failures": {},
+            "missing_results": {},
+        },
+        "session_directory": str(session_directory),
+        "conditional_processing_directory": conditional_processing_dir,
+        "output_files": {
+            "conditional_processing_output": str(stage_output_path),
+        },
+        "timestamp": __import__("datetime").datetime.now().isoformat(),
+    }
+
+    print(f"🔍 DEBUG[eval_conditional]: Output dict created, writing to file...")
+    try:
+        _atomic_write_json(stage_output_path, output, indent=2)
+        print(f"🔍 DEBUG[eval_conditional]: Output JSON written successfully")
+    except Exception as e:
+        print(f"🔍 DEBUG[eval_conditional]: Failed to write output JSON: {e}")
+        pass
+
+    print(f"🔍 DEBUG[eval_conditional]: About to return output - type={type(output)}, success={output.get('success')}, batch_results_count={len(output.get('batch_results', []))}")
+    if output is None:
+        print(f"❌ ERROR[eval_conditional]: output is None! This should never happen!")
+        import traceback
+        traceback.print_stack()
     return output
 
 

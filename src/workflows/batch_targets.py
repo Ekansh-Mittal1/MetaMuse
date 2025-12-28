@@ -1724,6 +1724,21 @@ async def run_unified_normalization(
             # In eval mode, each call processes one sample type at a time
             current_sample_type = list(grouped_samples.keys())[0] if grouped_samples else None
         
+        # CRITICAL DEBUG: Print all incoming keys from conditional_result
+        all_incoming_keys = list(conditional_result.all_sample_type_outputs.keys())
+        print(f"🔍 DEBUG[NORM_UNIFIED]: ========== run_unified_normalization called ==========")
+        print(f"🔍 DEBUG[NORM_UNIFIED]: current_sample_type: {current_sample_type}")
+        print(f"🔍 DEBUG[NORM_UNIFIED]: conditional_result.all_sample_type_outputs has {len(all_incoming_keys)} keys: {all_incoming_keys}")
+        
+        composite_keys = [k for k in all_incoming_keys if '::' in k]
+        simple_keys = [k for k in all_incoming_keys if '::' not in k]
+        print(f"🔍 DEBUG[NORM_UNIFIED]: Composite keys (will be processed): {composite_keys}")
+        print(f"🔍 DEBUG[NORM_UNIFIED]: Simple keys (will be SKIPPED!): {simple_keys}")
+        
+        if simple_keys and not composite_keys:
+            print(f"⚠️ WARNING[NORM_UNIFIED]: ALL KEYS ARE SIMPLE - NO NORMALIZATION WILL RUN!")
+            print(f"⚠️ WARNING[NORM_UNIFIED]: This is likely the ROOT CAUSE of missing normalization data!")
+        
         # Add conditional curator outputs directly (now with composite keys including sample type)
         for composite_key, curator_output in conditional_result.all_sample_type_outputs.items():
             # Extract field from composite key (e.g., "primary_sample::disease" -> "disease")
@@ -1735,9 +1750,16 @@ async def run_unified_normalization(
                     # In eval mode, only use curator outputs from the current sample type
                     # This prevents using wrong curator outputs when multiple sample types exist
                     if current_sample_type and sample_type_in_key != current_sample_type:
+                        print(f"🔍 DEBUG[NORM_UNIFIED]: Skipping '{composite_key}' - sample_type '{sample_type_in_key}' != current '{current_sample_type}'")
                         continue
                     # Store curator output for this field (only if it matches current sample type)
                     all_curator_outputs[field] = curator_output
+                    sample_count = len(getattr(curator_output, 'curation_results', [])) if curator_output else 0
+                    print(f"🔍 DEBUG[NORM_UNIFIED]: Extracted field '{field}' from composite key '{composite_key}' ({sample_count} samples)")
+            else:
+                print(f"🔍 DEBUG[NORM_UNIFIED]: SKIPPING simple key '{composite_key}' - no '::' separator!")
+        
+        print(f"🔍 DEBUG[NORM_UNIFIED]: all_curator_outputs after extraction: {list(all_curator_outputs.keys())}")
         
         # Determine fields to normalize based on which sample types we have
         fields_to_normalize = set()
@@ -1752,15 +1774,19 @@ async def run_unified_normalization(
         
         all_normalization_fields = list(fields_to_normalize)
         
+        print(f"🔍 DEBUG[NORM_UNIFIED]: fields_to_normalize from TARGET_FIELD_CONFIG: {all_normalization_fields}")
+        print(f"🔍 DEBUG[NORM_UNIFIED]: all_curator_outputs available: {list(all_curator_outputs.keys())}")
         
         # Filter to only fields that have successful curation outputs
         available_normalization_fields = []
+        skipped_fields = []
         for field in all_normalization_fields:
             field_key = field.lower()
             if field_key in all_curator_outputs:
                 available_normalization_fields.append(field)
             else:
-                print(f"⚠️  Skipping normalization for {field}: No curation output available")
+                skipped_fields.append(field)
+                print(f"⚠️  Skipping normalization for {field}: No curation output available (looking for key '{field_key}')")
                 
                 # Track missing curation output preventing normalization
                 if error_tracker and hasattr(error_tracker, 'track_missing_result'):
@@ -1770,6 +1796,9 @@ async def run_unified_normalization(
                         result_type="curation",
                         reason="no_curation_output_for_normalization"
                     )
+        
+        print(f"🔍 DEBUG[NORM_UNIFIED]: available_normalization_fields: {available_normalization_fields}")
+        print(f"🔍 DEBUG[NORM_UNIFIED]: skipped_fields (no curation output): {skipped_fields}")
         
         unified_normalization_data = {}
         
@@ -1860,6 +1889,7 @@ async def run_unified_normalization(
             pbar.close()
             
             # Process normalization results
+            print(f"🔍 DEBUG[NORM_UNIFIED]: Processing {len(normalization_results)} normalization results")
             for result in normalization_results:
                 if isinstance(result, Exception):
                     print(f"❌ Normalization task failed with exception: {result}")
@@ -1878,10 +1908,13 @@ async def run_unified_normalization(
                     error_tracker=error_tracker,
                 )
                 unified_normalization_data[target_field] = field_normalization_results
+                print(f"🔍 DEBUG[NORM_UNIFIED]: Added {target_field} to unified_normalization_data ({len(field_normalization_results)} samples)")
             
         else:
             print("⚠️  No fields available for normalization")
+            print(f"🔍 DEBUG[NORM_UNIFIED]: This likely means all_curator_outputs is empty due to key mismatch!")
         
+        print(f"🔍 DEBUG[NORM_UNIFIED]: Returning unified_normalization_data with fields: {list(unified_normalization_data.keys())}")
         return unified_normalization_data
     
     except Exception as e:

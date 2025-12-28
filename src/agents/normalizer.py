@@ -307,6 +307,14 @@ async def run_normalizer_agent(
             Path(existing_session_dir)
             / f"curator_results_for_normalization_{target_field.lower()}.json"
         )
+        
+        # DEBUG: Print input information
+        curation_results_count = len(curator_output.curation_results) if curator_output.curation_results else 0
+        print(f"🔍 DEBUG[NORMALIZER]: run_normalizer_agent called for field '{target_field}'")
+        print(f"🔍 DEBUG[NORMALIZER]: curator_output has {curation_results_count} curation_results")
+        print(f"🔍 DEBUG[NORMALIZER]: session_directory: {existing_session_dir}")
+        print(f"🔍 DEBUG[NORMALIZER]: curator_results_file: {curator_results_file}")
+        
         curation_results_data = []
         if curator_output.curation_results:
             # Normalize target_field case to ensure consistency (capitalize first letter)
@@ -320,9 +328,12 @@ async def run_normalizer_agent(
                 if "target_field" in result_dict:
                     result_dict["target_field"] = normalized_target_field
                 curation_results_data.append(result_dict)
+            
+            print(f"🔍 DEBUG[NORMALIZER]: Prepared {len(curation_results_data)} curation results for normalization")
 
         with open(curator_results_file, "w") as f:
             json.dump(curation_results_data, f, indent=2)
+        print(f"🔍 DEBUG[NORMALIZER]: Saved curator_results_file: {curator_results_file}")
 
         # Create a simple message that includes the curation_results
         normalizer_message = (
@@ -377,6 +388,14 @@ async def run_normalizer_agent(
             raise RuntimeError(
                 f"Expected BatchNormalizationResult, got {type(final_result)}"
             )
+
+        # DEBUG: Print output information
+        sample_results_count = len(final_result.sample_results) if final_result.sample_results else 0
+        print(f"🔍 DEBUG[NORMALIZER]: Returning BatchNormalizationResult with {sample_results_count} sample_results")
+        if final_result.sample_results:
+            non_null_terms = sum(1 for sr in final_result.sample_results 
+                                 if sr.result and sr.result.final_normalized_term)
+            print(f"🔍 DEBUG[NORMALIZER]: {non_null_terms}/{sample_results_count} samples have final_normalized_term")
 
         return final_result
 

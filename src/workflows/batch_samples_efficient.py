@@ -402,18 +402,26 @@ class EfficientBatchSamplesProcessor:
             print(f"🔧 Using conditional processing mode: {self.conditional_mode}")
             if self.conditional_mode == "eval":
                 # Pass batch structure to eval workflow - DON'T flatten, let eval workflow handle batch sizing
-                conditional_result = await run_eval_conditional(
-                    session_directory=str(self.batch_dir),
-                    sample_type_batches=sample_type_batches,  # Pass structured batches, not flattened
-                    target_fields=self.target_fields,
-                    model_provider=curation_provider,
-                    max_tokens=self.max_tokens,
-                    max_workers=self.max_workers,
-                    max_iterations=self.max_iterations,
-                    data_intake_output=data_intake_output,
-                    arbitrator_test_mode=arbitrator_test_mode,
-                    incremental_csv_callback=lambda batch_result: self.append_batch_to_csv(batch_result, data_intake_output),
-                )
+                print(f"🔍 DEBUG[batch_samples_efficient]: Calling run_eval_conditional...")
+                try:
+                    conditional_result = await run_eval_conditional(
+                        session_directory=str(self.batch_dir),
+                        sample_type_batches=sample_type_batches,  # Pass structured batches, not flattened
+                        target_fields=self.target_fields,
+                        model_provider=curation_provider,
+                        max_tokens=self.max_tokens,
+                        max_workers=self.max_workers,
+                        max_iterations=self.max_iterations,
+                        data_intake_output=data_intake_output,
+                        arbitrator_test_mode=arbitrator_test_mode,
+                        incremental_csv_callback=lambda batch_result: self.append_batch_to_csv(batch_result, data_intake_output),
+                    )
+                    print(f"🔍 DEBUG[batch_samples_efficient]: run_eval_conditional returned: {type(conditional_result)}, success={conditional_result.get('success') if conditional_result else 'None'}")
+                except Exception as e:
+                    print(f"❌ ERROR[batch_samples_efficient]: run_eval_conditional raised exception: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    raise
             else:
                 # 🚀 ADVANCED SAMPLE TYPE PARALLELIZATION: Process sample types concurrently
                 if len(sample_type_batches) > 1:
@@ -503,8 +511,12 @@ class EfficientBatchSamplesProcessor:
                         max_workers=self.max_workers,
                     )
             
+            # Defensive check: ensure conditional_result is not None
+            if conditional_result is None:
+                raise ValueError("Conditional processing returned None - this indicates a critical error in run_eval_conditional or run_conditional_processing_workflow")
+            
             if not conditional_result.get("success", True):
-                print(f"⚠️ Conditional processing completed with errors: {conditional_result['message']}")
+                print(f"⚠️ Conditional processing completed with errors: {conditional_result.get('message', 'Unknown error')}")
             
             stage_duration = time.time() - stage_start_time
             print(f"✅ Stage 3 completed in {stage_duration:.2f} seconds")
@@ -606,107 +618,7 @@ class EfficientBatchSamplesProcessor:
                             }
                             break
                 
-                # Extract curation results from curator_results_for_normalization files
-                for curator_file in batch_dir.glob("curator_results_for_normalization_*.json"):
-                    field_name = curator_file.stem.replace("curator_results_for_normalization_", "")
-                    try:
-                        with open(curator_file, "r") as f:
-                            curator_data = json.load(f)
-                        
-                        # Handle list format (curator_results_for_normalization files are arrays)
-                        if isinstance(curator_data, list):
-                            for curator_result in curator_data:
-                                if curator_result.get("sample_id") == sample_id:
-                                    # Unified extraction strategy: check direct fields first, then fallback to final_candidates
-                                    # Field-specific direct field mappings
-                                    direct_field_map = {
-                                        "sex": "sex",
-                                        "assay_type": "assay_type",
-                                        "sample_type": "sample_type",
-                                        "disease": "disease_name",
-                                        "treatment": "treatment_name"
-                                    }
-                                    
-                                    final_candidate_value = None
-                                    final_confidence = None
-                                    context = ""
-                                    rationale = ""
-                                    condition = ""
-                                    dosage = ""
-                                    time_val = ""
-                                    
-                                    # Step 1: Check for direct field (preferred - validated enum/primitive field)
-                                    direct_field = direct_field_map.get(field_name)
-                                    if direct_field and direct_field in curator_result:
-                                        final_candidate_value = curator_result[direct_field]
-                                        final_confidence = curator_result.get("confidence", "")
-                                        
-                                        # Field-specific handling
-                                        if field_name == "sex":
-                                            # Validate and normalize Sex enum value
-                                            if final_candidate_value:
-                                                sex_str = str(final_candidate_value)
-                                                if sex_str.lower() not in ["male", "female", "intersex", "none reported"]:
-                                                    sex_str = "None reported"
-                                                final_candidate_value = sex_str
-                                            else:
-                                                final_candidate_value = "None reported"
-                                        elif field_name == "disease":
-                                            condition = curator_result.get("condition", "")
-                                        elif field_name == "treatment":
-                                            dosage = curator_result.get("dosage", "")
-                                            time_val = curator_result.get("time", "")
-                                    
-                                    # Step 2: Fallback to final_candidate field
-                                    elif "final_candidate" in curator_result:
-                                        final_candidate_value = curator_result.get("final_candidate")
-                                        final_confidence = curator_result.get("final_confidence")
-                                    
-                                    # Step 3: Fallback to final_candidates array
-                                    if (final_candidate_value is None or final_confidence is None) and "final_candidates" in curator_result and curator_result["final_candidates"]:
-                                        final_candidate_data = curator_result["final_candidates"][0]
-                                        if isinstance(final_candidate_data, dict):
-                                            final_candidate_value = final_candidate_data.get("value", final_candidate_value)
-                                            final_confidence = final_candidate_data.get("confidence", final_confidence)
-                                            context = final_candidate_data.get("context", "")
-                                            rationale = final_candidate_data.get("rationale", "")
-                                            # Handle treatment-specific fields from final_candidates
-                                            if field_name == "treatment":
-                                                dosage = final_candidate_data.get("dosage", dosage)
-                                                time_val = final_candidate_data.get("time", time_val)
-                                    elif "final_candidates" in curator_result and curator_result["final_candidates"]:
-                                        # Extract context and rationale even if we already have a value
-                                        final_candidate_data = curator_result["final_candidates"][0]
-                                        if isinstance(final_candidate_data, dict):
-                                            context = final_candidate_data.get("context", context)
-                                            rationale = final_candidate_data.get("rationale", rationale)
-                                    
-                                    # Only create entry if we have a value
-                                    if final_candidate_value is not None:
-                                        field_data = {
-                                            "final_candidate": str(final_candidate_value) if final_candidate_value else "",
-                                            "confidence": final_confidence or "",
-                                            "context": context,
-                                            "rationale": rationale
-                                        }
-                                        # Add field-specific data
-                                        if field_name == "disease" and condition:
-                                            field_data["condition"] = condition
-                                        if field_name == "treatment":
-                                            field_data["dosage"] = dosage
-                                            field_data["time"] = time_val
-                                        
-                                        sample_data["curated_fields"][field_name] = field_data
-                                    break
-                    except Exception as e:
-                        error_msg = f"Error reading curator file {curator_file}: {e}"
-                        print(error_msg)
-                        # If this is a critical curator file (contains actual results), fail the consolidation
-                        if "curator_output_primary_sample.json" in str(curator_file) or "curator_output_cell_line.json" in str(curator_file):
-                            if curator_file.exists() and curator_file.stat().st_size > 100:  # File exists but is corrupted
-                                raise ValueError(f"Critical curator file is corrupted: {curator_file}. This indicates a failed curation process. Cannot proceed with empty results.")
-                
-                # Also extract from field directories (alternative structure)
+                # Extract curation results from simple field directories (corrected values, highest priority)
                 for field_dir in batch_dir.iterdir():
                     if field_dir.is_dir() and field_dir.name in [
                         "disease", "tissue", "organ", "cell_line", "cell_type", "developmental_stage",
@@ -835,6 +747,218 @@ class EfficientBatchSamplesProcessor:
                                 except Exception:
                                     pass
                 
+                # Also extract from composite field directories (e.g., primary_sample::tissue, cell_line::disease)
+                # These contain the FULL curation results, while simple dirs may only have corrective results
+                for field_dir in batch_dir.iterdir():
+                    if field_dir.is_dir() and "::" in field_dir.name:
+                        parts = field_dir.name.split("::", 1)
+                        if len(parts) != 2:
+                            continue
+                        sample_type_prefix, field_name = parts
+                        
+                        # Only process if we haven't already extracted this field
+                        if field_name in sample_data["curated_fields"]:
+                            continue
+                        
+                        # Try to find curator_output file
+                        curator_file = None
+                        for st_name in ["primary_sample", "cell_line", "unknown"]:
+                            potential_file = field_dir / f"curator_output_{st_name}.json"
+                            if potential_file.exists():
+                                curator_file = potential_file
+                                break
+                        
+                        if curator_file and curator_file.exists():
+                            try:
+                                with open(curator_file, "r") as f:
+                                    curator_data = json.load(f)
+                                
+                                # Extract final candidate from curation_results
+                                if "curation_results" in curator_data:
+                                    for curation_result in curator_data["curation_results"]:
+                                        if curation_result.get("sample_id") == sample_id:
+                                            # Same extraction logic as simple field directories
+                                            direct_field_map = {
+                                                "sex": "sex",
+                                                "assay_type": "assay_type",
+                                                "sample_type": "sample_type",
+                                                "disease": "disease_name",
+                                                "treatment": "treatment_name"
+                                            }
+                                            
+                                            final_candidate_value = None
+                                            final_confidence = None
+                                            context = ""
+                                            rationale = ""
+                                            condition = ""
+                                            dosage = ""
+                                            time_val = ""
+                                            
+                                            # Step 1: Check for direct field
+                                            direct_field = direct_field_map.get(field_name)
+                                            if direct_field and direct_field in curation_result:
+                                                final_candidate_value = curation_result[direct_field]
+                                                final_confidence = curation_result.get("confidence", "")
+                                                
+                                                if field_name == "sex":
+                                                    if final_candidate_value:
+                                                        sex_str = str(final_candidate_value)
+                                                        if sex_str.lower() not in ["male", "female", "intersex", "none reported"]:
+                                                            sex_str = "None reported"
+                                                        final_candidate_value = sex_str
+                                                    else:
+                                                        final_candidate_value = "None reported"
+                                                elif field_name == "disease":
+                                                    condition = curation_result.get("condition", "")
+                                                elif field_name == "treatment":
+                                                    dosage = curation_result.get("dosage", "")
+                                                    time_val = curation_result.get("time", "")
+                                            
+                                            # Step 2: Fallback to final_candidate field
+                                            elif "final_candidate" in curation_result:
+                                                final_candidate_value = curation_result.get("final_candidate")
+                                                final_confidence = curation_result.get("final_confidence")
+                                            
+                                            # Step 3: Fallback to final_candidates array
+                                            if (final_candidate_value is None or final_confidence is None) and "final_candidates" in curation_result and curation_result["final_candidates"]:
+                                                final_candidate_data = curation_result["final_candidates"][0]
+                                                if isinstance(final_candidate_data, dict):
+                                                    final_candidate_value = final_candidate_data.get("value", final_candidate_value)
+                                                    final_confidence = final_candidate_data.get("confidence", final_confidence)
+                                                    context = final_candidate_data.get("context", "")
+                                                    rationale = final_candidate_data.get("rationale", "")
+                                                    if field_name == "treatment":
+                                                        dosage = final_candidate_data.get("dosage", dosage)
+                                                        time_val = final_candidate_data.get("time", time_val)
+                                            elif "final_candidates" in curation_result and curation_result["final_candidates"]:
+                                                final_candidate_data = curation_result["final_candidates"][0]
+                                                if isinstance(final_candidate_data, dict):
+                                                    context = final_candidate_data.get("context", context)
+                                                    rationale = final_candidate_data.get("rationale", rationale)
+                                            
+                                            # Only create entry if we have a value
+                                            if final_candidate_value is not None:
+                                                field_data = {
+                                                    "final_candidate": str(final_candidate_value) if final_candidate_value else "",
+                                                    "confidence": final_confidence or "",
+                                                    "context": context,
+                                                    "rationale": rationale
+                                                }
+                                                if field_name == "disease" and condition:
+                                                    field_data["condition"] = condition
+                                                if field_name == "treatment":
+                                                    field_data["dosage"] = dosage
+                                                    field_data["time"] = time_val
+                                                
+                                                sample_data["curated_fields"][field_name] = field_data
+                                            break
+                            except Exception as e:
+                                print(f"⚠️ Error reading composite curator file {curator_file}: {e}")
+                
+                # Extract curation results from curator_results_for_normalization files (original values, lowest priority)
+                # Only use if field not already found in directories above
+                for curator_file in batch_dir.glob("curator_results_for_normalization_*.json"):
+                    field_name = curator_file.stem.replace("curator_results_for_normalization_", "")
+                    # Skip if field already extracted from directories (corrected values take priority)
+                    if field_name in sample_data["curated_fields"]:
+                        continue
+                    try:
+                        with open(curator_file, "r") as f:
+                            curator_data = json.load(f)
+                        
+                        # Handle list format (curator_results_for_normalization files are arrays)
+                        if isinstance(curator_data, list):
+                            for curator_result in curator_data:
+                                if curator_result.get("sample_id") == sample_id:
+                                    # Unified extraction strategy: check direct fields first, then fallback to final_candidates
+                                    # Field-specific direct field mappings
+                                    direct_field_map = {
+                                        "sex": "sex",
+                                        "assay_type": "assay_type",
+                                        "sample_type": "sample_type",
+                                        "disease": "disease_name",
+                                        "treatment": "treatment_name"
+                                    }
+                                    
+                                    final_candidate_value = None
+                                    final_confidence = None
+                                    context = ""
+                                    rationale = ""
+                                    condition = ""
+                                    dosage = ""
+                                    time_val = ""
+                                    
+                                    # Step 1: Check for direct field (preferred - validated enum/primitive field)
+                                    direct_field = direct_field_map.get(field_name)
+                                    if direct_field and direct_field in curator_result:
+                                        final_candidate_value = curator_result[direct_field]
+                                        final_confidence = curator_result.get("confidence", "")
+                                        
+                                        # Field-specific handling
+                                        if field_name == "sex":
+                                            # Validate and normalize Sex enum value
+                                            if final_candidate_value:
+                                                sex_str = str(final_candidate_value)
+                                                if sex_str.lower() not in ["male", "female", "intersex", "none reported"]:
+                                                    sex_str = "None reported"
+                                                final_candidate_value = sex_str
+                                            else:
+                                                final_candidate_value = "None reported"
+                                        elif field_name == "disease":
+                                            condition = curator_result.get("condition", "")
+                                        elif field_name == "treatment":
+                                            dosage = curator_result.get("dosage", "")
+                                            time_val = curator_result.get("time", "")
+                                    
+                                    # Step 2: Fallback to final_candidate field
+                                    elif "final_candidate" in curator_result:
+                                        final_candidate_value = curator_result.get("final_candidate")
+                                        final_confidence = curator_result.get("final_confidence")
+                                    
+                                    # Step 3: Fallback to final_candidates array
+                                    if (final_candidate_value is None or final_confidence is None) and "final_candidates" in curator_result and curator_result["final_candidates"]:
+                                        final_candidate_data = curator_result["final_candidates"][0]
+                                        if isinstance(final_candidate_data, dict):
+                                            final_candidate_value = final_candidate_data.get("value", final_candidate_value)
+                                            final_confidence = final_candidate_data.get("confidence", final_confidence)
+                                            context = final_candidate_data.get("context", "")
+                                            rationale = final_candidate_data.get("rationale", "")
+                                            # Handle treatment-specific fields from final_candidates
+                                            if field_name == "treatment":
+                                                dosage = final_candidate_data.get("dosage", dosage)
+                                                time_val = final_candidate_data.get("time", time_val)
+                                    elif "final_candidates" in curator_result and curator_result["final_candidates"]:
+                                        # Extract context and rationale even if we already have a value
+                                        final_candidate_data = curator_result["final_candidates"][0]
+                                        if isinstance(final_candidate_data, dict):
+                                            context = final_candidate_data.get("context", context)
+                                            rationale = final_candidate_data.get("rationale", rationale)
+                                    
+                                    # Only create entry if we have a value
+                                    if final_candidate_value is not None:
+                                        field_data = {
+                                            "final_candidate": str(final_candidate_value) if final_candidate_value else "",
+                                            "confidence": final_confidence or "",
+                                            "context": context,
+                                            "rationale": rationale
+                                        }
+                                        # Add field-specific data
+                                        if field_name == "disease" and condition:
+                                            field_data["condition"] = condition
+                                        if field_name == "treatment":
+                                            field_data["dosage"] = dosage
+                                            field_data["time"] = time_val
+                                        
+                                        sample_data["curated_fields"][field_name] = field_data
+                                    break
+                    except Exception as e:
+                        error_msg = f"Error reading curator file {curator_file}: {e}"
+                        print(error_msg)
+                        # If this is a critical curator file (contains actual results), fail the consolidation
+                        if "curator_output_primary_sample.json" in str(curator_file) or "curator_output_cell_line.json" in str(curator_file):
+                            if curator_file.exists() and curator_file.stat().st_size > 100:  # File exists but is corrupted
+                                raise ValueError(f"Critical curator file is corrupted: {curator_file}. This indicates a failed curation process. Cannot proceed with empty results.")
+                
                 # Extract normalization results from batch_targets_output.json or other normalization files
                 batch_targets_file = batch_dir / "batch_targets_output.json"
                 if batch_targets_file.exists():
@@ -842,19 +966,68 @@ class EfficientBatchSamplesProcessor:
                         with open(batch_targets_file, "r") as f:
                             batch_targets_data = json.load(f)
                         
-                        # Look for normalization results in the batch targets output
+                        # DEBUG: Print what fields are in batch_targets_data
+                        if sample_id == sample_ids[0]:  # Only print for first sample to avoid spam
+                            print(f"🔍 DEBUG[CSV_EXTRACT]: batch_targets_output.json keys: {list(batch_targets_data.keys())}")
+                        
+                        # PREFERRED: Check for flat format first (unified format from both modes)
+                        # Flat format: {field_name: {sample_id: {normalized_term, term_id, ...}}}
+                        normalization_field_names = ["disease", "organ", "tissue", "cell_type", "cell_line", 
+                                                     "ethnicity", "treatment", "developmental_stage"]
+                        found_flat_fields = []
+                        for field_name in normalization_field_names:
+                            if field_name in batch_targets_data and isinstance(batch_targets_data[field_name], dict):
+                                field_data = batch_targets_data[field_name]
+                                if sample_id in field_data:
+                                    sample_norm = field_data[sample_id]
+                                    if isinstance(sample_norm, dict):
+                                        normalized_term = sample_norm.get("normalized_term")
+                                        normalized_id = sample_norm.get("term_id")
+                                        ontology = sample_norm.get("ontology") or ""
+                                        
+                                        if normalized_term is not None and normalized_term != "":
+                                            sample_data["normalized_fields"][field_name] = {
+                                                "normalized_term": str(normalized_term),
+                                                "normalized_id": str(normalized_id) if normalized_id else "",
+                                                "ontology": ontology,
+                                            }
+                                        elif normalized_id is not None and normalized_id != "":
+                                            sample_data["normalized_fields"][field_name] = {
+                                                "normalized_term": "",
+                                                "normalized_id": str(normalized_id),
+                                                "ontology": ontology,
+                                            }
+                                        else:
+                                            sample_data["normalized_fields"][field_name] = {
+                                                "normalized_term": "No Term Found",
+                                                "normalized_id": "",
+                                                "ontology": ontology,
+                                            }
+                                        found_flat_fields.append(field_name)
+                        
+                        if sample_id == sample_ids[0] and found_flat_fields:
+                            print(f"🔍 DEBUG[CSV_EXTRACT]: Found flat format fields: {found_flat_fields}")
+                        
+                        # FALLBACK 1: Look for nested normalization_results format
+                        # Only check fields not already found in flat format
                         if "normalization_results" in batch_targets_data:
                             norm_results = batch_targets_data["normalization_results"]
                             for field_name, field_data in norm_results.items():
+                                # Skip if already found in flat format
+                                if field_name in sample_data.get("normalized_fields", {}):
+                                    continue
                                 if isinstance(field_data, dict) and "sample_results" in field_data:
                                     for sr in field_data["sample_results"]:
                                         if sr.get("sample_id") == sample_id:
                                             result = sr.get("result", {})
                                             # Check for either new format (normalized_term) or legacy format (final_normalized_term)
-                                            # Only add if we have an actual normalized value (not null/None)
                                             normalized_term = result.get("normalized_term") or result.get("final_normalized_term")
                                             normalized_id = result.get("term_id") or result.get("final_normalized_id")
+                                            
+                                            # Always add normalization entry if normalization was attempted
+                                            # If normalized_term is null/None/empty, mark as "No Term Found"
                                             if normalized_term is not None and normalized_term != "":
+                                                # Valid normalized term found
                                                 sample_data["normalized_fields"][field_name] = {
                                                     "normalized_term": str(normalized_term),
                                                     "normalized_id": str(normalized_id) if normalized_id else "",
@@ -867,12 +1040,22 @@ class EfficientBatchSamplesProcessor:
                                                     "normalized_id": str(normalized_id),
                                                     "ontology": result.get("ontology") or result.get("final_ontology") or ""
                                                 }
+                                            else:
+                                                # Normalizer was called but returned null - mark as "No Term Found"
+                                                sample_data["normalized_fields"][field_name] = {
+                                                    "normalized_term": "No Term Found",
+                                                    "normalized_id": "",
+                                                    "ontology": result.get("ontology") or result.get("final_ontology") or ""
+                                                }
                                             break
-                        # Fallback: handle "normalization_result" (singular) with field -> sample_id map
-                        elif "normalization_result" in batch_targets_data:
+                        # FALLBACK 2: Handle "normalization_result" (singular) with field -> sample_id map
+                        if "normalization_result" in batch_targets_data:
                             norm_results = batch_targets_data["normalization_result"]
                             if isinstance(norm_results, dict):
                                 for field_name, field_map in norm_results.items():
+                                    # Skip if already found in flat format or nested format
+                                    if field_name in sample_data.get("normalized_fields", {}):
+                                        continue
                                     if isinstance(field_map, dict):
                                         # field_map expected: sample_id -> {normalized_term, term_id, ontology, original_value}
                                         single = field_map.get(sample_id)
@@ -880,7 +1063,9 @@ class EfficientBatchSamplesProcessor:
                                             term = single.get("normalized_term")
                                             term_id = single.get("term_id")
                                             ontology = single.get("ontology") or ""
-                                            # Only add if we have an actual value (not null/None)
+                                            
+                                            # Always add normalization entry if normalization was attempted
+                                            # If normalized_term is null/None/empty, mark as "No Term Found"
                                             if term is not None and term != "":
                                                 sample_data["normalized_fields"][field_name] = {
                                                     "normalized_term": str(term),
@@ -894,11 +1079,28 @@ class EfficientBatchSamplesProcessor:
                                                     "normalized_id": str(term_id),
                                                     "ontology": ontology,
                                                 }
+                                            else:
+                                                # Normalizer was called but returned null - mark as "No Term Found"
+                                                sample_data["normalized_fields"][field_name] = {
+                                                    "normalized_term": "No Term Found",
+                                                    "normalized_id": "",
+                                                    "ontology": ontology,
+                                                }
                     except Exception as e:
                         print(f"Error reading batch targets file {batch_targets_file}: {e}")
                 
+                # DEBUG: Print normalized fields for each sample
+                norm_field_names = list(sample_data.get("normalized_fields", {}).keys())
+                if norm_field_names:
+                    print(f"🔍 DEBUG[CSV_EXTRACT]: Sample {sample_id} has normalized fields: {norm_field_names}")
+                else:
+                    print(f"⚠️ DEBUG[CSV_EXTRACT]: Sample {sample_id} has NO normalized fields extracted")
+                
                 batch_results[sample_id] = sample_data
             
+            # Summary debug
+            samples_with_norm = sum(1 for sid, data in batch_results.items() if data.get("normalized_fields"))
+            print(f"🔍 DEBUG[CSV_EXTRACT]: {samples_with_norm}/{len(batch_results)} samples have normalized fields")
             print(f"🔧 Extracted results for {len(batch_results)} samples using parallel processing")
         except Exception as e:
             print(f"Error extracting results from batch {batch_dir}: {e}")

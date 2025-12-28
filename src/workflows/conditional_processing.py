@@ -39,6 +39,11 @@ from src.workflows.batch_targets import (
 )
 from src.tools.batch_processing_tools import convert_normalization_data_to_unified_format
 from src.models import LinkerOutput
+from src.workflows.batch_output_utils import (
+    BatchContext,
+    build_batch_targets_output,
+    write_batch_targets_output,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -263,45 +268,43 @@ class ConditionalProcessingWorkflow:
                 print(f"⏭️ No normalization fields to process for {batch_name}")
                 normalization_result = None
             
-            # Convert normalization_result to unified format for CSV extraction compatibility
-            # normalization_result is already in format: {field_name: {sample_id: {normalized_term, term_id, ...}}}
-            unified_norm_format = {}
+            # Convert normalization_result to dict format if needed
+            norm_data = None
             if normalization_result:
-                # Handle both dict and object types
                 if isinstance(normalization_result, dict):
                     norm_data = normalization_result
                 elif hasattr(normalization_result, 'model_dump'):
                     norm_data = normalization_result.model_dump()
                 else:
                     norm_data = normalization_result
-                
-                # Convert to unified format if we have actual normalization data
-                if norm_data and isinstance(norm_data, dict) and len(norm_data) > 0:
-                    unified_norm_format = convert_normalization_data_to_unified_format(norm_data)
             
-            # Save batch results
-            batch_output = {
-                "success": True,
-                "batch_name": batch_name,
-                "sample_type": sample_type,
-                "batch_samples": batch_samples,
-                "execution_time_seconds": time.time() - batch_start_time,
-                "conditional_result": conditional_result.model_dump() if hasattr(conditional_result, 'model_dump') else conditional_result,
-                "normalization_result": normalization_result.model_dump() if normalization_result and hasattr(normalization_result, 'model_dump') else normalization_result,  # Keep for backward compatibility
-                "batch_directory": str(batch_dir),
-                "target_fields_processed": curation_fields,  # Use sample type-specific curation fields
-                "normalization_fields_processed": fields_to_normalize if fields_to_normalize else [],
-                "not_applicable_fields": not_applicable_fields,  # Track fields that are not applicable for this sample type
-                "timestamp": datetime.now().isoformat(),
-            }
+            # Use shared utilities for consistent output format
+            batch_context = BatchContext(
+                session_directory=self.session_directory,
+                sample_type=sample_type,
+                batch_idx=batch_num,
+                batch_samples=list(batch_samples),
+            )
             
-            # Add unified normalization format for CSV extraction
-            batch_output.update(unified_norm_format)
+            # Build additional fields for backward compatibility
+            additional_fields = {}
+            if normalization_result:
+                additional_fields["normalization_result"] = normalization_result.model_dump() if hasattr(normalization_result, 'model_dump') else normalization_result
             
-            # Save batch targets output
-            batch_targets_file = batch_dir / "batch_targets_output.json"
-            with open(batch_targets_file, "w") as f:
-                json.dump(batch_output, f, indent=2)
+            # Build batch output using shared utility (includes both flat and nested formats)
+            batch_output = build_batch_targets_output(
+                batch_context=batch_context,
+                conditional_result=conditional_result,
+                normalization_data=norm_data if isinstance(norm_data, dict) else None,
+                execution_time_seconds=time.time() - batch_start_time,
+                target_fields_processed=curation_fields,
+                normalization_fields_processed=fields_to_normalize if fields_to_normalize else [],
+                not_applicable_fields=not_applicable_fields,
+                additional_fields=additional_fields,
+            )
+            
+            # Write using shared utility (atomic write)
+            write_batch_targets_output(batch_context, batch_output, merge_with_existing=False)
             
             
             return batch_output
@@ -517,6 +520,7 @@ async def run_conditional_processing_workflow(
     Dict[str, Any]
         Conditional processing workflow results
     """
+    print(f"🔍 DEBUG[conditional_processing]: Starting run_conditional_processing_workflow")
     workflow = ConditionalProcessingWorkflow(
         session_directory=session_directory,
         target_fields=target_fields,
@@ -525,8 +529,13 @@ async def run_conditional_processing_workflow(
         max_workers=max_workers,
     )
     
-    
-    return await workflow.run_conditional_processing(sample_type_batches, data_intake_output)
+    result = await workflow.run_conditional_processing(sample_type_batches, data_intake_output)
+    print(f"🔍 DEBUG[conditional_processing]: run_conditional_processing returned: {type(result)}, success={result.get('success') if result else 'None'}")
+    if result is None:
+        print(f"❌ ERROR[conditional_processing]: run_conditional_processing returned None!")
+        import traceback
+        traceback.print_stack()
+    return result
 
 
 if __name__ == "__main__":
