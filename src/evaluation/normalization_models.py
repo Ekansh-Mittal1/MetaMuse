@@ -17,10 +17,16 @@ class NormalizationFieldEvaluation(BaseModel):
         None, description="Ontology or controlled vocabulary ID for the normalized term."
     )
     is_normalization_correct: Optional[bool] = Field(
-        None, description="Whether the normalized term/id correctly represent the curated value."
+        None, description="Whether the normalized term/id correctly represent the curated value. Only mark as False if a better term exists."
     )
     normalization_reason: Optional[str] = Field(
         None, description="Reasoning for why the normalization is correct or incorrect."
+    )
+    suggested_term: Optional[str] = Field(
+        None, description="If normalization is incorrect, suggest a better ontology term that would be more accurate. Leave None if normalization is correct or if no better term exists."
+    )
+    suggested_id: Optional[str] = Field(
+        None, description="If normalization is incorrect, suggest the ontology ID for the suggested_term. Leave None if normalization is correct or if no better term exists."
     )
 
 

@@ -22,14 +22,55 @@ NCBI_API_KEY=your_ncbi_api_key  # Optional but recommended
 uv sync
 ```
 
-### 4. Verify installation
+### 4. Download local SQLite databases (GEO + optional PubMed)
+
+Large database files are not committed to Git. After install, run the **data setup** entry point (implementation lives in `src/setup_data.py`; the root `setup.py` file is only a thin wrapper and is **not** setuptools packaging):
+
+```bash
+uv run setup-data
+```
+
+Equivalent:
+
+```bash
+uv run python setup.py
+```
+
+This downloads **`data/GEOmetadb.sqlite`** (~1 GiB compressed, ~20 GiB on disk after extraction) using the same downloader as the data-intake workflow.
+
+**Optional — full PubMed baseline** (large download, long ingest; only if you want local PMID lookups without the NCBI API):
+
+```bash
+uv run setup-data --pubmed full --i-accept-pubmed-baseline-cost
+```
+
+By default PubMed is skipped; the script prints a suggested `PUBMED_SQLITE_PATH` so abstract tooling can find **`data/pubmed/pubmed.sqlite`** after you build it. You can also build a filtered DB with `src/utils/pubmed_ingest.py` (see that file’s docstring).
+
+| Flag | Meaning |
+|------|---------|
+| `--data-dir PATH` | Root for `GEOmetadb.sqlite` and `pubmed/` (default: `data`) |
+| `--skip-geo` | Do not download GEOmetadb |
+| `--force` | Re-download GEO if present; with `--pubmed full`, remove existing `pubmed.sqlite` first |
+| `--pubmed none` \| `full` | Skip PubMed (default) or full baseline download + ingest |
+
+### 5. Verify installation
+```bash
+uv run metamuse --list-workflows
+```
+
+Equivalent:
+
 ```bash
 uv run python main.py --list-workflows
 ```
 
+The `metamuse` command is defined in `[project.scripts]` in `pyproject.toml` and calls `src/metamuse_cli.py`, so you do not need to be in a particular directory beyond having run `uv sync` in this repo (or using `uv run` from it).
+
 ---
 
 ## 📋 Workflows
+
+You can run workflows with **`uv run metamuse …`** (same arguments as `uv run python main.py …`).
 
 ### batch_samples_efficient
 Multi-sample batch processing with quality control (production workflow).
@@ -122,18 +163,17 @@ sandbox/det_sql_{session_id}/
 
 ---
 
-## 🔧 Data Requirements
+## 🔧 Data requirements
 
-### Required Databases
+- **GEOmetadb** — Required for SQL-based data intake. Obtain with `uv run setup-data` (recommended) or see **Local data (GEO & PubMed)** below for manual steps.
+- **PubMed SQLite** — Optional; speeds up abstract lookups when present. Default env / code may expect `~/data/pubmed/pubmed.sqlite`; after `setup.py`, point **`PUBMED_SQLITE_PATH`** at `data/pubmed/pubmed.sqlite` (the setup script prints this).
 
-1. **GEOmetadb.sqlite** (18+ GB) - Place in `data/GEOmetadb.sqlite`
-2. **PubMed database** (50+ MB) - Place in `data/pubmed/`
-
-### Sample Lists
+### Sample lists
 
 Included in `archs4_samples/`:
-- `archs4_gsm_ids.txt` - Full sample list
-- `manual_100_samples.txt` - Curated test set
+
+- `archs4_gsm_ids.txt` — Full sample list  
+- `manual_100_samples.txt` — Curated test set  
 
 ---
 
@@ -162,6 +202,9 @@ uv run python main.py batch_samples_efficient \
 
 ## 🐛 Troubleshooting
 
+**Missing `data/GEOmetadb.sqlite`:**
+- Run `uv run setup-data` (Quick Start, step 4).
+
 **Missing environment variables:**
 - Create `.env` file with required API keys
 
@@ -189,31 +232,42 @@ uv sync --reinstall
 
 ---
 
-## 🗄️ Data Setup
+## 🗄️ Local data (GEO & PubMed)
 
-### GEOmetadb.sqlite Setup
+### Recommended: `setup-data`
 
-The `GEOmetadb.sqlite` file (19GB) contains GEO metadata and is required for the workflows. Due to GitHub's file size limits, it's not included in this repository.
+From the repo root (after `uv sync`):
 
-**Download:**
 ```bash
-# Create data directory
-mkdir -p data/
-
-# Download and extract
-wget https://gbnci.cancer.gov/geo/GEOmetadb.sqlite.gz
-gzip -d GEOmetadb.sqlite.gz
-mv GEOmetadb.sqlite data/
+uv run setup-data
 ```
 
-**Verify Setup:**
+This populates **`data/GEOmetadb.sqlite`**. The `data/` directory is gitignored; each developer generates their own copy.
+
+### Manual GEOmetadb (alternative)
+
+If you prefer not to use `setup-data`, download the official gzip and extract into `data/`:
+
+```bash
+mkdir -p data
+wget -O data/GEOmetadb.sqlite.gz https://gbnci.cancer.gov/geo/GEOmetadb.sqlite.gz
+gzip -d data/GEOmetadb.sqlite.gz
+```
+
+Verify:
+
 ```bash
 ls -lh data/GEOmetadb.sqlite
-# Should show ~19GB file
+# Expect on the order of ~20 GiB uncompressed
 ```
 
-### Other Data Files
+### PubMed SQLite
 
-The following files are included in this repository:
-- `data/pubmed/pubmed.sqlite` (51MB) - PubMed abstracts
-- `archs4_samples/archs4_gsm_ids.txt` (9.4MB) - Sample ID mappings
+- **Full baseline** (large): `uv run setup-data --pubmed full --i-accept-pubmed-baseline-cost`  
+- **Custom / filtered ingest**: use `src/utils/pubmed_ingest.py` (`download`, `ingest`, optional `--filter-ids`).
+
+Set **`PUBMED_SQLITE_PATH`** in `.env` if your database is not at the default `~/data/pubmed/pubmed.sqlite`, for example:
+
+```bash
+PUBMED_SQLITE_PATH=/absolute/path/to/repo/data/pubmed/pubmed.sqlite
+```

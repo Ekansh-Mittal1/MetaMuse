@@ -26,6 +26,10 @@ build-backend = "hatchling.build"
 
 
 
+[project.scripts]
+metamuse = "src.metamuse_cli:main_sync"
+setup-data = "src.setup_data:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.4.1",
