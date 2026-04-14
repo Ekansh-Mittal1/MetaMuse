@@ -1,3 +1,4 @@
 data/GEOmetadb.sqlite filter=lfs diff=lfs merge=lfs -text
 data/pubmed/pubmed.sqlite filter=lfs diff=lfs merge=lfs -text
-archs4_samples/archs4_gsm_ids.txt filter=lfs diff=lfs merge=lfs -text
+# archs4_gsm_ids.txt (~10 MB) is stored as a normal Git blob so clones work even
+# when Git LFS objects are missing or LFS is not installed (see README).
