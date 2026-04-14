@@ -16,6 +16,10 @@ import hashlib
 import json
 import time
 
+# NCI moved GEOmetadb; the old abcc.ncifcrf.gov host often no longer resolves.
+_DEFAULT_GEOMETADB_GZ = "https://gbnci.cancer.gov/geo/GEOmetadb.sqlite.gz"
+_DEFAULT_GEOMETADB_MD5 = "https://gbnci.cancer.gov/geo/GEOmetadb.sqlite.gz.md5"
+
 
 class GEOmetadbManager:
     """
@@ -43,12 +47,12 @@ class GEOmetadbManager:
         # Database connection
         self.connection = None
         
-        # GEOmetadb download URLs and metadata
+        # GEOmetadb download URLs (override with GEOMETADB_DOWNLOAD_URL / GEOMETADB_MD5_URL)
         self.geometadb_info = {
-            "url": "https://gbnci.abcc.ncifcrf.gov/geo/GEOmetadb.sqlite.gz",
-            "md5_url": "https://gbnci.abcc.ncifcrf.gov/geo/GEOmetadb.sqlite.gz.md5",
+            "url": os.getenv("GEOMETADB_DOWNLOAD_URL", _DEFAULT_GEOMETADB_GZ),
+            "md5_url": os.getenv("GEOMETADB_MD5_URL", _DEFAULT_GEOMETADB_MD5),
             "last_updated": None,
-            "file_size": None
+            "file_size": None,
         }
         
         # Initialize database if it exists
