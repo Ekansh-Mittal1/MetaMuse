@@ -166,7 +166,7 @@ sandbox/det_sql_{session_id}/
 ## 🔧 Data requirements
 
 - **GEOmetadb** — Required for SQL-based data intake. Obtain with `uv run setup-data` (recommended) or see **Local data (GEO & PubMed)** below for manual steps.
-- **PubMed SQLite** — Optional; speeds up abstract lookups when present. Default env / code may expect `~/data/pubmed/pubmed.sqlite`; after `setup.py`, point **`PUBMED_SQLITE_PATH`** at `data/pubmed/pubmed.sqlite` (the setup script prints this).
+- **PubMed SQLite** — Optional; speeds up abstract lookups when present. Default env / code may expect `~/data/pubmed/pubmed.sqlite`; after `setup-data`, point **`PUBMED_SQLITE_PATH`** at `data/pubmed/pubmed.sqlite` (the setup script prints this).
 
 ### Sample lists
 
@@ -207,6 +207,18 @@ uv run python main.py batch_samples_efficient \
 
 **Missing environment variables:**
 - Create `.env` file with required API keys
+
+**Git LFS errors on clone/pull (e.g. “Object does not exist on the server”, smudge failed):**
+
+Large binaries under `data/` may still use Git LFS. Ensure [Git LFS](https://git-lfs.com/) is installed, then `git lfs pull`. If the remote LFS object is missing (404), only a repo admin can fix the upstream storage; you can still clone the rest of the tree with:
+
+```bash
+GIT_LFS_SKIP_SMUDGE=1 git clone <repo-url>
+```
+
+Then obtain any missing large files from a teammate or follow the README **Local data** section. The sample list `archs4_samples/archs4_gsm_ids.txt` is stored as a normal Git file (not LFS) so it should always checkout with the repo.
+
+**`data/pubmed/pubmed.sqlite` / `data/GEOmetadb.sqlite`:** These are **not** in Git (use `uv run setup-data` to create them locally). If an older commit still tracked them via Git LFS, update to the latest `main` where that was removed; otherwise use `GIT_LFS_SKIP_SMUDGE=1` and run setup-data.
 
 **UV issues:**
 ```bash

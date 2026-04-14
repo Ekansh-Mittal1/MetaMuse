@@ -1,4 +1,7 @@
-data/GEOmetadb.sqlite filter=lfs diff=lfs merge=lfs -text
-data/pubmed/pubmed.sqlite filter=lfs diff=lfs merge=lfs -text
-# archs4_gsm_ids.txt (~10 MB) is stored as a normal Git blob so clones work even
-# when Git LFS objects are missing or LFS is not installed (see README).
+# Do not commit large SQLite databases (GEOmetadb, pubmed, etc.) to Git — they are
+# gitignored under data/ and built with `uv run setup-data` or pubmed_ingest.
+# (Previously some paths used Git LFS; LFS objects were missing on the remote and
+# broke clones — see README troubleshooting.)
+
+# archs4_gsm_ids.txt (~10 MB) is stored as a normal Git blob (not LFS) so it
+# always clones with the repo.
