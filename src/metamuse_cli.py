@@ -13,6 +13,8 @@ from openai import AsyncOpenAI
 
 from dotenv import load_dotenv
 
+from src.sample_paths import DEFAULT_GSM_IDS_FILE
+
 # Suppress HTTP request logging from httpx/openai
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("openai").setLevel(logging.WARNING)
@@ -127,7 +129,7 @@ async def run_workflow(
         sample_count = 100
         batch_size = 5
         output_dir = "batch"
-        samples_file = "archs4_samples/archs4_gsm_ids.txt"
+        samples_file = DEFAULT_GSM_IDS_FILE
         target_fields = None
         sample_type_filter = None
         batch_name = None

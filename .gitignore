@@ -225,8 +225,13 @@ z_src_OLD/
 
 # Data
 sample_characteristics.tsv
-data/
-archs4_samples/
+# Ignore generated DBs and caches under data/; track only listed files under data/samples/.
+data/**
+!data/samples/
+data/samples/*
+!data/samples/archs4_gsm_ids.txt
+!data/samples/archs4_pubmed_ids.txt
+!data/samples/archs4_gse_ids.txt
 
 # models
 

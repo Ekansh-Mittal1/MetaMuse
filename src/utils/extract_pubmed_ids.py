@@ -29,6 +29,7 @@ load_dotenv()
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+from src.sample_paths import DEFAULT_GSE_IDS_FILE, DEFAULT_PUBMED_IDS_FILE
 from src.tools.sqlite_ingestion_tools import get_geometadb_manager, download_geometadb
 from src.tools.sqlite_manager import GEOmetadbManager
 
@@ -364,8 +365,19 @@ def save_samples_without_data(samples_without_data: Set[str], output_file: str):
 def main():
     """Main function to extract PubMed IDs from GSE IDs."""
     parser = argparse.ArgumentParser(description="Extract PubMed IDs from GSE IDs using GEOmetadb")
-    parser.add_argument("--input", "-i", default="archs4_samples/archs4_gse_ids.txt", help="Input text file containing GSE IDs (default: archs4_samples/archs4_gse_ids.txt)")
-    parser.add_argument("--output", "-o", default="archs4_samples/archs4_pubmed_ids.txt", help="Output text file for PubMed IDs (default: archs4_samples/archs4_pubmed_ids.txt)")
+
+    parser.add_argument(
+        "--input",
+        "-i",
+        default=DEFAULT_GSE_IDS_FILE,
+        help=f"Input text file containing GSE IDs (default: {DEFAULT_GSE_IDS_FILE})",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        default=DEFAULT_PUBMED_IDS_FILE,
+        help=f"Output text file for PubMed IDs (default: {DEFAULT_PUBMED_IDS_FILE})",
+    )
     parser.add_argument("--db-path", default="data/GEOmetadb.sqlite", help="Path to GEOmetadb SQLite database")
     parser.add_argument("--force-download", action="store_true", help="Force download of database if it doesn't exist")
     parser.add_argument("--no-http-fallback", action="store_true", help="Disable HTTP API fallback (use SQLite only)")

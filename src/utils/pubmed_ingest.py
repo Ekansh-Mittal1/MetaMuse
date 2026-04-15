@@ -348,6 +348,64 @@ def extract_article_fields(cit: ET.Element) -> Tuple[str, str, str, str, str, Op
         print(f"⚠️  Error parsing article fields: {e}")
         return "", "", "", "", "", None, "", []
 
+
+def upsert_article_from_medline_citation(
+    db: sqlite3.Connection,
+    cit: ET.Element,
+    pmid_filter: Optional[Set[str]],
+    *,
+    context: str = "",
+) -> str:
+    """
+    Insert or update one article from a ``MedlineCitation`` element.
+
+    Returns
+    -------
+    str
+        ``"ok"``, ``"fail"``, or ``"skip"`` (no PMID or not in ``pmid_filter``).
+    """
+    pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw, authors = extract_article_fields(cit)
+    if not pmid:
+        return "skip"
+    if pmid_filter is not None and pmid not in pmid_filter:
+        return "skip"
+    try:
+        db.execute(
+            """
+            INSERT INTO articles (pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(pmid) DO UPDATE SET
+              title=excluded.title,
+              abstract=excluded.abstract,
+              journal=excluded.journal,
+              iso_abbrev=excluded.iso_abbrev,
+              pub_year=excluded.pub_year,
+              pub_date_raw=excluded.pub_date_raw
+            """,
+            (pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw),
+        )
+        db.execute("DELETE FROM authors WHERE pmid = ?", (pmid,))
+        for a in authors:
+            db.execute(
+                """
+                INSERT INTO authors (pmid, position, last_name, fore_name, initials, collective_name)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    pmid,
+                    a["position"],
+                    a["last_name"],
+                    a["fore_name"],
+                    a["initials"],
+                    a["collective_name"],
+                ),
+            )
+        return "ok"
+    except sqlite3.Error as e:
+        print(f"⚠️  Database error processing PMID {pmid}{context}: {e}")
+        return "fail"
+
+
 def ingest_gz_xml(db: sqlite3.Connection, gz_path: Path, pbar: tqdm = None, commit_every: int = 2000, pmid_filter: Optional[Set[str]] = None):
     """
     Stream-parse a PubMed gz XML file and insert/update rows.
@@ -370,44 +428,12 @@ def ingest_gz_xml(db: sqlite3.Connection, gz_path: Path, pbar: tqdm = None, comm
                     if tag == "PubmedArticle":
                         cit = elem.find("MedlineCitation")
                         if cit is not None:
-                            pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw, authors = extract_article_fields(cit)
-                            if pmid:
-                                # Check if this PMID should be processed
-                                if pmid_filter is not None and pmid not in pmid_filter:
-                                    elem.clear()
-                                    continue
-                                
+                            st = upsert_article_from_medline_citation(db, cit, pmid_filter)
+                            if st == "ok":
+                                count += 1
                                 filtered_count += 1
-                                # Insert article with upsert logic to handle existing PMIDs
-                                try:
-                                    db.execute("""
-                                        INSERT INTO articles (pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw)
-                                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                                        ON CONFLICT(pmid) DO UPDATE SET
-                                          title=excluded.title,
-                                          abstract=excluded.abstract,
-                                          journal=excluded.journal,
-                                          iso_abbrev=excluded.iso_abbrev,
-                                          pub_year=excluded.pub_year,
-                                          pub_date_raw=excluded.pub_date_raw
-                                    """, (pmid, title, abstract, journal, iso_abbrev, pub_year, pub_date_raw))
-                                    
-                                    # Replace authors (delete existing and insert new)
-                                    db.execute("DELETE FROM authors WHERE pmid = ?", (pmid,))
-                                    for a in authors:
-                                        db.execute("""
-                                            INSERT INTO authors (pmid, position, last_name, fore_name, initials, collective_name)
-                                            VALUES (?, ?, ?, ?, ?, ?)
-                                        """, (pmid, a["position"], a["last_name"], a["fore_name"], a["initials"], a["collective_name"]))
-                                    
-                                    count += 1
-                                except sqlite3.Error as e:
-                                    error_count += 1
-                                    print(f"⚠️  Database error processing PMID {pmid} in {gz_path.name}: {e}")
-                                    # Continue processing other records
-                                    continue
-                                    
-                        # clear to free memory
+                            elif st == "fail":
+                                error_count += 1
                         elem.clear()
                     elif tag == "DeleteCitation":
                         # delete citations contain PMID children

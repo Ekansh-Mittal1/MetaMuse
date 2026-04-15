@@ -38,20 +38,24 @@ uv run python setup.py
 
 This downloads **`data/GEOmetadb.sqlite`** (~1 GiB compressed, ~20 GiB on disk after extraction) using the same downloader as the data-intake workflow.
 
-**Optional — full PubMed baseline** (large download, long ingest; only if you want local PMID lookups without the NCBI API):
+**PubMed (default)** — After GEO, `setup-data` builds a **filtered** `data/pubmed/pubmed.sqlite` using **NCBI efetch** (no PubMed baseline FTP): it reads PMIDs from **`data/samples/archs4_pubmed_ids.txt`** when that file is present. If it is missing, it falls back to up to **5000** PMIDs from GEOmetadb’s `gse.pubmed_id`, then to **`pubmed_filter_seed_pmids.txt`**. Override the list with **`--pubmed-filter-ids`**. Set **`NCBI_EMAIL`** in `.env` (required for efetch).
+
+**Optional — full PubMed baseline** (large download, long ingest):
 
 ```bash
 uv run setup-data --pubmed full --i-accept-pubmed-baseline-cost
 ```
 
-By default PubMed is skipped; the script prints a suggested `PUBMED_SQLITE_PATH` so abstract tooling can find **`data/pubmed/pubmed.sqlite`** after you build it. You can also build a filtered DB with `src/utils/pubmed_ingest.py` (see that file’s docstring).
+For baseline-style filtering from downloaded XML, see `src/utils/pubmed_ingest.py`.
 
 | Flag | Meaning |
 |------|---------|
 | `--data-dir PATH` | Root for `GEOmetadb.sqlite` and `pubmed/` (default: `data`) |
 | `--skip-geo` | Do not download GEOmetadb |
-| `--force` | Re-download GEO if present; with `--pubmed full`, remove existing `pubmed.sqlite` first |
-| `--pubmed none` \| `full` | Skip PubMed (default) or full baseline download + ingest |
+| `--force` | Re-download GEO if present; replace `pubmed.sqlite` when rebuilding PubMed |
+| `--pubmed none` \| `filtered` \| `full` | PubMed: skip; **filtered efetch (default)**; full baseline |
+| `--pubmed-filter-ids PATH` | Use this PMID list (one per line) instead of GEOmetadb |
+| `--pubmed-max-from-geo N` | Fallback only: max PMIDs from GEO if `data/samples/archs4_pubmed_ids.txt` is missing (default: 5000) |
 
 ### 5. Verify installation
 ```bash
@@ -123,7 +127,7 @@ uv run python main.py deterministic_sql "GSM1000981,GSM1000984 target_field:dise
 |-----------|---------|-------------|
 | `sample_count` | 100 | Number of samples to process |
 | `batch_size` | 5 | Samples per batch |
-| `samples_file` | archs4_samples/archs4_gsm_ids.txt | Path to sample IDs file |
+| `samples_file` | data/samples/archs4_gsm_ids.txt | Path to sample IDs file |
 | `target_fields` | All | Comma-separated fields: disease,tissue,organ,cell_line,cell_type,developmental_stage,ethnicity,sex,age,assay_type,treatment |
 | `sample_type_filter` | None | Filter by type: primary_sample, cell_line, or unknown |
 | `conditional_mode` | eval | Mode: eval (quality control) or classic (faster) |
@@ -170,10 +174,13 @@ sandbox/det_sql_{session_id}/
 
 ### Sample lists
 
-Included in `archs4_samples/`:
+Committed under **`data/samples/`** (see `.gitignore`; other files in that directory stay local):
 
-- `archs4_gsm_ids.txt` — Full sample list  
-- `manual_100_samples.txt` — Curated test set  
+- `archs4_gsm_ids.txt` — Default GSM list for batch workflows  
+- `archs4_pubmed_ids.txt` — Default PMID list for `setup-data` filtered PubMed  
+- `archs4_gse_ids.txt` — Default input for `src/utils/extract_pubmed_ids.py`  
+
+Other lists (e.g. `manual_100_samples.txt`) live in the same folder but are not tracked in git.
 
 ---
 
@@ -183,7 +190,7 @@ Included in `archs4_samples/`:
 ```bash
 # Quick test (20 samples, 8 minutes)
 uv run python main.py batch_samples_efficient \
-  "sample_count=20 batch_size=5 samples_file=archs4_samples/manual_100_samples.txt \
+  "sample_count=20 batch_size=5 samples_file=data/samples/manual_100_samples.txt \
    batch_name=test conditional_mode=classic output_format=csv"
 
 # Single sample test (30 seconds)
@@ -216,7 +223,7 @@ Large binaries under `data/` may still use Git LFS. Ensure [Git LFS](https://git
 GIT_LFS_SKIP_SMUDGE=1 git clone <repo-url>
 ```
 
-Then obtain any missing large files from a teammate or follow the README **Local data** section. The sample list `archs4_samples/archs4_gsm_ids.txt` is stored as a normal Git file (not LFS) so it should always checkout with the repo.
+Then obtain any missing large files from a teammate or follow the README **Local data** section. The sample list `data/samples/archs4_gsm_ids.txt` is stored as a normal Git file (not LFS) so it should always checkout with the repo.
 
 **`data/pubmed/pubmed.sqlite` / `data/GEOmetadb.sqlite`:** These are **not** in Git (use `uv run setup-data` to create them locally). If an older commit still tracked them via Git LFS, update to the latest `main` where that was removed; otherwise use `GIT_LFS_SKIP_SMUDGE=1` and run setup-data.
 
@@ -254,7 +261,7 @@ From the repo root (after `uv sync`):
 uv run setup-data
 ```
 
-This populates **`data/GEOmetadb.sqlite`**. The `data/` directory is gitignored; each developer generates their own copy.
+This populates **`data/GEOmetadb.sqlite`** and, by default, a **filtered** **`data/pubmed/pubmed.sqlite`** via NCBI efetch from **`data/samples/archs4_pubmed_ids.txt`** (needs **`NCBI_EMAIL`**). Large artifacts under `data/` (GEO DB, PubMed DB, etc.) stay gitignored; a few **sample list files under `data/samples/`** are committed—see `.gitignore`. GEO downloads use **`https://gbnci.cancer.gov/geo/`** by default (the legacy `gbnci.abcc.ncifcrf.gov` host often no longer resolves). To use another mirror, set **`GEOMETADB_DOWNLOAD_URL`** (and optionally **`GEOMETADB_MD5_URL`**) in the environment before running `setup-data`.
 
 ### Manual GEOmetadb (alternative)
 
@@ -275,8 +282,9 @@ ls -lh data/GEOmetadb.sqlite
 
 ### PubMed SQLite
 
+- **Default (with `setup-data`)**: filtered DB via **efetch** using **`data/samples/archs4_pubmed_ids.txt`**; needs `NCBI_EMAIL`.  
 - **Full baseline** (large): `uv run setup-data --pubmed full --i-accept-pubmed-baseline-cost`  
-- **Custom / filtered ingest**: use `src/utils/pubmed_ingest.py` (`download`, `ingest`, optional `--filter-ids`).
+- **FTP baseline + `--filter-ids`**: use `src/utils/pubmed_ingest.py` (`download`, `ingest`, optional `--filter-ids`).
 
 Set **`PUBMED_SQLITE_PATH`** in `.env` if your database is not at the default `~/data/pubmed/pubmed.sqlite`, for example:
 

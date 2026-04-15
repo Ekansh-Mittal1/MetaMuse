@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """
-Prepare local SQLite databases for MetaMuse (GEOmetadb + optional PubMed).
+Prepare local SQLite databases for MetaMuse (GEOmetadb + PubMed SQLite).
 
 Run via ``uv run setup-data`` or ``python setup.py`` from the repository root.
 
-Paths (default ``--data-dir data``) align with the repo defaults:
+Paths (default ``--data-dir data``):
 
-- ``data/GEOmetadb.sqlite`` — same default as ``SQLiteDataIntakeWorkflow`` /
-  ``download_geometadb``.
-- ``data/pubmed/pubmed.sqlite`` — set ``PUBMED_SQLITE_PATH`` to this path so
-  ``PubMedSQLiteManager`` and abstract extraction use it (see printed hint).
+- ``data/GEOmetadb.sqlite`` — GEOmetadb (see ``download_geometadb``).
+- ``data/pubmed/pubmed.sqlite`` — small **filtered** DB by default (NCBI efetch for
+  PMIDs listed in ``data/samples/archs4_pubmed_ids.txt`` when present), no PubMed
+  baseline FTP download. Set ``PUBMED_SQLITE_PATH`` for ``PubMedSQLiteManager``.
 
-GEO download is **on** by default (~1 GiB download, ~20 GiB on disk after gunzip).
-
-Full PubMed baseline is **off** by default (many GiB download + long ingest + large
-SQLite). Use ``--pubmed full`` only with the explicit confirmation flag.
+Use ``--pubmed full`` only for the full baseline (huge download + ingest); requires
+``--i-accept-pubmed-baseline-cost``.
 """
 
 from __future__ import annotations
@@ -24,6 +22,10 @@ import os
 import sys
 from argparse import Namespace
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+from src.sample_paths import DEFAULT_PUBMED_IDS_FILE
 
 
 def _repo_root() -> Path:
@@ -47,6 +49,90 @@ def setup_geo(data_dir: Path, *, force: bool) -> None:
     if not ok:
         raise SystemExit("GEOmetadb download failed.")
     print("GEOmetadb ready.")
+
+
+def _load_pmids_from_text_file(path: Path) -> list[str]:
+    out: list[str] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.isdigit():
+            out.append(line)
+    return list(dict.fromkeys(out))
+
+
+def setup_pubmed_filtered(
+    data_dir: Path,
+    *,
+    force: bool,
+    filter_ids_path: Path | None,
+    max_from_geo: int,
+    geo_path: Path,
+) -> None:
+    """Build ``pubmed.sqlite`` via NCBI efetch (no baseline FTP)."""
+    _ensure_repo_on_path()
+    from src.utils.pubmed_efetch import build_pubmed_sqlite_from_pmids, collect_pmids_from_geometadb
+    from src.utils.pubmed_ingest import load_pmid_filter
+
+    db_path = data_dir / "pubmed" / "pubmed.sqlite"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if force and db_path.exists():
+        db_path.unlink()
+        print(f"Removed existing {db_path}")
+
+    pmids: list[str] = []
+    if filter_ids_path is not None:
+        p = filter_ids_path.expanduser().resolve()
+        if not p.exists():
+            raise SystemExit(f"--pubmed-filter-ids file not found: {p}")
+        filt = load_pmid_filter(str(p))
+        pmids = sorted(filt) if filt else []
+        print(f"Loaded {len(pmids)} PMIDs from {p}")
+    else:
+        pubmed_list = (_repo_root() / DEFAULT_PUBMED_IDS_FILE).resolve()
+        if pubmed_list.exists():
+            pmids = _load_pmids_from_text_file(pubmed_list)
+            print(f"Loaded {len(pmids)} PMIDs from {Path(DEFAULT_PUBMED_IDS_FILE).as_posix()}")
+        elif geo_path.exists():
+            pmids = collect_pmids_from_geometadb(geo_path, max_from_geo)
+            print(
+                f"No {DEFAULT_PUBMED_IDS_FILE}; collected {len(pmids)} "
+                f"PMIDs from GEOmetadb (cap {max_from_geo})"
+            )
+        else:
+            seed = _repo_root() / "pubmed_filter_seed_pmids.txt"
+            if seed.exists():
+                pmids = _load_pmids_from_text_file(seed)
+                print(
+                    f"No {DEFAULT_PUBMED_IDS_FILE} or GEOmetadb; "
+                    f"using {len(pmids)} PMIDs from {seed.name}"
+                )
+            else:
+                print(
+                    f"⚠️  Missing {DEFAULT_PUBMED_IDS_FILE}, GEOmetadb at {geo_path}, "
+                    f"and {seed.name}; skipping PubMed."
+                )
+
+    if not pmids:
+        print("⚠️  No PMIDs to fetch; skipping PubMed SQLite.")
+        return
+
+    load_dotenv(override=True)
+    email = (os.getenv("NCBI_EMAIL") or "").strip()
+    if not email:
+        print(
+            "⚠️  Skipping PubMed SQLite: NCBI_EMAIL is not set (required for NCBI efetch).\n"
+            "   Add it to .env and re-run setup-data, or use --pubmed none.",
+            file=sys.stderr,
+        )
+        return
+
+    api_key = (os.getenv("NCBI_API_KEY") or "").strip() or None
+    print(f"Building {db_path.resolve()} via PubMed efetch ({len(pmids)} articles) …")
+    n = build_pubmed_sqlite_from_pmids(pmids, db_path, email, api_key)
+    print(f"PubMed SQLite ready (~{n} articles upserted).")
 
 
 def setup_pubmed_full(data_dir: Path, *, force: bool) -> None:
@@ -74,7 +160,7 @@ def setup_pubmed_full(data_dir: Path, *, force: bool) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Download GEOmetadb.sqlite and optionally build pubmed.sqlite."
+        description="Download GEOmetadb.sqlite and build pubmed.sqlite (filtered efetch by default)."
     )
     parser.add_argument(
         "--data-dir",
@@ -90,13 +176,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Re-download GEO if present; for --pubmed full, remove existing pubmed.sqlite first.",
+        help="Re-download GEO if present; replace pubmed.sqlite when building PubMed.",
     )
     parser.add_argument(
         "--pubmed",
-        choices=("none", "full"),
-        default="none",
-        help="PubMed: 'none' (default) or 'full' baseline download + ingest (very large).",
+        choices=("none", "filtered", "full"),
+        default="filtered",
+        help="PubMed: 'filtered' (default, efetch from data/samples/archs4_pubmed_ids.txt / overrides), 'none', or 'full' baseline.",
+    )
+    parser.add_argument(
+        "--pubmed-filter-ids",
+        type=Path,
+        default=None,
+        help="PMID list (one per line). Overrides data/samples/archs4_pubmed_ids.txt when set.",
+    )
+    parser.add_argument(
+        "--pubmed-max-from-geo",
+        type=int,
+        default=5000,
+        help="Fallback only: max PMIDs from GEOmetadb when data/samples/archs4_pubmed_ids.txt is missing.",
     )
     parser.add_argument(
         "--i-accept-pubmed-baseline-cost",
@@ -105,8 +203,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    load_dotenv(override=True)
     data_dir = args.data_dir.expanduser().resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
+    geo_path = data_dir / "GEOmetadb.sqlite"
 
     if not args.skip_geo:
         setup_geo(data_dir, force=args.force)
@@ -123,20 +223,23 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         setup_pubmed_full(data_dir, force=args.force)
-    else:
-        print(
-            "Skipping PubMed (--pubmed none). For a local abstract DB, run:\n"
-            "  uv run setup-data --pubmed full --i-accept-pubmed-baseline-cost\n"
-            "or use src/utils/pubmed_ingest.py (download / ingest / --filter-ids).\n"
+    elif args.pubmed == "filtered":
+        setup_pubmed_filtered(
+            data_dir,
+            force=args.force,
+            filter_ids_path=args.pubmed_filter_ids,
+            max_from_geo=args.pubmed_max_from_geo,
+            geo_path=geo_path,
         )
+    else:
+        print("Skipping PubMed (--pubmed none).")
 
     pubmed_path = data_dir / "pubmed" / "pubmed.sqlite"
-    geo_path = data_dir / "GEOmetadb.sqlite"
     print("\nSuggested environment (add to .env or your shell):")
     print(f"  export PUBMED_SQLITE_PATH={pubmed_path}")
     print("\nPaths:")
     print(f"  GEO:    {geo_path}")
-    print(f"  PubMed: {pubmed_path} (after optional full ingest)")
+    print(f"  PubMed: {pubmed_path}")
     return 0
 
 

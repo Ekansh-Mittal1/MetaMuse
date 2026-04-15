@@ -40,6 +40,7 @@ from src.workflows.eval_conditional import run_eval_conditional
 
 from src.models import LinkerOutput
 # from src.models.common import KeyValue  # Unused
+from src.sample_paths import DEFAULT_GSM_IDS_FILE
 from src.tools.batch_processing_tools import extract_direct_fields_from_data_intake
 
 # Load environment variables
@@ -71,7 +72,7 @@ class EfficientBatchSamplesProcessor:
         output_dir: str = "batch",
         sample_count: int = 100,
         batch_size: int = 5,
-        samples_file: str = "archs4_samples/archs4_gsm_ids.txt",
+        samples_file: str = DEFAULT_GSM_IDS_FILE,
         model_provider: ModelProvider = None,
         max_tokens: int = None,
         target_fields: list = None,
@@ -93,7 +94,7 @@ class EfficientBatchSamplesProcessor:
         batch_size : int
             Number of samples per batch (default: 5)
         samples_file : str
-            Path to archs4_gsm_ids.txt file containing GSM IDs
+            Path to GSM ID list file
         model_provider : ModelProvider, optional
             Base model provider for LLM requests
         max_tokens : int, optional
@@ -1800,7 +1801,7 @@ async def run_efficient_batch_samples_workflow(
     output_dir: str = "batch",
     sample_count: int = 100,
     batch_size: int = 5,
-    samples_file: str = "archs4_samples/archs4_gsm_ids.txt",
+    samples_file: str = DEFAULT_GSM_IDS_FILE,
     model_provider: ModelProvider = None,
     max_tokens: int = None,
     target_fields: list = None,
@@ -1828,7 +1829,7 @@ async def run_efficient_batch_samples_workflow(
     batch_size : int
         Number of samples per batch (default: 5)
     samples_file : str
-        Path to archs4_gsm_ids.txt file containing GSM IDs (default: "archs4_samples/archs4_gsm_ids.txt")
+        Path to GSM ID list file (default: data/samples/archs4_gsm_ids.txt)
     model_provider : ModelProvider, optional
         Model provider for LLM requests
     max_tokens : int, optional
@@ -1893,7 +1894,11 @@ Examples:
     parser.add_argument("--output-dir", default="batch", help="Output directory (default: batch)")
     parser.add_argument("--sample-count", type=int, default=100, help="Number of samples to process (default: 100)")
     parser.add_argument("--batch-size", type=int, default=5, help="Batch size (default: 5)")
-    parser.add_argument("--samples-file", default="archs4_samples/archs4_gsm_ids.txt", help="Samples file path (default: archs4_samples/archs4_gsm_ids.txt)")
+    parser.add_argument(
+        "--samples-file",
+        default=DEFAULT_GSM_IDS_FILE,
+        help=f"Samples file path (default: {DEFAULT_GSM_IDS_FILE})",
+    )
     parser.add_argument("--max-tokens", type=int, help="Maximum tokens for LLM responses")
     parser.add_argument("--target-fields", help="Comma-separated list of target fields")
     parser.add_argument("--sample-type-filter", choices=["primary_sample", "cell_line", "unknown"], help="Filter by sample type")
