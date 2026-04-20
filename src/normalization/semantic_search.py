@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 
+import os
+import sys
+
+# macOS: PyTorch + FAISS (faiss-cpu) often each link libomp; without this, the process
+# can abort with "Initializing libomp.dylib, but found libomp.dylib already initialized".
+if sys.platform == "darwin":
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import json
 import numpy as np
 import torch

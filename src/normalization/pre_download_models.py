@@ -7,6 +7,10 @@ This script downloads the model once and caches it locally for future use.
 import os
 import sys
 from pathlib import Path
+
+if sys.platform == "darwin":
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import torch
 from transformers import AutoTokenizer, AutoModel
 

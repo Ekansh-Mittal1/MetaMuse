@@ -13,6 +13,8 @@ Usage::
     uv run setup-normalization --build-dictionaries   # regenerate JSON from OWL (slow)
 
 Environment: same as the rest of the app (``HF_HOME`` optional; GPU optional for index build).
+On macOS, ``KMP_DUPLICATE_LIB_OK=TRUE`` is set automatically (see ``semantic_search.py``)
+unless you already exported it.
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ import os
 import sys
 from pathlib import Path
 
+if sys.platform == "darwin":
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DICT_DIR = REPO_ROOT / "src" / "normalization" / "dictionaries"
