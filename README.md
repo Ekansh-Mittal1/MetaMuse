@@ -176,7 +176,7 @@ uv run python main.py deterministic_sql "GSM1000981,GSM1000984 target_field:dise
 | `max_iterations` | 2 | Arbitrator cycles (eval mode only) |
 | `max_workers` | None | Parallel workers (recommend 5-10) |
 | `batch_name` | None | Custom batch name |
-| `output_format` | parquet | Output format: parquet or csv |
+| `output_format` | csv | Output format: csv or parquet |
 
 ### deterministic_sql
 

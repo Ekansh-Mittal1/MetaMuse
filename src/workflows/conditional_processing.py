@@ -63,6 +63,7 @@ class ConditionalProcessingWorkflow:
         model_provider=None,
         max_tokens: int = None,
         max_workers: int = None,
+        verbose: bool = False,
     ):
         """
         Initialize the conditional processing workflow.
@@ -88,7 +89,8 @@ class ConditionalProcessingWorkflow:
         self.base_model_provider = model_provider
         self.max_tokens = max_tokens
         self.max_workers = max_workers
-        
+        self.verbose = verbose
+
         # Create conditional processing directory structure
         self.conditional_dir = self.session_directory / "conditional_processing"
         self.conditional_dir.mkdir(exist_ok=True)
@@ -182,7 +184,8 @@ class ConditionalProcessingWorkflow:
             
             # Get sample type-specific configuration
             if sample_type not in TARGET_FIELD_CONFIG["conditional_processing"]:
-                print(f"⚠️ No configuration found for sample_type: {sample_type}")
+                if self.verbose:
+                    print(f"⚠️ No configuration found for sample_type: {sample_type}")
                 return {
                     "success": False,
                     "error": f"No TARGET_FIELD_CONFIG found for sample_type: {sample_type}"
@@ -225,7 +228,7 @@ class ConditionalProcessingWorkflow:
             )
             
             if not conditional_result.success:
-                print(f"❌ Conditional processing failed for {batch_name}: {conditional_result.message}")
+                tqdm.write(f"❌ Conditional processing failed for {batch_name}: {conditional_result.message}")
                 return {
                     "success": False,
                     "batch_name": batch_name,
@@ -258,14 +261,17 @@ class ConditionalProcessingWorkflow:
                     # Handle different result types
                     if hasattr(normalization_result, 'success'):
                         if not normalization_result.success:
-                            print(f"⚠️ Normalization failed for {batch_name}: {normalization_result.message}")
+                            if self.verbose:
+                                print(f"⚠️ Normalization failed for {batch_name}: {normalization_result.message}")
                         
                         
                 except Exception as e:
-                    print(f"⚠️ Normalization failed for {batch_name} with exception: {str(e)}")
+                    if self.verbose:
+                        print(f"⚠️ Normalization failed for {batch_name} with exception: {str(e)}")
                     normalization_result = None
             else:
-                print(f"⏭️ No normalization fields to process for {batch_name}")
+                if self.verbose:
+                    print(f"⏭️ No normalization fields to process for {batch_name}")
                 normalization_result = None
             
             # Convert normalization_result to dict format if needed
@@ -310,7 +316,7 @@ class ConditionalProcessingWorkflow:
             return batch_output
             
         except Exception as e:
-            print(f"❌ Batch {batch_name} failed with exception: {str(e)}")
+            tqdm.write(f"❌ Batch {batch_name} failed with exception: {str(e)}")
             
             return {
                 "success": False,
@@ -360,7 +366,8 @@ class ConditionalProcessingWorkflow:
             batch_jobs = []  # (global_index, sample_type, batch_samples)
             for sample_type, batches in sample_type_batches.items():
                 if sample_type not in TARGET_FIELD_CONFIG["conditional_processing"]:
-                    print(f"⚠️ No configuration found for sample_type: {sample_type}. Skipping {len(batches)} batches.")
+                    if self.verbose:
+                        print(f"⚠️ No configuration found for sample_type: {sample_type}. Skipping {len(batches)} batches.")
                     try:
                         pbar.update(len(batches))
                     except Exception:
@@ -454,18 +461,18 @@ class ConditionalProcessingWorkflow:
             with open(self.conditional_output_file, "w") as f:
                 json.dump(output, f, indent=2)
             
-            if output["success"]:
-                print(f"✅ Conditional processing workflow completed successfully in {execution_time:.2f} seconds")
-            else:
-                print(f"⚠️ Conditional processing workflow completed with {failed_batches} failed batches in {execution_time:.2f} seconds")
-            
-            print(f"📊 Statistics: {output['statistics']}")
+            if self.verbose:
+                if output["success"]:
+                    print(f"✅ Conditional processing workflow completed successfully in {execution_time:.2f} seconds")
+                else:
+                    print(f"⚠️ Conditional processing workflow completed with {failed_batches} failed batches in {execution_time:.2f} seconds")
+                print(f"📊 Statistics: {output['statistics']}")
             
             return output
             
         except Exception as e:
             execution_time = time.time() - start_time
-            print(f"❌ Conditional processing workflow failed: {str(e)}")
+            tqdm.write(f"❌ Conditional processing workflow failed: {str(e)}")
             
             error_output = {
                 "success": False,
@@ -496,6 +503,7 @@ async def run_conditional_processing_workflow(
     model_provider=None,
     max_tokens: int = None,
     max_workers: int = None,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
     """
     Run the conditional processing workflow.
@@ -520,19 +528,22 @@ async def run_conditional_processing_workflow(
     Dict[str, Any]
         Conditional processing workflow results
     """
-    print(f"🔍 DEBUG[conditional_processing]: Starting run_conditional_processing_workflow")
+    if verbose:
+        print(f"🔍 DEBUG[conditional_processing]: Starting run_conditional_processing_workflow")
     workflow = ConditionalProcessingWorkflow(
         session_directory=session_directory,
         target_fields=target_fields,
         model_provider=model_provider,
         max_tokens=max_tokens,
         max_workers=max_workers,
+        verbose=verbose,
     )
-    
+
     result = await workflow.run_conditional_processing(sample_type_batches, data_intake_output)
-    print(f"🔍 DEBUG[conditional_processing]: run_conditional_processing returned: {type(result)}, success={result.get('success') if result else 'None'}")
+    if verbose:
+        print(f"🔍 DEBUG[conditional_processing]: run_conditional_processing returned: {type(result)}, success={result.get('success') if result else 'None'}")
     if result is None:
-        print(f"❌ ERROR[conditional_processing]: run_conditional_processing returned None!")
+        tqdm.write(f"❌ ERROR[conditional_processing]: run_conditional_processing returned None!")
         import traceback
         traceback.print_stack()
     return result
@@ -597,6 +608,7 @@ if __name__ == "__main__":
             data_intake_output=mock_data_intake,
             session_directory=args.session_dir,
             target_fields=target_fields,
+            verbose=args.verbose,
         )
         
         print(f"Conditional Processing Result: {'✅ Success' if result['success'] else '❌ Failed'}")

@@ -78,7 +78,7 @@ class EfficientBatchSamplesProcessor:
         target_fields: list = None,
         sample_type_filter: str = None,
         batch_name: str = None,
-        output_format: str = "parquet",
+        output_format: str = "csv",
         max_workers: Optional[int] = None,
         enable_profiling: bool = False,
     ):
@@ -106,7 +106,7 @@ class EfficientBatchSamplesProcessor:
         batch_name : str, optional
             Custom name for the batch directory.
         output_format : str, optional
-            Output format for batch results. Options: 'parquet' (default) or 'csv'.
+            Output format for batch results. Options: 'csv' (default) or 'parquet'.
         """
         self.output_dir = Path(output_dir)
         self.sample_count = sample_count
@@ -1807,7 +1807,7 @@ async def run_efficient_batch_samples_workflow(
     target_fields: list = None,
     sample_type_filter: str = None,
     batch_name: str = None,
-    output_format: str = "parquet",
+    output_format: str = "csv",
     max_workers: int | None = None,
     enable_profiling: bool = False,
     conditional_mode: str = "eval",
@@ -1841,7 +1841,7 @@ async def run_efficient_batch_samples_workflow(
     batch_name : str, optional
         Custom name for the batch directory
     output_format : str
-        Output format: 'parquet' (default) or 'csv'
+        Output format: 'csv' (default) or 'parquet'
         
     Returns
     -------
@@ -1903,7 +1903,7 @@ Examples:
     parser.add_argument("--target-fields", help="Comma-separated list of target fields")
     parser.add_argument("--sample-type-filter", choices=["primary_sample", "cell_line", "unknown"], help="Filter by sample type")
     parser.add_argument("--batch-name", help="Custom batch name")
-    parser.add_argument("--output-format", choices=["parquet", "csv"], default="parquet", help="Output format (default: parquet)")
+    parser.add_argument("--output-format", choices=["parquet", "csv"], default="csv", help="Output format (default: csv)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument(
         "--conditional-mode", 

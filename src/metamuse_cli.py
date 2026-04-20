@@ -133,7 +133,7 @@ async def run_workflow(
         target_fields = None
         sample_type_filter = None
         batch_name = None
-        output_format = "parquet"
+        output_format = "csv"
         max_workers = None
         enable_profiling = False
 
