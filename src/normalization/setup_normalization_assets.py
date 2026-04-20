@@ -11,16 +11,19 @@ Usage::
 
     uv sync --extra normalization   # pronto, only if using --build-dictionaries
     uv run setup-normalization
-    # ^ By default: tries release download if URL/repo is configured; otherwise builds locally.
+    # ^ By default: downloads ``semantic_indexes.tar.gz`` from the upstream GitHub Release
+    #   (``Ekansh-Mittal1/MetaMuse``, tag ``normalization-indexes-v0.1.0``); override or disable via env.
     uv run setup-normalization --build-indexes-only   # never try release download
     uv run setup-normalization --download-indexes     # release/URL only; fail if download fails
 
 Environment: ``HF_HOME`` optional; GPU optional for index build.
 On macOS, ``KMP_DUPLICATE_LIB_OK=TRUE`` is set automatically unless already exported.
 
-Release download (default when configured): set ``METAMUSE_NORMALIZATION_INDEXES_URL`` or
-``METAMUSE_GITHUB_REPOSITORY`` (``owner/repo``) + optional ``METAMUSE_NORMALIZATION_INDEXES_TAG``
-(default ``normalization-indexes-v{package_version}``), or pass ``--release-tag latest``.
+Release download: defaults to
+``https://github.com/Ekansh-Mittal1/MetaMuse/releases/download/normalization-indexes-v0.1.0/semantic_indexes.tar.gz``.
+Override with ``METAMUSE_NORMALIZATION_INDEXES_URL``, or ``METAMUSE_GITHUB_REPOSITORY`` / ``GITHUB_REPOSITORY``
++ ``METAMUSE_NORMALIZATION_INDEXES_TAG`` (or ``--release-tag latest``). Set
+``METAMUSE_NORMALIZATION_INDEXES_OFF=1`` to skip downloading and build locally only.
 If download fails, the tool **falls back** to building indexes locally (unless ``--download-indexes``).
 """
 
@@ -49,6 +52,15 @@ PRE_DOWNLOAD = REPO_ROOT / "src" / "normalization" / "pre_download_models.py"
 BUILD_DICT = REPO_ROOT / "src" / "normalization" / "build_dictionarys.py"
 
 INDEX_ARCHIVE_NAME = "semantic_indexes.tar.gz"
+
+# Published normalization indexes (see README_INDEXES.md and upstream release on GitHub).
+DEFAULT_NORMALIZATION_INDEX_REPO = "Ekansh-Mittal1/MetaMuse"
+DEFAULT_NORMALIZATION_INDEX_TAG = "normalization-indexes-v0.1.0"
+
+
+def _normalization_indexes_download_disabled() -> bool:
+    v = (os.getenv("METAMUSE_NORMALIZATION_INDEXES_OFF") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
 
 
 def _default_indexes_release_tag() -> str:
@@ -108,16 +120,24 @@ def _resolve_indexes_download_url_optional(
     if env_url:
         return env_url
 
-    repo_spec = (github_repo or "").strip() or (
-        os.getenv("METAMUSE_GITHUB_REPOSITORY") or os.getenv("GITHUB_REPOSITORY") or ""
-    ).strip()
-    if not repo_spec:
+    if _normalization_indexes_download_disabled():
         return None
 
+    repo_spec = (github_repo or "").strip() or (
+        os.getenv("METAMUSE_GITHUB_REPOSITORY") or os.getenv("GITHUB_REPOSITORY") or ""
+    ).strip() or DEFAULT_NORMALIZATION_INDEX_REPO
+
     owner, repo = _parse_github_repo(repo_spec)
-    tag = (release_tag or "").strip() or (
-        os.getenv("METAMUSE_NORMALIZATION_INDEXES_TAG") or _default_indexes_release_tag()
-    )
+    rt = (release_tag or "").strip()
+    et = (os.getenv("METAMUSE_NORMALIZATION_INDEXES_TAG") or "").strip()
+    if rt:
+        tag = rt
+    elif et:
+        tag = et
+    elif repo_spec.strip() == DEFAULT_NORMALIZATION_INDEX_REPO:
+        tag = DEFAULT_NORMALIZATION_INDEX_TAG
+    else:
+        tag = _default_indexes_release_tag()
     if tag.lower() == "latest":
         return _latest_release_asset_browser_url(owner, repo, INDEX_ARCHIVE_NAME)
     return _release_asset_url(owner, repo, tag, INDEX_ARCHIVE_NAME)
@@ -220,9 +240,9 @@ def download_semantic_indexes(
     )
     if not url:
         print(
-            "❌ No download URL configured. Pass --indexes-url URL, or set "
-            "METAMUSE_NORMALIZATION_INDEXES_URL, or set METAMUSE_GITHUB_REPOSITORY=owner/repo "
-            "with --release-tag / METAMUSE_NORMALIZATION_INDEXES_TAG (see README_INDEXES.md).",
+            "❌ No download URL resolved. Pass --indexes-url URL, set "
+            "METAMUSE_NORMALIZATION_INDEXES_URL, or unset METAMUSE_NORMALIZATION_INDEXES_OFF if "
+            "you disabled the default upstream release (see README_INDEXES.md).",
             file=sys.stderr,
         )
         return 2
@@ -452,8 +472,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"⚠️  Release download failed ({e}); building indexes locally…", file=sys.stderr)
     else:
         print(
-            "ℹ️  No release URL configured (set METAMUSE_GITHUB_REPOSITORY or "
-            "METAMUSE_NORMALIZATION_INDEXES_URL). Building indexes locally (slow on CPU)…",
+            "ℹ️  Normalization index download disabled (METAMUSE_NORMALIZATION_INDEXES_OFF). "
+            "Building indexes locally (slow on CPU)…",
         )
 
     return _build_indexes_for_dictionaries(skip_existing=not args.force_indexes)

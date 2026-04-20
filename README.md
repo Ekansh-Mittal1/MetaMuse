@@ -21,16 +21,18 @@ OPENROUTER_API_KEY=your_openrouter_api_key
 NCBI_API_KEY=your_ncbi_api_key  # Optional but recommended for eutils rate limits
 ```
 
-**Optional — normalization release download** (recommended so you do not build large FAISS indexes locally):
+**Optional — normalization index download overrides:** By default, `setup-normalization` downloads **`semantic_indexes.tar.gz`** from the published release [Normalization indexes v0.1.0](https://github.com/Ekansh-Mittal1/MetaMuse/releases/tag/normalization-indexes-v0.1.0) (`Ekansh-Mittal1/MetaMuse`). To use another mirror or fork, set for example:
 
 ```bash
-METAMUSE_GITHUB_REPOSITORY=yourOrg/MetaMuse
-METAMUSE_NORMALIZATION_INDEXES_TAG=normalization-indexes-v0.1.0
-# Or a direct URL to semantic_indexes.tar.gz:
-# METAMUSE_NORMALIZATION_INDEXES_URL=https://github.com/...
+METAMUSE_GITHUB_REPOSITORY=yourOrg/yourFork
+METAMUSE_NORMALIZATION_INDEXES_TAG=your-tag
+# Or a direct URL:
+# METAMUSE_NORMALIZATION_INDEXES_URL=https://github.com/.../semantic_indexes.tar.gz
 ```
 
-See `src/normalization/README_INDEXES.md` for creating the release asset and optional Git LFS.
+To **never** hit the network for indexes (build locally only): `METAMUSE_NORMALIZATION_INDEXES_OFF=1` (or use `uv run setup-normalization --build-indexes-only`).
+
+See `src/normalization/README_INDEXES.md` for publishing your own release asset and optional Git LFS.
 
 ### 3. Install dependencies
 
@@ -88,7 +90,7 @@ uv run setup-normalization
 
 This downloads the SapBERT model into `src/normalization/model_cache/` (unless `--skip-model`), then:
 
-- **By default:** if `METAMUSE_NORMALIZATION_INDEXES_URL` or `METAMUSE_GITHUB_REPOSITORY` / `GITHUB_REPOSITORY` is set, **downloads** `semantic_indexes.tar.gz` from a GitHub Release (with optional `--release-tag` / `METAMUSE_NORMALIZATION_INDEXES_TAG`, or `latest`). If the download fails or no URL is configured, it **builds** indexes locally (often **hours** on CPU).
+- **By default:** **downloads** `semantic_indexes.tar.gz` from [`Ekansh-Mittal1/MetaMuse` release `normalization-indexes-v0.1.0`](https://github.com/Ekansh-Mittal1/MetaMuse/releases/tag/normalization-indexes-v0.1.0). Override with `METAMUSE_NORMALIZATION_INDEXES_URL`, `METAMUSE_GITHUB_REPOSITORY`, `METAMUSE_NORMALIZATION_INDEXES_TAG`, or `--release-tag` (including `latest`). Set `METAMUSE_NORMALIZATION_INDEXES_OFF=1` to skip the download attempt. If the download fails, it **builds** indexes locally (often **hours** on CPU).
 - **`--download-indexes`** — download only; exit on failure (no local build).
 - **`--build-indexes-only`** — skip release download; build indexes locally.
 - **`--skip-indexes`** — model download only.
@@ -211,7 +213,7 @@ sandbox/det_sql_{session_id}/
 
 - **GEOmetadb** — Required for SQL-based data intake. Use **Quick Start → step 4** (`uv run setup-data`) or the manual GEO steps under **Local data (GEO & PubMed)**.
 - **PubMed SQLite** — Built by default with `setup-data` as **`data/pubmed/pubmed.sqlite`**. Set **`PUBMED_SQLITE_PATH`** in `.env` to that path (or elsewhere) so agents and tools resolve the same file; `setup-data` prints a suggested export.
-- **Normalization** — For ontology semantic search, run **Quick Start → step 5** (`uv run setup-normalization`). Indexes are fastest via a **GitHub Release** tarball; see `src/normalization/README_INDEXES.md`.
+- **Normalization** — For ontology semantic search, run **Quick Start → step 5** (`uv run setup-normalization`). Indexes download from the default **GitHub Release** unless disabled; see `src/normalization/README_INDEXES.md`.
 
 ### Sample lists
 
@@ -254,7 +256,7 @@ uv run python main.py batch_samples_efficient \
 - Run `uv run setup-data` (Quick Start, step 4). Ensure **`NCBI_EMAIL`** is set for the default filtered PubMed build.
 
 **Missing normalization indexes (`src/normalization/semantic_indexes/`):**
-- Run `uv run setup-normalization` (Quick Start, step 5). Configure **`METAMUSE_GITHUB_REPOSITORY`** (or **`METAMUSE_NORMALIZATION_INDEXES_URL`**) so the default path can download release assets; otherwise the tool builds locally (slow).
+- Run `uv run setup-normalization` (Quick Start, step 5). By default it pulls from the upstream GitHub release; if you set **`METAMUSE_NORMALIZATION_INDEXES_OFF=1`**, run without that flag or pass **`METAMUSE_NORMALIZATION_INDEXES_URL`**. On failure it builds locally (slow).
 
 **Missing environment variables:**
 - Create a `.env` file with the keys in Quick Start, step 2.
