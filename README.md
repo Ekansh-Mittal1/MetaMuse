@@ -59,15 +59,15 @@ For baseline-style filtering from downloaded XML, see `src/utils/pubmed_ingest.p
 
 ### Optional: normalization (SapBERT + FAISS indexes)
 
-Ontology JSON is in git; **indexes** are large. Prefer downloading a release tarball instead of building (often hours on CPU):
+Ontology JSON is in git; **indexes** are large. By default, ``uv run setup-normalization`` **tries a GitHub Release download first** when ``METAMUSE_GITHUB_REPOSITORY`` or ``METAMUSE_NORMALIZATION_INDEXES_URL`` is set; if that fails or nothing is configured, it **builds** indexes locally (often hours on CPU).
 
 ```bash
 export METAMUSE_GITHUB_REPOSITORY=yourOrg/MetaMuse
 export METAMUSE_NORMALIZATION_INDEXES_TAG=normalization-indexes-v0.1.0
-uv run setup-normalization --download-indexes
+uv run setup-normalization
 ```
 
-Use `--release-tag latest` for the repository’s **latest** GitHub release (asset name must be `semantic_indexes.tar.gz`). Full options, tarball layout, and optional **Git LFS**: `src/normalization/README_INDEXES.md`.
+Use ``--release-tag latest`` (or env + defaults) for the **latest** release asset ``semantic_indexes.tar.gz``. ``--download-indexes`` = download only (no local build fallback); ``--build-indexes-only`` = skip download. Details: ``src/normalization/README_INDEXES.md``.
 
 ### 5. Verify installation
 ```bash

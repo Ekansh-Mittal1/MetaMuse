@@ -4,7 +4,9 @@ Dictionary JSON lives in git under `dictionaries/`. **Semantic indexes** (`seman
 
 ## Option A — GitHub Release (recommended)
 
-Maintainers publish a tarball once; everyone else runs:
+Maintainers publish a tarball once. **Default:** ``uv run setup-normalization`` tries this download whenever ``METAMUSE_NORMALIZATION_INDEXES_URL`` or ``METAMUSE_GITHUB_REPOSITORY`` (``owner/repo``) is set; if the download fails or nothing is configured, it **falls back** to building indexes locally.
+
+Strict download only (CI / no local build):
 
 ```bash
 export METAMUSE_NORMALIZATION_INDEXES_URL="https://github.com/OWNER/REPO/releases/download/TAG/semantic_indexes.tar.gz"
@@ -14,7 +16,13 @@ uv run setup-normalization --download-indexes
 Or pass the URL once:
 
 ```bash
-uv run setup-normalization --download-indexes --indexes-url "https://github.com/..."
+uv run setup-normalization --indexes-url "https://github.com/..."
+```
+
+Skip release and build locally:
+
+```bash
+uv run setup-normalization --build-indexes-only
 ```
 
 **Create the tarball** (from repo root, after indexes exist locally):

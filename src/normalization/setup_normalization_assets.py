@@ -10,16 +10,18 @@ Prepare normalization assets for a fresh clone.
 Usage::
 
     uv sync --extra normalization   # pronto, only if using --build-dictionaries
-    uv run setup-normalization --download-indexes
-    uv run setup-normalization --download-indexes --indexes-url https://github.com/...
-    uv run setup-normalization   # builds indexes locally if not present
+    uv run setup-normalization
+    # ^ By default: tries release download if URL/repo is configured; otherwise builds locally.
+    uv run setup-normalization --build-indexes-only   # never try release download
+    uv run setup-normalization --download-indexes     # release/URL only; fail if download fails
 
 Environment: ``HF_HOME`` optional; GPU optional for index build.
 On macOS, ``KMP_DUPLICATE_LIB_OK=TRUE`` is set automatically unless already exported.
 
-Release download: set ``METAMUSE_NORMALIZATION_INDEXES_URL`` or
+Release download (default when configured): set ``METAMUSE_NORMALIZATION_INDEXES_URL`` or
 ``METAMUSE_GITHUB_REPOSITORY`` (``owner/repo``) + optional ``METAMUSE_NORMALIZATION_INDEXES_TAG``
 (default ``normalization-indexes-v{package_version}``), or pass ``--release-tag latest``.
+If download fails, the tool **falls back** to building indexes locally (unless ``--download-indexes``).
 """
 
 from __future__ import annotations
@@ -93,12 +95,13 @@ def _latest_release_asset_browser_url(owner: str, repo: str, asset_name: str) ->
     )
 
 
-def _resolve_indexes_download_url(
+def _resolve_indexes_download_url_optional(
     *,
     indexes_url: Optional[str],
     github_repo: Optional[str],
     release_tag: Optional[str],
-) -> str:
+) -> Optional[str]:
+    """Return a download URL if configuration allows; otherwise ``None`` (local build path)."""
     if indexes_url:
         return indexes_url.strip()
     env_url = (os.getenv("METAMUSE_NORMALIZATION_INDEXES_URL") or "").strip()
@@ -109,11 +112,7 @@ def _resolve_indexes_download_url(
         os.getenv("METAMUSE_GITHUB_REPOSITORY") or os.getenv("GITHUB_REPOSITORY") or ""
     ).strip()
     if not repo_spec:
-        raise SystemExit(
-            "No download URL configured. Pass --indexes-url URL, or set "
-            "METAMUSE_NORMALIZATION_INDEXES_URL, or set METAMUSE_GITHUB_REPOSITORY=owner/repo "
-            "with --release-tag / METAMUSE_NORMALIZATION_INDEXES_TAG (see README_INDEXES.md)."
-        )
+        return None
 
     owner, repo = _parse_github_repo(repo_spec)
     tag = (release_tag or "").strip() or (
@@ -177,17 +176,8 @@ def _extract_index_archive(archive: Path, normalization_parent: Path) -> None:
         shutil.copytree(src_tree, dest)
 
 
-def download_semantic_indexes(
-    *,
-    indexes_url: Optional[str],
-    github_repo: Optional[str],
-    release_tag: Optional[str],
-) -> int:
-    url = _resolve_indexes_download_url(
-        indexes_url=indexes_url,
-        github_repo=github_repo,
-        release_tag=release_tag,
-    )
+def _install_indexes_from_url(url: str) -> int:
+    """Download and extract ``semantic_indexes`` from ``url``. Returns 0 on success, 1 on failure."""
     print(f"⬇️  Downloading normalization indexes from:\n   {url}")
     INDEX_DIR.parent.mkdir(parents=True, exist_ok=True)
 
@@ -214,6 +204,33 @@ def download_semantic_indexes(
 
     print(f"✅ Indexes installed under {INDEX_DIR}")
     return 0
+
+
+def download_semantic_indexes(
+    *,
+    indexes_url: Optional[str],
+    github_repo: Optional[str],
+    release_tag: Optional[str],
+) -> int:
+    """Strict download: requires a resolvable URL; no local build fallback."""
+    url = _resolve_indexes_download_url_optional(
+        indexes_url=indexes_url,
+        github_repo=github_repo,
+        release_tag=release_tag,
+    )
+    if not url:
+        print(
+            "❌ No download URL configured. Pass --indexes-url URL, or set "
+            "METAMUSE_NORMALIZATION_INDEXES_URL, or set METAMUSE_GITHUB_REPOSITORY=owner/repo "
+            "with --release-tag / METAMUSE_NORMALIZATION_INDEXES_TAG (see README_INDEXES.md).",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        return _install_indexes_from_url(url)
+    except (requests.RequestException, OSError, RuntimeError, ValueError, tarfile.TarError) as e:
+        print(f"❌ Index download failed: {e}", file=sys.stderr)
+        return 1
 
 
 def _load_module(name: str, path: Path):
@@ -300,7 +317,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--download-indexes",
         action="store_true",
-        help=f"Download {INDEX_ARCHIVE_NAME} from a GitHub Release (or any URL) instead of building.",
+        help=(
+            f"Download {INDEX_ARCHIVE_NAME} only (no local build). "
+            "Exits with an error if the URL cannot be resolved or download fails."
+        ),
+    )
+    parser.add_argument(
+        "--build-indexes-only",
+        action="store_true",
+        help="Skip release download and build FAISS indexes locally.",
     )
     parser.add_argument(
         "--indexes-url",
@@ -330,7 +355,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--download-then-fill",
         action="store_true",
-        help="After --download-indexes, run a local build pass for any dictionary still missing an index.",
+        help="After a successful release download, run a local build for any dictionary still missing an index.",
     )
     args = parser.parse_args(argv)
 
@@ -380,24 +405,56 @@ def main(argv: list[str] | None = None) -> int:
         print("\n✅ Skipping indexes (--skip-indexes).")
         return 0
 
-    if args.download_indexes:
-        try:
-            rc = download_semantic_indexes(
-                indexes_url=args.indexes_url,
-                github_repo=args.github_repo,
-                release_tag=args.release_tag,
-            )
-            if rc != 0:
-                return rc
-        except (requests.RequestException, OSError, RuntimeError, ValueError, tarfile.TarError) as e:
-            print(f"❌ Index download failed: {e}", file=sys.stderr)
-            return 1
+    if args.build_indexes_only and args.download_indexes:
+        print("❌ Use only one of --build-indexes-only and --download-indexes.", file=sys.stderr)
+        return 2
 
+    if not args.force_indexes and all(_index_files_ready(p) for p in dict_files):
+        print("✅ All semantic indexes already present.")
+        return 0
+
+    if args.download_indexes:
+        rc = download_semantic_indexes(
+            indexes_url=args.indexes_url,
+            github_repo=args.github_repo,
+            release_tag=args.release_tag,
+        )
+        if rc != 0:
+            return rc
         if args.download_then_fill:
             rc = _build_indexes_for_dictionaries(skip_existing=True)
             if rc != 0:
                 return rc
         return 0
+
+    if args.build_indexes_only:
+        return _build_indexes_for_dictionaries(skip_existing=not args.force_indexes)
+
+    url = _resolve_indexes_download_url_optional(
+        indexes_url=args.indexes_url,
+        github_repo=args.github_repo,
+        release_tag=args.release_tag,
+    )
+    if url:
+        try:
+            rc = _install_indexes_from_url(url)
+            if rc == 0:
+                if args.download_then_fill:
+                    brc = _build_indexes_for_dictionaries(skip_existing=True)
+                    if brc != 0:
+                        return brc
+                return 0
+            print(
+                "⚠️  Release download did not produce usable indexes; building locally…",
+                file=sys.stderr,
+            )
+        except (requests.RequestException, OSError, RuntimeError, ValueError, tarfile.TarError) as e:
+            print(f"⚠️  Release download failed ({e}); building indexes locally…", file=sys.stderr)
+    else:
+        print(
+            "ℹ️  No release URL configured (set METAMUSE_GITHUB_REPOSITORY or "
+            "METAMUSE_NORMALIZATION_INDEXES_URL). Building indexes locally (slow on CPU)…",
+        )
 
     return _build_indexes_for_dictionaries(skip_existing=not args.force_indexes)
 
