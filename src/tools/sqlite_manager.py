@@ -6,6 +6,7 @@ locally, replacing the need for ENTREZ API calls.
 """
 
 import os
+import shutil
 import sqlite3
 import pandas as pd
 import requests
@@ -113,21 +114,34 @@ class GEOmetadbManager:
             # Extract the gzipped file
             print("🔓 Extracting database...")
             import gzip
-            import shutil
-            
+
             with gzip.open(compressed_path, 'rb') as f_in:
                 with open(self.db_path, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
             
             # Clean up compressed file
             compressed_path.unlink()
-            
+
             # Connect to the new database
             self._connect()
-            
+
+            # Remove staging directory (e.g. ``geo_cache/``) now that extraction succeeded
+            try:
+                if self.cache_dir.exists():
+                    cache_r = self.cache_dir.resolve()
+                    db_r = self.db_path.resolve()
+                    if db_r.is_relative_to(cache_r):
+                        print(
+                            f"⚠️  Skipping cache removal: database path is under {self.cache_dir}"
+                        )
+                    else:
+                        shutil.rmtree(self.cache_dir)
+            except OSError as cleanup_err:
+                print(f"⚠️  Could not remove download cache {self.cache_dir}: {cleanup_err}")
+
             print(f"✅ Database downloaded and extracted to {self.db_path}")
             return True
-            
+
         except Exception as e:
             print(f"❌ Error downloading database: {e}")
             import traceback
