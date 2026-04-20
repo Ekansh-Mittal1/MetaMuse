@@ -29,8 +29,12 @@ build-backend = "hatchling.build"
 [project.scripts]
 metamuse = "src.metamuse_cli:main_sync"
 setup-data = "src.setup_data:main"
+setup-normalization = "src.normalization.setup_normalization_assets:main"
 
 [project.optional-dependencies]
+normalization = [
+    "pronto>=2.5.0",
+]
 dev = [
     "pytest>=8.4.1",
     "pytest-cov>=4.1.0",

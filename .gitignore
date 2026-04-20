@@ -236,10 +236,12 @@ data/samples/*
 # models
 
 
-# Normalization data and indexes
+# Normalization: FAISS indexes and HF model cache are large — keep local.
 src/normalization/semantic_indexes/
-src/normalization/dictionaries/
 src/normalization/model_cache/
+# Track ``*_terms.json`` in dictionaries/ (un-ignored below); ignore other junk there.
+src/normalization/dictionaries/*
+!src/normalization/dictionaries/*.json
 
 # wget
 .wget-hsts

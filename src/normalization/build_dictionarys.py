@@ -16,18 +16,17 @@ warnings.filterwarnings("ignore", message=".*no datatype.*")
 warnings.filterwarnings("ignore", message=".*could not extract.*")
 warnings.filterwarnings("ignore", message=".*unknown axiom property.*")
 
-# Define the ontologies and their URLs
+# Define the ontologies and their URLs (writes ``{name.lower()}_terms.json``).
 ONTOLOGIES = {
-    #'MONDO': 'http://purl.obolibrary.org/obo/mondo.owl',
-    #'UBERON': 'http://purl.obolibrary.org/obo/uberon.owl',
-    #'ChEMBL': 'http://purl.obolibrary.org/obo/chembl.obo',
-    #'EFO': 'https://raw.githubusercontent.com/EBISPOT/efo/main/efo.owl',  # GitHub release
-    #'NCBITaxon': 'http://purl.obolibrary.org/obo/ncbitaxon.owl',
-    #'HANCESTRO': 'http://purl.obolibrary.org/obo/hancestro.owl',
-    #'HSAPDV': 'http://purl.obolibrary.org/obo/hsapdv.owl',
-    #'PATO': 'http://purl.obolibrary.org/obo/pato.owl',
-    #'CLO': 'http://purl.obolibrary.org/obo/clo.owl',
-    "CL": "http://purl.obolibrary.org/obo/cl.owl"
+    "MONDO": "http://purl.obolibrary.org/obo/mondo.owl",
+    "UBERON": "http://purl.obolibrary.org/obo/uberon.owl",
+    "EFO": "https://raw.githubusercontent.com/EBISPOT/efo/main/efo.owl",
+    "HANCESTRO": "http://purl.obolibrary.org/obo/hancestro.owl",
+    "HSAPDV": "http://purl.obolibrary.org/obo/hsapdv.owl",
+    "PATO": "http://purl.obolibrary.org/obo/pato.owl",
+    "CLO": "http://purl.obolibrary.org/obo/clo.owl",
+    "DRON": "http://purl.obolibrary.org/obo/dron.owl",
+    "CL": "http://purl.obolibrary.org/obo/cl.owl",
 }
 
 # Define namespace prefixes for each ontology
