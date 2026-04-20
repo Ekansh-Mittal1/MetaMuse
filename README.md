@@ -4,27 +4,45 @@ Agentic Metadata Curation System for GEO sample metadata extraction, curation, a
 
 ## 🚀 Quick Start
 
+Complete these steps from the **repository root** after cloning.
+
 ### 1. Install UV
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### 2. Set up environment variables
-Create a `.env` file in the project root:
+### 2. Configure environment variables
+
+Create a `.env` file in the project root (same variables are read by `setup-data` and workflows):
+
 ```bash
 NCBI_EMAIL=your_email@example.com
 OPENROUTER_API_KEY=your_openrouter_api_key
-NCBI_API_KEY=your_ncbi_api_key  # Optional but recommended
+NCBI_API_KEY=your_ncbi_api_key  # Optional but recommended for eutils rate limits
 ```
 
+**Optional — normalization release download** (recommended so you do not build large FAISS indexes locally):
+
+```bash
+METAMUSE_GITHUB_REPOSITORY=yourOrg/MetaMuse
+METAMUSE_NORMALIZATION_INDEXES_TAG=normalization-indexes-v0.1.0
+# Or a direct URL to semantic_indexes.tar.gz:
+# METAMUSE_NORMALIZATION_INDEXES_URL=https://github.com/...
+```
+
+See `src/normalization/README_INDEXES.md` for creating the release asset and optional Git LFS.
+
 ### 3. Install dependencies
+
 ```bash
 uv sync
 ```
 
-### 4. Download local SQLite databases (GEO + optional PubMed)
+Optional: `uv sync --extra normalization` if you will run `setup-normalization --build-dictionaries` (OWL → JSON via **pronto**).
 
-Large database files are not committed to Git. After install, run the **data setup** entry point (implementation lives in `src/setup_data.py`; the root `setup.py` file is only a thin wrapper and is **not** setuptools packaging):
+### 4. Local SQLite databases (GEO + PubMed)
+
+Large databases are **not** in Git. Run:
 
 ```bash
 uv run setup-data
@@ -36,17 +54,20 @@ Equivalent:
 uv run python setup.py
 ```
 
-This downloads **`data/GEOmetadb.sqlite`** (~1 GiB compressed, ~20 GiB on disk after extraction) using the same downloader as the data-intake workflow.
+This:
 
-**PubMed (default)** — After GEO, `setup-data` builds a **filtered** `data/pubmed/pubmed.sqlite` using **NCBI efetch** (no PubMed baseline FTP): it reads PMIDs from **`data/samples/archs4_pubmed_ids.txt`** when that file is present. If it is missing, it falls back to up to **5000** PMIDs from GEOmetadb’s `gse.pubmed_id`, then to **`pubmed_filter_seed_pmids.txt`**. Override the list with **`--pubmed-filter-ids`**. Set **`NCBI_EMAIL`** in `.env` (required for efetch).
+1. Downloads **`data/GEOmetadb.sqlite`** (~1 GiB compressed, ~20 GiB on disk after gunzip) using the same mirror as the data-intake workflow (`https://gbnci.cancer.gov/geo/` by default; override with **`GEOMETADB_DOWNLOAD_URL`** / **`GEOMETADB_MD5_URL`** if needed). The download staging directory **`geo_cache/`** is removed after a successful extract.
+2. By default, builds a **filtered** **`data/pubmed/pubmed.sqlite`** with **NCBI efetch** (no PubMed baseline FTP). PMIDs come from **`data/samples/archs4_pubmed_ids.txt`** when present; otherwise up to **5000** from GEOmetadb `gse.pubmed_id`, then **`pubmed_filter_seed_pmids.txt`**. **`NCBI_EMAIL`** is required for efetch.
 
-**Optional — full PubMed baseline** (large download, long ingest):
+The command prints a suggested **`PUBMED_SQLITE_PATH`**; add it to `.env` if tools expect a non-default path (see **Local data** below).
+
+**Optional — full PubMed baseline** (very large download + ingest):
 
 ```bash
 uv run setup-data --pubmed full --i-accept-pubmed-baseline-cost
 ```
 
-For baseline-style filtering from downloaded XML, see `src/utils/pubmed_ingest.py`.
+For baseline XML download/ingest only, see `src/utils/pubmed_ingest.py`.
 
 | Flag | Meaning |
 |------|---------|
@@ -54,22 +75,29 @@ For baseline-style filtering from downloaded XML, see `src/utils/pubmed_ingest.p
 | `--skip-geo` | Do not download GEOmetadb |
 | `--force` | Re-download GEO if present; replace `pubmed.sqlite` when rebuilding PubMed |
 | `--pubmed none` \| `filtered` \| `full` | PubMed: skip; **filtered efetch (default)**; full baseline |
-| `--pubmed-filter-ids PATH` | Use this PMID list (one per line) instead of GEOmetadb |
+| `--pubmed-filter-ids PATH` | PMID list (one per line); overrides `data/samples/archs4_pubmed_ids.txt` |
 | `--pubmed-max-from-geo N` | Fallback only: max PMIDs from GEO if `data/samples/archs4_pubmed_ids.txt` is missing (default: 5000) |
 
-### Optional: normalization (SapBERT + FAISS indexes)
+### 5. Normalization assets (SapBERT + FAISS indexes)
 
-Ontology JSON is in git; **indexes** are large. By default, ``uv run setup-normalization`` **tries a GitHub Release download first** when ``METAMUSE_GITHUB_REPOSITORY`` or ``METAMUSE_NORMALIZATION_INDEXES_URL`` is set; if that fails or nothing is configured, it **builds** indexes locally (often hours on CPU).
+Ontology **term JSON** is in Git under `src/normalization/dictionaries/`. **SapBERT** weights and **FAISS** indexes under `src/normalization/model_cache/` and `src/normalization/semantic_indexes/` are large and are **not** committed by default.
 
 ```bash
-export METAMUSE_GITHUB_REPOSITORY=yourOrg/MetaMuse
-export METAMUSE_NORMALIZATION_INDEXES_TAG=normalization-indexes-v0.1.0
 uv run setup-normalization
 ```
 
-Use ``--release-tag latest`` (or env + defaults) for the **latest** release asset ``semantic_indexes.tar.gz``. ``--download-indexes`` = download only (no local build fallback); ``--build-indexes-only`` = skip download. Details: ``src/normalization/README_INDEXES.md``.
+This downloads the SapBERT model into `src/normalization/model_cache/` (unless `--skip-model`), then:
 
-### 5. Verify installation
+- **By default:** if `METAMUSE_NORMALIZATION_INDEXES_URL` or `METAMUSE_GITHUB_REPOSITORY` / `GITHUB_REPOSITORY` is set, **downloads** `semantic_indexes.tar.gz` from a GitHub Release (with optional `--release-tag` / `METAMUSE_NORMALIZATION_INDEXES_TAG`, or `latest`). If the download fails or no URL is configured, it **builds** indexes locally (often **hours** on CPU).
+- **`--download-indexes`** — download only; exit on failure (no local build).
+- **`--build-indexes-only`** — skip release download; build indexes locally.
+- **`--skip-indexes`** — model download only.
+- **`--download-then-fill`** — after a successful download, build indexes only for dictionaries still missing an index.
+
+Regenerate dictionaries from OWL (rare): `uv sync --extra normalization` then `uv run setup-normalization --build-dictionaries`.
+
+### 6. Verify installation
+
 ```bash
 uv run metamuse --list-workflows
 ```
@@ -80,7 +108,7 @@ Equivalent:
 uv run python main.py --list-workflows
 ```
 
-The `metamuse` command is defined in `[project.scripts]` in `pyproject.toml` and calls `src/metamuse_cli.py`, so you do not need to be in a particular directory beyond having run `uv sync` in this repo (or using `uv run` from it).
+The `metamuse` entry point is defined in `[project.scripts]` in `pyproject.toml` and runs `src/metamuse_cli.py`. Use `uv run` from the repo (or any cwd with the same environment) after `uv sync`.
 
 ---
 
@@ -181,8 +209,9 @@ sandbox/det_sql_{session_id}/
 
 ## 🔧 Data requirements
 
-- **GEOmetadb** — Required for SQL-based data intake. Obtain with `uv run setup-data` (recommended) or see **Local data (GEO & PubMed)** below for manual steps.
-- **PubMed SQLite** — Optional; speeds up abstract lookups when present. Default env / code may expect `~/data/pubmed/pubmed.sqlite`; after `setup-data`, point **`PUBMED_SQLITE_PATH`** at `data/pubmed/pubmed.sqlite` (the setup script prints this).
+- **GEOmetadb** — Required for SQL-based data intake. Use **Quick Start → step 4** (`uv run setup-data`) or the manual GEO steps under **Local data (GEO & PubMed)**.
+- **PubMed SQLite** — Built by default with `setup-data` as **`data/pubmed/pubmed.sqlite`**. Set **`PUBMED_SQLITE_PATH`** in `.env` to that path (or elsewhere) so agents and tools resolve the same file; `setup-data` prints a suggested export.
+- **Normalization** — For ontology semantic search, run **Quick Start → step 5** (`uv run setup-normalization`). Indexes are fastest via a **GitHub Release** tarball; see `src/normalization/README_INDEXES.md`.
 
 ### Sample lists
 
@@ -221,23 +250,29 @@ uv run python main.py batch_samples_efficient \
 
 ## 🐛 Troubleshooting
 
-**Missing `data/GEOmetadb.sqlite`:**
-- Run `uv run setup-data` (Quick Start, step 4).
+**Missing `data/GEOmetadb.sqlite` or `data/pubmed/pubmed.sqlite`:**
+- Run `uv run setup-data` (Quick Start, step 4). Ensure **`NCBI_EMAIL`** is set for the default filtered PubMed build.
+
+**Missing normalization indexes (`src/normalization/semantic_indexes/`):**
+- Run `uv run setup-normalization` (Quick Start, step 5). Configure **`METAMUSE_GITHUB_REPOSITORY`** (or **`METAMUSE_NORMALIZATION_INDEXES_URL`**) so the default path can download release assets; otherwise the tool builds locally (slow).
 
 **Missing environment variables:**
-- Create `.env` file with required API keys
+- Create a `.env` file with the keys in Quick Start, step 2.
+
+**macOS + OpenMP (“Initializing libomp.dylib…”) when building indexes:**
+- The project sets **`KMP_DUPLICATE_LIB_OK=TRUE`** automatically on Darwin before loading PyTorch/FAISS; you can also export it in your shell if an older entrypoint is used.
 
 **Git LFS errors on clone/pull (e.g. “Object does not exist on the server”, smudge failed):**
 
-Large binaries under `data/` may still use Git LFS. Ensure [Git LFS](https://git-lfs.com/) is installed, then `git lfs pull`. If the remote LFS object is missing (404), only a repo admin can fix the upstream storage; you can still clone the rest of the tree with:
+Some forks may use Git LFS for large blobs. Install [Git LFS](https://git-lfs.com/) and run `git lfs pull`. If the remote LFS object is missing (404), use:
 
 ```bash
 GIT_LFS_SKIP_SMUDGE=1 git clone <repo-url>
 ```
 
-Then obtain any missing large files from a teammate or follow the README **Local data** section. The sample list `data/samples/archs4_gsm_ids.txt` is stored as a normal Git file (not LFS) so it should always checkout with the repo.
+Optional **normalization** LFS for FAISS files is documented in `src/normalization/README_INDEXES.md` (separate from `data/`). Sample lists under **`data/samples/*.txt`** are normal Git files (not LFS).
 
-**`data/pubmed/pubmed.sqlite` / `data/GEOmetadb.sqlite`:** These are **not** in Git (use `uv run setup-data` to create them locally). If an older commit still tracked them via Git LFS, update to the latest `main` where that was removed; otherwise use `GIT_LFS_SKIP_SMUDGE=1` and run setup-data.
+**`data/pubmed/pubmed.sqlite` / `data/GEOmetadb.sqlite`:** These are **not** in Git (use `uv run setup-data`). If an older branch tracked them via LFS, prefer updating to current `main` or clone with `GIT_LFS_SKIP_SMUDGE=1` and run `setup-data`.
 
 **UV issues:**
 ```bash
@@ -267,13 +302,13 @@ uv sync --reinstall
 
 ### Recommended: `setup-data`
 
-From the repo root (after `uv sync`):
+Same behavior as **Quick Start → step 4**. From the repo root:
 
 ```bash
 uv run setup-data
 ```
 
-This populates **`data/GEOmetadb.sqlite`** and, by default, a **filtered** **`data/pubmed/pubmed.sqlite`** via NCBI efetch from **`data/samples/archs4_pubmed_ids.txt`** (needs **`NCBI_EMAIL`**). Large artifacts under `data/` (GEO DB, PubMed DB, etc.) stay gitignored; a few **sample list files under `data/samples/`** are committed—see `.gitignore`. GEO downloads use **`https://gbnci.cancer.gov/geo/`** by default (the legacy `gbnci.abcc.ncifcrf.gov` host often no longer resolves). To use another mirror, set **`GEOMETADB_DOWNLOAD_URL`** (and optionally **`GEOMETADB_MD5_URL`**) in the environment before running `setup-data`.
+This creates **`data/GEOmetadb.sqlite`** and, by default, **filtered** **`data/pubmed/pubmed.sqlite`** (NCBI efetch; PMIDs from **`data/samples/archs4_pubmed_ids.txt`** when present; **`NCBI_EMAIL`** required). Large files under `data/` stay gitignored; only selected lists under **`data/samples/`** are tracked—see `.gitignore`. GEO uses **`https://gbnci.cancer.gov/geo/`** by default; override with **`GEOMETADB_DOWNLOAD_URL`** / **`GEOMETADB_MD5_URL`** if needed.
 
 ### Manual GEOmetadb (alternative)
 
@@ -298,8 +333,8 @@ ls -lh data/GEOmetadb.sqlite
 - **Full baseline** (large): `uv run setup-data --pubmed full --i-accept-pubmed-baseline-cost`  
 - **FTP baseline + `--filter-ids`**: use `src/utils/pubmed_ingest.py` (`download`, `ingest`, optional `--filter-ids`).
 
-Set **`PUBMED_SQLITE_PATH`** in `.env` if your database is not at the default `~/data/pubmed/pubmed.sqlite`, for example:
+Set **`PUBMED_SQLITE_PATH`** in `.env` if tools should not rely on implicit defaults, for example:
 
 ```bash
-PUBMED_SQLITE_PATH=/absolute/path/to/repo/data/pubmed/pubmed.sqlite
+PUBMED_SQLITE_PATH=/absolute/path/to/your/checkout/data/pubmed/pubmed.sqlite
 ```
