@@ -236,7 +236,8 @@ data/samples/*
 # models
 
 
-# Normalization: FAISS indexes and HF model cache are large — keep local.
+# Normalization: FAISS indexes (see src/normalization/README_INDEXES.md — Release or optional Git LFS).
+# To track indexes with Git LFS, remove the next line; .gitattributes maps *.index / *.pkl to LFS.
 src/normalization/semantic_indexes/
 src/normalization/model_cache/
 # Track ``*_terms.json`` in dictionaries/ (un-ignored below); ignore other junk there.

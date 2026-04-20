@@ -5,3 +5,9 @@
 
 # archs4_gsm_ids.txt (~10 MB) is stored as a normal Git blob (not LFS) so it
 # always clones with the repo.
+
+# Optional Git LFS for normalization FAISS indexes: remove
+# ``src/normalization/semantic_indexes/`` from .gitignore before committing these paths.
+# See src/normalization/README_INDEXES.md.
+src/normalization/semantic_indexes/*.index filter=lfs diff=lfs merge=lfs -text
+src/normalization/semantic_indexes/*.pkl filter=lfs diff=lfs merge=lfs -text

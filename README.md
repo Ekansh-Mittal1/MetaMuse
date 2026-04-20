@@ -57,6 +57,18 @@ For baseline-style filtering from downloaded XML, see `src/utils/pubmed_ingest.p
 | `--pubmed-filter-ids PATH` | Use this PMID list (one per line) instead of GEOmetadb |
 | `--pubmed-max-from-geo N` | Fallback only: max PMIDs from GEO if `data/samples/archs4_pubmed_ids.txt` is missing (default: 5000) |
 
+### Optional: normalization (SapBERT + FAISS indexes)
+
+Ontology JSON is in git; **indexes** are large. Prefer downloading a release tarball instead of building (often hours on CPU):
+
+```bash
+export METAMUSE_GITHUB_REPOSITORY=yourOrg/MetaMuse
+export METAMUSE_NORMALIZATION_INDEXES_TAG=normalization-indexes-v0.1.0
+uv run setup-normalization --download-indexes
+```
+
+Use `--release-tag latest` for the repository’s **latest** GitHub release (asset name must be `semantic_indexes.tar.gz`). Full options, tarball layout, and optional **Git LFS**: `src/normalization/README_INDEXES.md`.
+
 ### 5. Verify installation
 ```bash
 uv run metamuse --list-workflows
